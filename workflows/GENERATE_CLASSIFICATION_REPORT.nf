@@ -34,7 +34,7 @@ workflow GENERATE_CLASSIFICATION_REPORT {
     main:
         // write individual JSONs, and a collated JSON
         consensus_properties_ch = write_single_properties_json( report_in_ch )
- 
+
         collated_properties_ch = write_collated_properties_json( report_in_ch.collect(), "consensus_sequence_properties" )
 
         report_in_ch.map { meta ->
@@ -43,13 +43,13 @@ workflow GENERATE_CLASSIFICATION_REPORT {
                 [(key): (value in [null, ''] ? 'None' : value)]
             }
             get_report_line( new_meta )
-        }.collect().set{ report_lines_ch } 
+        }.collect().set{ report_lines_ch }
 
         // Write all of the per-sample report lines to a report file
-        classification_report_ch = write_classification_report_csv( 
-            get_header_line(), 
-            report_lines_ch , 
-            "classification_report" 
+        classification_report_ch = write_classification_report_csv(
+            get_header_line(),
+            report_lines_ch ,
+            "classification_report"
         )
 
     emit:

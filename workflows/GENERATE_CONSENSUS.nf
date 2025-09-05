@@ -8,16 +8,16 @@ workflow GENERATE_CONSENSUS {
     -----------------------------------------------------------------
     Obtain Consensus Sequences
 
-    The GENERATE_CONSENSUS workflow performs read alignment and 
+    The GENERATE_CONSENSUS workflow performs read alignment and
     consensus sequence generation for sequencing data. It processes
     paired-end reads by aligning them to reference genomes using BWA,
     followed by consensus calling with iVar. This workflow is designed
-    to take in sequencing data for different samples and taxonomic 
+    to take in sequencing data for different samples and taxonomic
     IDs, process them, and produce consensus sequences.
 
     -----------------------------------------------------------------
     # Inputs
-    - **Sample Taxid Channel **: A channel containing tuples of 
+    - **Sample Taxid Channel **: A channel containing tuples of
     metadata and paired-end FASTQ files. Metadata (`meta`) must
     include the following keys:
         - `id`: Unique identifier combining sample ID and taxonomic
@@ -40,21 +40,21 @@ workflow GENERATE_CONSENSUS {
 
     take:
         sample_taxid_ch // tuple (meta, reads, ref_files)
-        
+
     main:
         // align reads to reference
         bwa_alignment_and_post_processing (sample_taxid_ch)
-        bams_ch = bwa_alignment_and_post_processing.out 
+        bams_ch = bwa_alignment_and_post_processing.out
 
         // set ivar input channel
         bams_ch
             | map {meta, _fastq, ref_fa, _ref_indices, bam, bam_idx ->
                 tuple(meta, bam, bam_idx, ref_fa)
             }
-            | set {ivar_in_ch} 
+            | set {ivar_in_ch}
 
         run_ivar(ivar_in_ch)
-        
+
     emit:
         run_ivar.out
 
