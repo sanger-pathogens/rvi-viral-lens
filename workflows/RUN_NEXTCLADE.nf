@@ -3,70 +3,135 @@
 // import workflow
 nextflow.enable.dsl = 2
 include {run_nextclade} from '../modules/run_nextclade.nf'
+include {publish_consensus_files} from '../modules/publish_lite.nf'
 
 workflow RUN_NEXTCLADE {
     take:
+    // meta, fa
     input_ch // tuple(Sample_ID, Virus_Taxon_ID, Flu_Segment, Reference_Subtype)
 
     main:
-    split_ch = input_ch.branch {meta, it ->
-        def (data_dir, tag_id) = check_data_dir(it)
-        meta.data_dir = data_dir
-        meta.tag_id = tag_id
-        found: data_dir != false
-        not_found: data_dir == false
+    input_ch.map{meta, consensus_fa ->
+        //println([meta.ref_subtype])
+        //println([meta.flu_seg])
+        //if ((meta.ref_subtype == null) & (meta.flu_seg == 0) ) {
+        //    def ref_dirs_map = buildReferenceTags(
+        //        params.nextclade_data_dir,
+        //        meta.sample_id,
+        //        meta.taxid)
+        //    return [meta, consensus_fa, ref_dirs_map]
+        //} else {
+        def ref_dirs_map = buildReferenceTags(
+                params.nextclade_data_dir,
+                meta.sample_id,
+                meta.taxid,
+                meta.ref_subtype,
+                meta.flu_seg)
+        return [meta, consensus_fa, ref_dirs_map] // [[meta, fa, [[ref_dir_a], [ref_dir_b], ...]]
+        //}
     }
-    if (split_ch.found.count() == 0) {
-        log.warn "No data found for samples in given manifest!"
-        exit 0
-    }
-    //TODO: explore using buffer for this process
-    run_nextclade(split_ch.found).set { out_ch } //.buffer(size: params.buffer_size, remainder: true)
+    .branch{ meta, fa, ref_dirs_map ->
+        found : ref_dirs_map != []
+            [meta, fa, ref_dirs_map]
 
-    channel.of().set { out_ch }
-    emit:
-    out_ch
+        not_found: ref_dirs_map == []
+            [meta, fa]
+    }
+    .set{ data_dir_ch}
+    data_dir_ch.not_found.view{"No nextclade data on nextclade_data_dir found for ${it[0].id} ${it}"}
+
+    data_dir_ch.found
+    .flatMap{list -> expandList(list)} // [[meta, fa, ref_dir_map_a], [meta, fa, ref_dir_map_b]]
+    .map{meta, fa, ref_dirs_map ->
+        def new_meta = meta + ref_dirs_map
+
+        [new_meta, fa, new_meta.dir]
+    }
+    .set {nextclade_In_ch}
+
+    // publish nextclade output files
+    run_nextclade(nextclade_In_ch, params.nextclade_output_verbosity)
+    run_nextclade.out
+    .map{meta, csv, tar_gz -> [meta, [csv,tar_gz]] }
+    .set {publish_files_In_ch}
+
+    publish_consensus_files{publish_files_In_ch}
+
 }
 
-def _count_dirs(in_path) {
-    def dir = new File(in_path);
-    def dirs = [];
-    dir.traverse(type: groovy.io.FileType.DIRECTORIES, maxDepth: 1) { d ->
-        dirs.add(d)
-    };
-    return dirs.size
+
+def expandList(List input) {
+    if (input.isEmpty()) return []
+
+    def prefix = input[0..-2] // everything except the last element
+    def last   = input[-1] // last element (may be a list or not)
+
+    if (last instanceof List) {
+        // Expand each element of the last list with the prefix
+        return last.collect { item -> prefix + item }
+    } else {
+        // If last isn't a list, just wrap the input
+        return [input]
+    }
 }
 
-def check_data_dir(input_ch_tuple) {
-    try {
-        def (sample_id, virus_taxid, flu_seg, ref_subtype) = input_ch_tuple
-        def path_to_check = "${params.nextclade_data_dir}/${virus_taxid}"
 
-        if ( file(path_to_check).isDirectory() ) {
-            def subdirs = _count_dirs(path_to_check)
-            def next_path_to_check = "${path_to_check}/${ref_subtype}"
-            if (subdirs > 0 && !file(next_path_to_check).isDirectory()) {
-                return [false, null]
-            } else if (subdirs > 0 && file(next_path_to_check).isDirectory()) {
-                def last_subdirs = _count_dirs(next_path_to_check)
-                def last_path_to_check = "${path_to_check}/${ref_subtype}/${flu_seg}"
-                if (last_subdirs == 0) {
-                    def tag_id = "${sample_id}.${virus_taxid}.${ref_subtype}"
-                    return [next_path_to_check, tag_id]
-                } else if (last_subdirs > 0 && !file(last_path_to_check).isDirectory()) {
-                    return [false, null]
-                } else if (last_subdirs > 0 && file(last_path_to_check).isDirectory()) {
-                    def tag_id = "${sample_id}.${virus_taxid}.${ref_subtype}.segment${flu_seg}"
-                    return [last_path_to_check, tag_id]
-                }
-            } else if (subdirs == 0) {
-                def tag_id = "${sample_id}.${virus_taxid}"
-                return [path_to_check, tag_id]
+List<File> findReferenceDirs(dataDir, virusTaxid,subtype = null, segNumber = null) {
+    /**
+    * Find directories that contain a `reference.fasta` exactly one level below a base path.
+    *
+    * Case 1: base = <dataDir>/<virusTaxid>
+    * Case 2: base = <dataDir>/<virusTaxid>/<subtype>/<segNumber>
+    *
+    * Returns a List<File> of the matching directories (sorted), or [] if none.
+    */
+    // Build the base path depending on whether subtype/segNumber are provided
+    def parts = [dataDir, virusTaxid]
+    if (subtype != null && segNumber != null) {
+        parts << subtype << segNumber
+    }
+    def baseDir = new File(parts.join(File.separator))
+    //println(baseDir)
+    if (!baseDir.isDirectory()) {
+        return []
+    }
+
+    // Look only at immediate subdirectories under baseDir,
+    // and keep those that contain a file named "reference.fasta"
+    return (baseDir.listFiles() ?: [])
+        .findAll { it.isDirectory() && new File(it, "reference.fasta").isFile() }
+        .collect { it.canonicalFile }   // normalize paths
+        .sort { it.path }               // deterministic order
+}
+
+List<Map> buildReferenceTags(dataDir, sampleId,taxid,subtype = null, segNumber = null) {
+    /**
+    * Build tag IDs for all reference dirs found under the Nextclade hierarchy.
+    *
+    * Case 1: <taxid>/<assembly>/reference.fasta
+    *   tag_id = <sample_id>.<taxid>.<assembly>
+    *
+    * Case 2: <taxid>/<subtype>/<seg_number>/<assembly>/reference.fasta
+    *   tag_id = <sample_id>.<taxid>.<subtype>.segment<seg_number>.<assembly>
+    *
+    * @return List of [File referenceDir, String tagId] pairs
+    */
+    def dirs = findReferenceDirs(dataDir, taxid, subtype, segNumber)
+
+    if (dirs == []){
+        return []
+    } else {
+        return dirs.collect { dir ->
+            def assembly = dir.name  // directory itself is the assembly name
+            def tagId
+            if (subtype && segNumber) {
+                // Case 2
+                tagId = "${sampleId}.${taxid}.${subtype}.segment${segNumber}.${assembly}"
+            } else {
+                // Case 1
+                tagId = "${sampleId}.${taxid}.${assembly}"
             }
-        } else {return [false, null]}
-
-    } catch (Exception e) {
-        log.warn "Error checking data directory: ${e.message}"
-        return [false, null]
+            [dir: dir.toString(), tag_id: tagId]
+        }
     }
 }

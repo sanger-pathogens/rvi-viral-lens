@@ -4,18 +4,16 @@ process run_nextclade {
     label "nextclade"
 
     input:
-    tuple val(meta), path(input_fa), path(data_dir)
+    tuple val(meta), path(input_fa), val(data_dir)
+    val(nextclade_output_verbosity)
 
     output:
-    tuple val(meta), path("*.csv"), path("*.tar.gz")
+    tuple val(meta), path("${meta.tag_id}.csv"), path("${meta.tag_id}_nextclade.tar.gz")
 
     script:
-    def nextclade_output_verbosity = params.nextclade_output_verbosity
-    //def data_dir = "${meta.data_dir}"
     def ref_fasta = "${data_dir}/reference.fasta"
     def ref_tree = "${data_dir}/tree.json"
     def ref_gff = "${data_dir}/genome_annotation.gff3"
-    //def input_fa = "${meta.consensus_path}"
 
     if (file(ref_tree).exists())
         """
@@ -53,4 +51,5 @@ process run_nextclade {
         cp ./${meta.tag_id}_nextclade/${meta.tag_id}.csv .
         tar -czf ${meta.tag_id}_nextclade.tar.gz ./${meta.tag_id}_nextclade
         """
+
 }

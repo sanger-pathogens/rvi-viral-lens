@@ -15,7 +15,7 @@ include {GENERATE_CONSENSUS} from './workflows/GENERATE_CONSENSUS.nf'
 include {COMPUTE_QC_METRICS} from './workflows/COMPUTE_QC_METRICS.nf'
 include {SCOV2_SUBTYPING} from './workflows/SCOV2_SUBTYPING.nf'
 include {GENERATE_CLASSIFICATION_REPORT} from './workflows/GENERATE_CLASSIFICATION_REPORT.nf'
-
+include {RUN_NEXTCLADE} from './workflows/RUN_NEXTCLADE.nf'
 include {publish_consensus_files; publish_run_files} from './modules/publish_lite.nf'
 
 // Main entry-point workflow
@@ -87,9 +87,28 @@ workflow {
     // ==========================
     // === 2 - Map reads to taxid
     SORT_READS_BY_REF(reads_ch)
-
     // === 3 - Generate consensus ==
     GENERATE_CONSENSUS( SORT_READS_BY_REF.out.sample_taxid_ch )
+
+    // === Run Nextclade
+    GENERATE_CONSENSUS.out
+    .map{meta, _bam, _bai, fa, _tsv -> [meta.id, meta, fa]}
+    .set{consensus_fa_ch}
+
+    SORT_READS_BY_REF.out.sample_pre_report_ch
+    .map{meta ->
+        def new_meta = meta + [id:"${meta.sample_id}.${meta.selected_taxid}"]
+        return [new_meta.id, new_meta ]
+    }
+    .combine(consensus_fa_ch, by:0)
+    .map{_id, pre_report_meta, fa_meta, fa ->
+        def final_meta = pre_report_meta + [reference_header:"${fa_meta.reference_header}", taxid:"${fa_meta.taxid}"]
+        [final_meta, fa]
+    }
+    .set {nextclade_In_ch}
+    //nextclade_In_ch.view()
+
+    RUN_NEXTCLADE(nextclade_In_ch)
 
     // === 4 - Compute QC metrics ==
     COMPUTE_QC_METRICS(GENERATE_CONSENSUS.out)
@@ -111,7 +130,9 @@ workflow {
 
     // 5.1 - add report info to out qc metric chanel and branch for SCOV2 subtyping
     filtered_consensus_ch
-        .map { meta, _bam, _bam_idx, consensus, _variants, _qc -> tuple(meta.id, meta, consensus )}
+        .map { meta, _bam, _bam_idx, consensus, _variants, _qc ->
+            tuple(meta.id, meta, consensus )
+        }
         .join(sample_report_with_join_key_ch)
         .map {_id, meta, fasta, report ->
             def new_meta = meta.plus(report)
@@ -122,7 +143,9 @@ workflow {
             no_subtyping_ch: true
         }
         .set {filtered_consensus_by_type_ch}
-
+    
+    //filtered_consensus_by_type_ch.no_subtyping_ch.first().view()
+    
     // 5.2 - do SCOV2 subtyping
     if (params.do_scov2_subtyping == true){
         SCOV2_SUBTYPING(filtered_consensus_by_type_ch.scv2_subtyping_workflow_in_ch)
