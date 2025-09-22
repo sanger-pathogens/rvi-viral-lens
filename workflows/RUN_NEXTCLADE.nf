@@ -11,24 +11,16 @@ workflow RUN_NEXTCLADE {
     input_ch // tuple(Sample_ID, Virus_Taxon_ID, Flu_Segment, Reference_Subtype)
 
     main:
-    input_ch.map{meta, consensus_fa ->
-        //println([meta.ref_subtype])
-        //println([meta.flu_seg])
-        //if ((meta.ref_subtype == null) & (meta.flu_seg == 0) ) {
-        //    def ref_dirs_map = buildReferenceTags(
-        //        params.nextclade_data_dir,
-        //        meta.sample_id,
-        //        meta.taxid)
-        //    return [meta, consensus_fa, ref_dirs_map]
-        //} else {
+
+    input_ch
+    .map{meta, consensus_fa ->
         def ref_dirs_map = buildReferenceTags(
                 params.nextclade_data_dir,
                 meta.sample_id,
-                meta.taxid,
-                meta.ref_subtype,
-                meta.flu_seg)
+                meta.virus,
+                meta.sample_subtype,
+                meta.flu_segment)
         return [meta, consensus_fa, ref_dirs_map] // [[meta, fa, [[ref_dir_a], [ref_dir_b], ...]]
-        //}
     }
     .branch{ meta, fa, ref_dirs_map ->
         found : ref_dirs_map != []
@@ -38,7 +30,8 @@ workflow RUN_NEXTCLADE {
             [meta, fa]
     }
     .set{ data_dir_ch}
-    data_dir_ch.not_found.view{"No nextclade data on nextclade_data_dir found for ${it[0].id} ${it}"}
+
+    //data_dir_ch.not_found.view{"No nextclade data on nextclade_data_dir found for ${it[0].id} ${it}"}
 
     data_dir_ch.found
     .flatMap{list -> expandList(list)} // [[meta, fa, ref_dir_map_a], [meta, fa, ref_dir_map_b]]
@@ -54,7 +47,7 @@ workflow RUN_NEXTCLADE {
     run_nextclade.out
     .map{meta, csv, tar_gz -> [meta, [csv,tar_gz]] }
     .set {publish_files_In_ch}
-
+    //publish_files_In_ch.view()
     publish_consensus_files{publish_files_In_ch}
 
 }
@@ -88,20 +81,21 @@ List<File> findReferenceDirs(dataDir, virusTaxid,subtype = null, segNumber = nul
     // Build the base path depending on whether subtype/segNumber are provided
     def parts = [dataDir, virusTaxid]
     if (subtype != null && segNumber != null) {
-        parts << subtype << segNumber
+        parts << segNumber << subtype
     }
     def baseDir = new File(parts.join(File.separator))
-    //println(baseDir)
+
     if (!baseDir.isDirectory()) {
         return []
     }
 
     // Look only at immediate subdirectories under baseDir,
     // and keep those that contain a file named "reference.fasta"
-    return (baseDir.listFiles() ?: [])
+    def output = (baseDir.listFiles()) //?: [])
         .findAll { it.isDirectory() && new File(it, "reference.fasta").isFile() }
         .collect { it.canonicalFile }   // normalize paths
         .sort { it.path }               // deterministic order
+    return output
 }
 
 List<Map> buildReferenceTags(dataDir, sampleId,taxid,subtype = null, segNumber = null) {
