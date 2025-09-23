@@ -80,9 +80,15 @@ List<File> findReferenceDirs(dataDir, virusTaxid,subtype = null, segNumber = nul
     */
     // Build the base path depending on whether subtype/segNumber are provided
     def parts = [dataDir, virusTaxid]
-    if (subtype != null && segNumber != null) {
-        parts << segNumber << subtype
+
+    if (segNumber != null) {
+        parts << segNumber
     }
+
+    if (subtype != null) {
+        parts << subtype
+    }
+
     def baseDir = new File(parts.join(File.separator))
 
     if (!baseDir.isDirectory()) {
