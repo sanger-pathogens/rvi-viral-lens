@@ -13,7 +13,7 @@ process run_nextclade {
     script:
     def ref_fasta = "${data_dir}/reference.fasta"
     def ref_tree = "${data_dir}/tree.json"
-    def ref_gff = "${data_dir}/genome_annotation.gff3"
+    def ref_gff = "${data_dir}/genome_annotation.CDS.gff3"
 
     if (file(ref_tree).exists())
         """
