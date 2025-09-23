@@ -47,7 +47,7 @@ workflow RUN_NEXTCLADE {
     run_nextclade.out
     .map{meta, csv, tar_gz -> [meta, [csv,tar_gz]] }
     .set {publish_files_In_ch}
-    //publish_files_In_ch.view()
+
     publish_consensus_files{publish_files_In_ch}
 
 }

@@ -106,9 +106,12 @@ workflow {
         [final_meta, fa]
     }
     .set {nextclade_In_ch}
-    //nextclade_In_ch.view()
-
-    RUN_NEXTCLADE(nextclade_In_ch)
+    // TODO add check parameters
+    if (params.nextclade_data_dir == null){
+        log.warn("No nextclade_data_dir provided, skipping nextclade analysis step")
+    } else {
+        RUN_NEXTCLADE(nextclade_In_ch)
+    }
 
     // === 4 - Compute QC metrics ==
     COMPUTE_QC_METRICS(GENERATE_CONSENSUS.out)
