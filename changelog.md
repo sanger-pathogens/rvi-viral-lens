@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.0]
+
+- **[added]**: add Nextclade to compute QC metrics optionally
+
 ## [1.4.1]
 
 - **[improvement]**: promote kraken report per sample (*.kraken_report.txt) to a primary output
