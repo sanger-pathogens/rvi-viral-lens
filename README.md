@@ -55,6 +55,7 @@ This pipeline will generate, if possible, high quality consensus sequences for e
     - [COMPUTE\_QC\_METRICS](#compute_qc_metrics)
     - [SCOV2\_SUBTYPING](#scov2_subtyping)
     - [GENERATE\_CLASSIFICATION\_REPORT](#generate_classification_report)
+    - [RUN\_NEXTCLADE](#run_nextclade)
   - [Custom pipeline scripts](#custom-pipeline-scripts)
     - [Kraken2ref JSON to TSV Report Script](#kraken2ref-json-to-tsv-report-script)
     - [QC Script for BAM and FASTA Files](#qc-script-for-bam-and-fasta-files)
@@ -76,6 +77,7 @@ The pipeline takes a manifest containing  **fastq pairs file** paths and a **kra
 
 4. **SARS-CoV-2 Subtyping**: SARS-CoV-2 subtyping can be done if present on the sample
 
+5. **RUN_NEXTCLADE**: Run nextclade based on a given nextclade database directory structure.
 
 ---
 
@@ -608,7 +610,31 @@ The `SCOV2_SUBTYPING` workflow is designed to determine the SARS-CoV-2 lineage (
 
 #### GENERATE_CLASSIFICATION_REPORT
 
-The GENERATE_CLASSIFICATION_REPORT workflow generates a classification report based on metadata associated with sequencing samples. This workflow collects metadata from each sample, formats the data into a report line, and aggregates these lines into a final classification report file. A report file with filtered out sequences is written as well.
+The `GENERATE_CLASSIFICATION_REPORT` workflow generates a classification report based on metadata associated with sequencing samples. This workflow collects metadata from each sample, formats the data into a report line, and aggregates these lines into a final classification report file. A report file with filtered out sequences is written as well.
+
+#### RUN_NEXTCLADE
+
+The `RUN_NEXCLADE` workflow generate QC metrics for sequences supported by a dataset (path set by `nextclade_data_dir` parameter) which provides a **reference FASTA**, a **GFF3 annotation** and (optionally) a **tree JSON** following the directory structure bellow:
+
+- Non-segmented viruses
+
+```bash
+<refseq_taxid>/<assembly_id>/{reference.fasta, genome_annotation.CDS.gff3, tree.json?}
+```
+
+- Segmented viruses (e.g. Flu B)
+
+```bash
+<refseq_taxid>/<assembly_id>/{reference.fasta, genome_annotation.CDS.gff3, tree.json?}
+```
+
+- Segmented viruses with subtype (e.g., Flu A)
+
+```bash
+<refseq_taxid>/<segment_number>/<subtype>/<assembly_id>/{reference.fa, genome_annotation.CDS.gff3, tree.json?}
+```
+
+> If `nextclade_data_dir` is not provided, this workflow will not run.
 
 ### Custom pipeline scripts
 
