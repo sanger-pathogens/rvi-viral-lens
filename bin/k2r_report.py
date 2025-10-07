@@ -132,12 +132,26 @@ def get_report(in_file, report_file, out_suffix=".viral_pipe.report.tsv"):
         segment = None
         generic_subtype = None
 
+        # ----- get RSV subtype --------
+        # if virus name is "Orthopneumovirus hominis" then get the second word
+        # in the reference name, which should be A or B
+        if virus_name == "Orthopneumovirus hominis":
+            subtype = ref_name.split(" ")[1]
+            generic_subtype = subtype
+            # if subtype is not A or B, set it to None
+            if subtype not in ["A", "B"]:
+                subtype = None
+                generic_subtype = None
+
+        # WARNING: this naming scheme comes from kraken database, if it changes
+        #  change this accordingly
+
         # if flu B, get segment number, but not subtype
         # NOTE:
         #  This part of the code assumes flu B refname will ALWAYS
-        #  have the the term "segment <int>" in its header 
+        #  have the the term "segment <int>" in its header
 
-        if ref_name.startswith("B/"):
+        elif ref_name.startswith("B/"):
             segment = regex_subtyping("(?<=segment )[0-9]", ref_name)
 
         else:

@@ -32,11 +32,11 @@
     },
     "kraken2_mem": {
       "type": "string",
-      "default": "1 GB"
+      "default": "2.GB"
     },
     "kraken2_cpus": {
       "type": "integer",
-      "default": 16
+      "default": 4
     },
     "k2r_fq_load_mode": {
       "type": "string",
@@ -144,6 +144,13 @@
     },
     "developer_publish": {
       "type": "boolean"
+    },
+    "nextclade_data_dir": {
+      "type": "string"
+    },
+    "nextclade_output_verbosity": {
+      "type": "string",
+      "default": "all"
     }
   }
 }

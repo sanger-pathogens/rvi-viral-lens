@@ -2,33 +2,33 @@
 process get_taxid_reference_files{
     /*
     *         Fetch Fasta Sequence Files for a Given Taxid
-    
-     The get_taxid_reference_files process is designed to extract 
+
+     The get_taxid_reference_files process is designed to extract
      reference sequences corresponding to a specified taxonomic ID
-     (taxid) from a larger FASTA file. This process retrieves the 
-     relevant sequence, writes it to an output file, and indexes 
+     (taxid) from a larger FASTA file. This process retrieves the
+     relevant sequence, writes it to an output file, and indexes
      it using BWA (Burrows-Wheeler Aligner). This step is essential
      for downstream analysis that requires taxon-specific reference
-     sequences. In the context of the pipeline, it is used to 
+     sequences. In the context of the pipeline, it is used to
      extract all the reference files from the Kraken database which
      were observed on that input batch.
-    
+
     * --------------------------------------------------------------
-     
+
     * Input:
        - taxid: The taxonomic ID for which reference sequences are
            being retrieved.
        - kraken_db_library_path: The path to the source FASTA file
            containing sequences for multiple taxa.
-    
+
     * Output:
        - A FASTA file (`${taxid}.fa`) containing the sequence
          corresponding to the specified taxid.
        - BWA index files generated from the FASTA file `(${taxid}.fa.*)`
-    
-    * NOTE: Output is optional, as sequences may not be found for all 
+
+    * NOTE: Output is optional, as sequences may not be found for all
     *      specified taxids.
-    
+
     * --------------------------------------------------------------
     * > TODO: we need to either remove the optional or, at least,
     *            raise a warning when that happens.
@@ -48,46 +48,9 @@ process get_taxid_reference_files{
         tuple val(taxid), path("${taxid}.fa"), path("${taxid}.fa.*"), stdout, optional : true
 
     script:
-$/
-#!/usr/bin/python3
-
-import subprocess 
-
-taxid_to_find = "${taxid}"
-output_file = "${taxid}.fa"
-source_fna_path = "${kraken_db_library_path}"
-
-with open(source_fna_path, "r") as source_file:
-    header = ""
-    seq = ""
-    found = False
-    nfound = 0
-    for line in source_file:
-        line = line.strip()
-        if line.startswith(">"):
-            if found:
-                break  # Exit loop after finding the first sequence matching taxid
-            header = line
-            if f"|{taxid_to_find}|" in header:
-                nfound +=1
-                found = True
-        elif found:
-            seq += line
-
-# Write output only if a matching sequence is found
-if found:
-    ## replace open_paren with hyphen and remove close_paren
-    ## this is to avoid those chars being an issue when
-    ## loading the subsequently generated bam files into IGV
-    header_to_write = header.replace("(", "-").replace(")", "")
-    with open(output_file, "w") as output:
-        output.write(header_to_write + "\n" + seq + "\n")
-
-    # Also write header to stdout so that we can record it as a property
-    print( header_to_write, end="" )
-    # Run bwa index on the output file
-    subprocess.run(["bwa", "index", output_file])
-/$
+"""
+extract_sequence.py ${taxid} ${taxid}.fa ${kraken_db_library_path}
+"""
 }
 
 /*
@@ -98,7 +61,7 @@ extracting reference sequences for a given taxid from a source FASTA
 file and indexing them with BWA.
 
 - Reading the Source File:
-  - The script reads through the `source_fna_path`, which contains 
+  - The script reads through the `source_fna_path`, which contains
     sequences for multiple taxa.
   - It searches for headers (`>`) that contain the specified taxid
     (`|${taxid}|`).
