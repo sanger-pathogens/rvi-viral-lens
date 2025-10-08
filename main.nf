@@ -16,7 +16,7 @@ include {COMPUTE_QC_METRICS} from './workflows/COMPUTE_QC_METRICS.nf'
 include {SCOV2_SUBTYPING} from './workflows/SCOV2_SUBTYPING.nf'
 include {GENERATE_CLASSIFICATION_REPORT} from './workflows/GENERATE_CLASSIFICATION_REPORT.nf'
 include {RUN_NEXTCLADE} from './workflows/RUN_NEXTCLADE.nf'
-include {publish_consensus_files; publish_run_files} from './modules/publish_lite.nf'
+include {publish_consensus_files as publish_aln_files; publish_consensus_files as publish_nc_files; publish_run_files} from './modules/publish_lite.nf'
 
 // Main entry-point workflow
 workflow {
@@ -113,6 +113,8 @@ workflow {
         RUN_NEXTCLADE(nextclade_In_ch)
     }
 
+    RUN_NEXTCLADE.out.set { nextclade_publish_outputs_ch }
+
     // === 4 - Compute QC metrics ==
     COMPUTE_QC_METRICS(GENERATE_CONSENSUS.out)
 
@@ -168,13 +170,16 @@ workflow {
 
     // === 7 - Finally, publish formal outputs of the pipeline
 
-    publish_consensus_files (
+    publish_aln_files (
         // only publish consensus sequence, bams and properties; qc and variants file considered
         // intermediate outputs
         filtered_consensus_ch
             .map{  meta, bam, bam_idx, fasta, _variants, _qc -> tuple( meta, [bam, bam_idx, fasta] ) }
             .mix( GENERATE_CLASSIFICATION_REPORT.out.consensus_properties_ch )
     )
+
+    publish_nc_files(nextclade_publish_outputs_ch)
+
     publish_run_files(
         GENERATE_CLASSIFICATION_REPORT.out.collated_properties_ch
             .mix(GENERATE_CLASSIFICATION_REPORT.out.classification_report_ch)
