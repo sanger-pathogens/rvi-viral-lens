@@ -2,8 +2,9 @@
 
 // import workflow
 nextflow.enable.dsl = 2
-include {run_nextclade} from '../modules/run_nextclade.nf'
+// include {run_nextclade} from '../modules/run_nextclade.nf'
 include {publish_consensus_files} from '../modules/publish_lite.nf'
+include {run_nextclade; collate_nextclade_jsons} from '../modules/run_nextclade.nf'
 
 workflow RUN_NEXTCLADE {
     take:
@@ -33,23 +34,22 @@ workflow RUN_NEXTCLADE {
 
     //data_dir_ch.not_found.view{"No nextclade data on nextclade_data_dir found for ${it[0].id} ${it}"}
 
-    data_dir_ch.found
-    .flatMap{list -> expandList(list)} // [[meta, fa, ref_dir_map_a], [meta, fa, ref_dir_map_b]]
-    .map{meta, fa, ref_dirs_map ->
-        def new_meta = meta + ref_dirs_map
-
-        [new_meta, fa, new_meta.dir]
+    data_dir_ch.found.map{meta, fa, ref_dirs_map ->
+        def dir_list = ref_dirs_map.collect { it.dir }
+        [meta, fa, dir_list]
     }
-    .set {nextclade_In_ch}
+    .set { experimental_nextclade_In_ch }
 
-    // publish nextclade output files
-    run_nextclade(nextclade_In_ch, params.nextclade_output_verbosity)
-    run_nextclade.out
-    .map{meta, csv, tar_gz -> [meta, [csv,tar_gz]] }
-    .set {publish_files_In_ch}
+    run_nextclade(experimental_nextclade_In_ch)
+    collate_nextclade_jsons(run_nextclade.out)
 
-    publish_consensus_files{publish_files_In_ch}
+    collate_nextclade_jsons.out
+        .map{meta, agg_json, tar_gz -> [meta, [agg_json,tar_gz]] }
+        .set { publish_nextclade_outputs_ch }
 
+
+    // publish_consensus_files(publish_nextclade_outputs_ch)
+    emit: publish_nextclade_outputs_ch
 }
 
 
@@ -104,19 +104,19 @@ List<File> findReferenceDirs(dataDir, virusTaxid,subtype = null, segNumber = nul
     return output
 }
 
-List<Map> buildReferenceTags(dataDir, sampleId,taxid,subtype = null, segNumber = null) {
+List<Map> buildReferenceTags(dataDir, sampleId, species_taxid, subtype = null, segNumber = null) {
     /**
     * Build tag IDs for all reference dirs found under the Nextclade hierarchy.
     *
-    * Case 1: <taxid>/<assembly>/reference.fasta
-    *   tag_id = <sample_id>.<taxid>.<assembly>
+    * Case 1: <species_taxid>/<assembly>/reference.fasta
+    *   tag_id = <sample_id>.<species_taxid>.<assembly>
     *
-    * Case 2: <taxid>/<subtype>/<seg_number>/<assembly>/reference.fasta
-    *   tag_id = <sample_id>.<taxid>.<subtype>.segment<seg_number>.<assembly>
+    * Case 2: <species_taxid>/<subtype>/<seg_number>/<assembly>/reference.fasta
+    *   tag_id = <sample_id>.<species_taxid>.<subtype>.segment<seg_number>.<assembly>
     *
     * @return List of [File referenceDir, String tagId] pairs
     */
-    def dirs = findReferenceDirs(dataDir, taxid, subtype, segNumber)
+    def dirs = findReferenceDirs(dataDir, species_taxid, subtype, segNumber)
 
     if (dirs == []){
         return []
@@ -126,10 +126,10 @@ List<Map> buildReferenceTags(dataDir, sampleId,taxid,subtype = null, segNumber =
             def tagId
             if (subtype && segNumber) {
                 // Case 2
-                tagId = "${sampleId}.${taxid}.${subtype}.segment${segNumber}.${assembly}"
+                tagId = "${sampleId}.${species_taxid}.${subtype}.segment${segNumber}.${assembly}"
             } else {
                 // Case 1
-                tagId = "${sampleId}.${taxid}.${assembly}"
+                tagId = "${sampleId}.${species_taxid}.${assembly}"
             }
             [dir: dir.toString(), tag_id: tagId]
         }
