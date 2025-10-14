@@ -2,9 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.5.0]
+## [unreleased]
 
 - **[added]**: add Nextclade to compute QC metrics optionally
+- **[change]**: Nextclade process now runs one consensus to many datasets, instead of one process for each dataset
+- **[change]**: Move QC metrics calling into GENERATE_CONSENSUS; this workflow now emite ONLY data where consensus is not all-N. COMPUTE_QC_METRICS workflow now removed.
+- **[change]**: QC JSON, and Nextclade JSON now aggregated at per-consensus level to create single properties file. `nc.` prefix indicates properties from the "best fit" nextclade dataset results if multiple.
+- **[added]**: Added `write_all_summaries.py` which produces per-consensus properties files (see above) and per-run JSON and CSV output. Run-level JSON contains ONLY "best fit" nextclade dataset outputs. For all (where multiple) see per-consensus properties JSON files
+- **[change]**: `classification_report.csv` now called `summary_report.csv`
+- **[removed]**: Removed unused code and functions, general cleanup
 
 ## [1.4.1]
 
@@ -40,7 +46,7 @@ All notable changes to this project will be documented in this file.
 
 ## [1.1.1]
 
-- **[fix]**: fix sanger local 
+- **[fix]**: fix sanger local
 
 ## [1.1.0]
 
@@ -112,11 +118,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- **[added]**: LSF memory escalation strategy for kraken2ref 
+- **[added]**: LSF memory escalation strategy for kraken2ref
 - **[added]**: Columns Virus_Taxon_ID, Virus, Species, Reference_Taxon_ID, Selected_Reference added/populated to classification report
 
 ### Added
-- **[added]**: add LSF memory escalation strategy for kraken2ref 
+- **[added]**: add LSF memory escalation strategy for kraken2ref
 - **[added]**: Columns Virus_Taxon_ID, Virus, Species, Reference_Taxon_ID, Selected_Reference added/populated to classification report
 
 ## [0.2.1] - 2024-06-20
@@ -174,7 +180,7 @@ All notable changes to this project will be documented in this file.
 
 ### Removed
 
-- **[Removed]**: writing manifest process removed from `SORT_READS_BY_REF.nf` 
+- **[Removed]**: writing manifest process removed from `SORT_READS_BY_REF.nf`
 - **[Removed]**: json resource files and fasta files provided on the repo
 
 ---
