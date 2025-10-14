@@ -27,23 +27,18 @@ workflow GENERATE_CLASSIFICATION_REPORT {
     */
 
     take:
-        report_in_ch // [meta.id, meta]
-        qc_json_simplified_ch // [meta.id, per-consensus-qc-json]
-        per_con_nexclade_collated_json_in_ch // [meta.id, per-consensus-nextclade-json]
+        report_prep_ch //  [meta.id, meta, qc_json, nc_json]
 
     main:
-        report_in_ch // [meta.id, meta]
-            .join(qc_json_simplified_ch, remainder: true) // [meta.id, meta, qc_json]
-            .join(per_con_nexclade_collated_json_in_ch, remainder: true) //  [meta.id, meta, qc_json, nc_json]
-            .set{ report_prep_ch }
-
-
-        // qc_json_simplified_ch.view{ "QC_JSON_CH: $it \n" }
-        // report_prep_ch.view{ "REPORT_PREP_CH: $it \n" }
         write_sequence_level_summaries(report_prep_ch)
         write_sequence_level_summaries.out.set{publish_seq_level_ch}
 
-        write_run_level_summaries(write_sequence_level_summaries.out.collect())
+        write_sequence_level_summaries.out
+            .map{meta, per_con_json -> [per_con_json]}
+            .collect()
+            .set{all_summaries_pre_ch}
+
+        write_run_level_summaries(all_summaries_pre_ch)
         write_run_level_summaries.out.set{publish_run_level_summaries_ch}
 
     emit:
