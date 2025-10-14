@@ -13,6 +13,7 @@ nextflow_workflow {
                     sample_id: "FluH1N1_SARSCoV2_hPIV1_33K_ea_P1",
                     taxid: "2697049",
                     id: "FluH1N1_SARSCoV2_hPIV1_33K_ea_P1.2697049",
+                    longest_non_n_subsequence: 1353,
                     ref_files: [
                         "${projectDir}/tests/test_data/test_references/2697049.fa",
                         "${projectDir}/tests/test_data/test_references/2697049.fa.amb",
@@ -23,14 +24,22 @@ nextflow_workflow {
                     ]
                 ]
                 reads = [
-                    "${projectDir}/tests/test_data/test_taxon_reads/FluH1N1_SARSCoV2_hPIV1_33K_ea_P1/FluH1N1_SARSCoV2_hPIV1_33K_ea_P1.2697049.extracted_1.fq", 
+                    "${projectDir}/tests/test_data/test_taxon_reads/FluH1N1_SARSCoV2_hPIV1_33K_ea_P1/FluH1N1_SARSCoV2_hPIV1_33K_ea_P1.2697049.extracted_1.fq",
                     "${projectDir}/tests/test_data/test_taxon_reads/FluH1N1_SARSCoV2_hPIV1_33K_ea_P1/FluH1N1_SARSCoV2_hPIV1_33K_ea_P1.2697049.extracted_2.fq"
                 ]
             }
             workflow {
                 """
                 // define inputs of the workflow here. Example:
-                input[0] = Channel.of(tuple(params.meta, params.reads))
+                input[0] = Channel.of(
+                        tuple(
+                            params.meta,
+                            params.reads,
+                            params.meta.ref_files[0],
+                            [params.meta.ref_files[1], params.meta.ref_files[2], params.meta.ref_files[3], params.meta.ref_files[4], params.meta.ref_files[5]]
+                            )
+                        )
+
                 """
             }
 
