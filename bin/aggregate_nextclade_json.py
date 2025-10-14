@@ -88,6 +88,7 @@ def main():
         ("No files found!!!.")
         return
 
+    print("Creating sample-level JSON...")
     json_data = load_json_files(file_paths)
     sorted_data = sort_json_list(json_data)
     write_output_json(sorted_data, args.output)
