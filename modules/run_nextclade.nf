@@ -1,9 +1,7 @@
 process run_nextclade {
 
-    // tag "${meta.tag_id}"
+    tag "${meta.id}"
     label "nextclade"
-
-    // publishDir "${params.outdir}/experimental/${meta.sample_id}.${meta.selected_taxid}/", mode: 'copy', pattern: "*.{tar.gz,json}"
 
     input:
     tuple val(meta), path(input_fa), val(data_dir_list)
@@ -12,7 +10,6 @@ process run_nextclade {
     tuple val(meta), path("*.json"), path("*_nextclade.tar.gz")
 
     script:
-    def nextclade_output_verbosity = "all"
     def agg_label = "${meta.sample_id}.${meta.selected_taxid}"
     def cmd_lines = data_dir_list.collect { assembly_path ->
         def assembly_name = assembly_path.toString().split('/')[-1]
@@ -35,7 +32,7 @@ process run_nextclade {
                 -a ${ref_tree} \
                 -m ${ref_gff} \
                 -O ${data_label}_nextclade \
-                -s ${nextclade_output_verbosity} \
+                -s "all" \
                 -n ${data_label} \
                 --include-reference true \
                 ${input_fa}
@@ -48,7 +45,7 @@ process run_nextclade {
                 -r ${ref_fasta} \
                 -m ${ref_gff} \
                 -O ${data_label}_nextclade \
-                -s ${nextclade_output_verbosity} \
+                -s "all" \
                 -n ${data_label} \
                 --include-reference true \
                 ${input_fa}
@@ -69,17 +66,17 @@ process run_nextclade {
 }
 
 process collate_nextclade_jsons {
+    tag "${meta.id}"
+
     input:
     tuple val(meta), val(json_path_list), path(nextclade_tarball)
 
     output:
-    tuple val(meta), path("${meta.sample_id}.${meta.selected_taxid}.agg.json"), path(nextclade_tarball)
-
-    // publishDir "${params.outdir}/experimental/${meta.sample_id}.${meta.selected_taxid}/", mode: 'copy', pattern: "*.{json}"
+    tuple val(meta), path("${meta.sample_id}.${meta.selected_taxid}.nextclade.json"), path(nextclade_tarball)
 
     script:
-    def json_file_args = ([json_path_list].flatten()*.toString()).join(' ')
+    def json_file_args = ([json_path_list].flatten()*.toString()).join(" ")
     """
-    aggregate_nextclade_json.py ${json_file_args} -o ${meta.sample_id}.${meta.selected_taxid}.agg.json
+    aggregate_nextclade_json.py ${json_file_args} -o ${meta.sample_id}.${meta.selected_taxid}.nextclade.json
     """
 }
