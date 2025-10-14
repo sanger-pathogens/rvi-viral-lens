@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 - **[added]**: add Nextclade to compute QC metrics optionally
 - **[change]**: Nextclade process now runs one consensus to many datasets, instead of one process for each dataset
-- **[change]**: Move QC metrics calling into GENERATE_CONSENSUS; this workflow now emite ONLY data where consensus is not all-N. COMPUTE_QC_METRICS workflow now removed.
+- **[change]**: Move QC metrics calling into GENERATE_CONSENSUS; this workflow now emits ONLY data where consensus is not all-N. COMPUTE_QC_METRICS workflow now removed.
 - **[change]**: QC JSON, and Nextclade JSON now aggregated at per-consensus level to create single properties file. `nc.` prefix indicates properties from the "best fit" nextclade dataset results if multiple.
 - **[added]**: Added `write_all_summaries.py` which produces per-consensus properties files (see above) and per-run JSON and CSV output. Run-level JSON contains ONLY "best fit" nextclade dataset outputs. For all (where multiple) see per-consensus properties JSON files
 - **[change]**: `classification_report.csv` now called `summary_report.csv`
