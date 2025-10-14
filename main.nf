@@ -178,22 +178,18 @@ workflow {
                     }
                 .set{ aln_publish_ch }
 
-    GENERATE_CLASSIFICATION_REPORT(report_in_ch, qc_json_simplified_ch, per_consensus_nextclade_json_ch)
+    report_in_ch // [meta.id, meta]
+            .join(qc_json_simplified_ch, remainder: true) // [meta.id, meta, qc_json]
+            .join(per_consensus_nextclade_json_ch, remainder: true) //  [meta.id, meta, qc_json, nc_json]
+            .set{ report_prep_ch }
 
-    GENERATE_CLASSIFICATION_REPORT.out.publish_seq_level_ch.map{ json ->
-                                                                    def basename = file(json).baseName
-                                                                    def tokens = basename.tokenize('.')
-                                                                    def sample_id = tokens[0]
-                                                                    def taxid = tokens[1]
-
-                                                                [[("sample_id"): sample_id, ("taxid"): taxid], json]
-                                                                }
-                                                            .set{per_seq_json_publish_ch}
+    GENERATE_CLASSIFICATION_REPORT(report_prep_ch)
 
     // PUBLISH
     publish_aln_files(aln_publish_ch)
     publish_nc_files(publish_nextclade_outputs_ch)
-    publish_per_sample_json(per_seq_json_publish_ch)
+    // publish_per_sample_json(per_seq_json_publish_ch)
+    publish_per_sample_json(GENERATE_CLASSIFICATION_REPORT.out.publish_seq_level_ch)
     publish_run_files(GENERATE_CLASSIFICATION_REPORT.out.publish_run_level_summaries_ch)
 
     workflow.onComplete = {
