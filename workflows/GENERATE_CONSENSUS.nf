@@ -2,6 +2,7 @@
 
 include {bwa_alignment_and_post_processing} from '../modules/bwa_alignment.nf'
 include {run_ivar} from '../modules/run_ivar.nf'
+include {run_qc_script} from '../modules/run_qc_script.nf'
 
 workflow GENERATE_CONSENSUS {
     /*
@@ -55,13 +56,25 @@ workflow GENERATE_CONSENSUS {
 
         run_ivar(ivar_in_ch)
 
-    emit:
         run_ivar.out
+            .set { ivar_out_ch }
 
-}
+        run_qc_script(ivar_out_ch)
 
-def check_generate_consensus_params(){
-    // < placeholder >
-    def errors = 0
-    return errors
+        run_qc_script.out
+            .map {meta, bam, bam_idx, consensus, variants, qc_json ->
+                def json_map = new groovy.json.JsonSlurper().parse(new File(qc_json.toString()))
+                def filter_map = [("longest_non_n_subsequence"): json_map["longest_non_n_subsequence"]]
+                def new_meta = meta.plus(filter_map)
+                tuple(new_meta, bam, bam_idx, consensus, variants, qc_json) }
+            .set {qc_out_ch}
+
+
+        qc_out_ch
+        .filter{  it -> (it[0].longest_non_n_subsequence > 0) }
+        .set{filtered_consensus_ch}
+
+    emit:
+        filtered_consensus_ch
+
 }
