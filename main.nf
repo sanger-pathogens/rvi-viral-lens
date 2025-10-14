@@ -112,8 +112,20 @@ workflow {
     // TODO add check parameters
     if (params.nextclade_data_dir == null){
         log.warn("No nextclade_data_dir provided, skipping nextclade analysis step")
+        publish_nextclade_outputs_ch = Channel.empty()
+        per_consensus_nextclade_json_ch = Channel.empty()
     } else {
         RUN_NEXTCLADE(nextclade_In_ch)
+        RUN_NEXTCLADE.out
+            .map{meta, agg_json, tar_gz -> [meta, tar_gz] }
+            .set { publish_nextclade_outputs_ch }
+
+        RUN_NEXTCLADE.out
+            .map{meta, json, _tarball ->
+                    def join_key = meta.id
+                    [join_key, json]
+                }
+            .set{ per_consensus_nextclade_json_ch }
     }
 
     // === 5 - branching output from generate_consensus for viral specific subtyping
@@ -165,17 +177,6 @@ workflow {
                     [meta, [bam, bam_idx, consensus]]
                     }
                 .set{ aln_publish_ch }
-
-    RUN_NEXTCLADE.out
-        .map{meta, agg_json, tar_gz -> [meta, tar_gz] }
-        .set { publish_nextclade_outputs_ch }
-
-    RUN_NEXTCLADE.out
-        .map{meta, json, _tarball ->
-                def join_key = meta.id
-                [join_key, json]
-            }
-        .set{ per_consensus_nextclade_json_ch }
 
     GENERATE_CLASSIFICATION_REPORT(report_in_ch, qc_json_simplified_ch, per_consensus_nextclade_json_ch)
 
