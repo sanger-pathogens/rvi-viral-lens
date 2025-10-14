@@ -2,7 +2,6 @@
 
 // import workflow
 nextflow.enable.dsl = 2
-// include {run_nextclade} from '../modules/run_nextclade.nf'
 include {publish_consensus_files} from '../modules/publish_lite.nf'
 include {run_nextclade; collate_nextclade_jsons} from '../modules/run_nextclade.nf'
 
@@ -32,7 +31,7 @@ workflow RUN_NEXTCLADE {
     }
     .set{ data_dir_ch}
 
-    //data_dir_ch.not_found.view{"No nextclade data on nextclade_data_dir found for ${it[0].id} ${it}"}
+    //data_dir_ch.not_found.view{"No nextclade data on nextclade_data_dir found for ${it[0].id}"}
 
     data_dir_ch.found.map{meta, fa, ref_dirs_map ->
         def dir_list = ref_dirs_map.collect { it.dir }
@@ -43,29 +42,8 @@ workflow RUN_NEXTCLADE {
     run_nextclade(experimental_nextclade_In_ch)
     collate_nextclade_jsons(run_nextclade.out)
 
+    emit:
     collate_nextclade_jsons.out
-        .map{meta, agg_json, tar_gz -> [meta, [agg_json,tar_gz]] }
-        .set { publish_nextclade_outputs_ch }
-
-
-    // publish_consensus_files(publish_nextclade_outputs_ch)
-    emit: publish_nextclade_outputs_ch
-}
-
-
-def expandList(List input) {
-    if (input.isEmpty()) return []
-
-    def prefix = input[0..-2] // everything except the last element
-    def last   = input[-1] // last element (may be a list or not)
-
-    if (last instanceof List) {
-        // Expand each element of the last list with the prefix
-        return last.collect { item -> prefix + item }
-    } else {
-        // If last isn't a list, just wrap the input
-        return [input]
-    }
 }
 
 
