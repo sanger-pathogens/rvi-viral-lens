@@ -3,7 +3,7 @@ process write_sequence_level_summaries {
     tuple val(sample_id), val(meta), val(qc_json), val(nc_json)
 
     output:
-    path("${sample_id}.properties.json")
+    tuple val(meta), path("${sample_id}.properties.json")
 
     script:
     def metaJson = groovy.json.JsonOutput.toJson(meta)
