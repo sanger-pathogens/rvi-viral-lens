@@ -33,7 +33,7 @@ def build_summary_csv_mapping():
             "deletions": "n_deletions",
             "snps": "n_snps",
             "ti_tv_ratio": "ti_tv_ratio",
-            "nc.dataset": "nc.dataset",
+            "nc.selected_dataset": "nc.selected_dataset",
             "nc.coverage": "nc.coverage",
             "nc.qc.overallScore": "nc.qc.overallScore",
             "nc.qc.overallStatus": "nc.qc.overallStatus",
@@ -50,7 +50,7 @@ def build_summary_csv_mapping():
 
 def build_nc_mappings():
     nc_mappings = {
-                    "nc.dataset": lambda d: d["dataset"],
+                    "nc.selected_dataset": lambda d: d["dataset"],
                     "nc.coverage": lambda d: d["results"][0]["coverage"] or "None",
                     "nc.qc.overallScore": lambda d: d["results"][0]["qc"]["overallScore"],
                     "nc.qc.overallStatus": lambda d: d["results"][0]["qc"]["overallStatus"] or "None",
@@ -68,7 +68,7 @@ def write_summary_csv(data_list, output_path):
                   'Selected_Reference', 'Flu_Segment', 'Reference_Subtype', 'Sample_Subtype',
                   'Percentage_of_Genome_Covered', 'Total_Mapped_Reads', 'Total_Mapped_Bases',
                   'Longest_non_N_segment', 'Percentage_non_N_bases', 'total_mutations', 'n_insertions',
-                  'n_deletions', 'n_snps', 'ti_tv_ratio', 'nc.dataset', 'nc.coverage', 'nc.qc.overallScore',
+                  'n_deletions', 'n_snps', 'ti_tv_ratio', 'nc.selected_dataset', 'nc.coverage', 'nc.qc.overallScore',
                   'nc.qc.overallStatus', 'nc.qc.missingData', 'nc.qc.mixedSites', 'nc.qc.privateMutations',
                   'nc.qc.snpClusters', 'nc.qc.frameShifts', 'nc.qc.stopCodons', 'file_prefix']
 
@@ -146,11 +146,14 @@ def main():
             raise ValueError("No files found to concatenate!")
 
         run_data = []
+        csv_data = []
         for json_file in args.concat_files:
             json_data = safeload_json(json_file)
             exisiting_nc_data = json_data["nextclade_results"]
             to_keep = exisiting_nc_data[:args.max_records]
             json_data["nextclade_results"] = to_keep
+            csv_data.append(json_data)
+            json_data.pop("num_nextclade_datasets", None)
             run_data.append(json_data)
 
         print(f"{len(run_data)} records in list run_data")
@@ -163,7 +166,7 @@ def main():
 
         summary_map = build_summary_csv_mapping()
         csv_lines = []
-        for per_con_data in sorted_run_data_list:
+        for per_con_data in csv_data:
             summary_line = {}
             for k, v in per_con_data.items():
                 try:
