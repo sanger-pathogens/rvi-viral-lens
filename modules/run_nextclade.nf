@@ -7,7 +7,7 @@ process run_nextclade {
     tuple val(meta), path(input_fa), val(data_dir_list)
 
     output:
-    tuple val(meta), path("*.json"), path("*_nextclade.tar.gz")
+    tuple val(meta), path("*.json"), path("*.nextclade.tar.gz")
 
     script:
     def agg_label = "${meta.sample_id}.${meta.selected_taxid}"
@@ -20,9 +20,9 @@ process run_nextclade {
 
         def data_label = ""
         if (meta.flu_segment != "") {
-            data_label = "${meta.sample_id}.${assembly_name}.segment${meta.flu_segment}"
+            data_label = "${meta.sample_id}.${meta.selected_taxid}.${assembly_name}.segment${meta.flu_segment}"
         } else {
-            data_label = "${meta.sample_id}.${assembly_name}"
+            data_label = "${meta.sample_id}.${meta.selected_taxid}.${assembly_name}"
         }
 
         if (file(ref_tree).exists()) {
@@ -31,12 +31,12 @@ process run_nextclade {
                 -r ${ref_fasta} \
                 -a ${ref_tree} \
                 -m ${ref_gff} \
-                -O ${data_label}_nextclade \
+                -O ${data_label}.nextclade \
                 -s "all" \
                 -n ${data_label} \
                 --include-reference true \
                 ${input_fa}
-            cp ${data_label}_nextclade/${data_label}.json .
+            cp ${data_label}.nextclade/${data_label}.json .
             """.stripIndent()
 
         } else {
@@ -44,12 +44,12 @@ process run_nextclade {
             nextclade run \
                 -r ${ref_fasta} \
                 -m ${ref_gff} \
-                -O ${data_label}_nextclade \
+                -O ${data_label}.nextclade \
                 -s "all" \
                 -n ${data_label} \
                 --include-reference true \
                 ${input_fa}
-            cp ${data_label}_nextclade/${data_label}.json .
+            cp ${data_label}.nextclade/${data_label}.json .
             """.stripIndent()
         }
     }
@@ -60,8 +60,9 @@ process run_nextclade {
 
     ${cmd_lines.join('\n\n')}
 
-    mkdir $agg_label && mv ./*_nextclade/ $agg_label
-    tar -czf ${agg_label}_nextclade.tar.gz $agg_label
+    mkdir $agg_label && mv ./*.nextclade/ $agg_label
+    mv $agg_label ${agg_label}.nextclade
+    tar -czf ${agg_label}.nextclade.tar.gz ${agg_label}.nextclade
     """
 }
 
