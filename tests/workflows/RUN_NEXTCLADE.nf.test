@@ -76,7 +76,7 @@ nextflow_workflow {
             // NOTE: The output jsons are not checked here, just that the process completes without error.
             // the json file contains timestamps that make it not possible to use md5sum or similar.
             // TODO: Add a more robust test (parse the json and check for expected values).
-            
+
             //assert snapshot(workflow.out).match()
             //assert workflow.stdout.contains("No nextclade data on nextclade_data_dir found for 12345_3_1.44444")
         }
