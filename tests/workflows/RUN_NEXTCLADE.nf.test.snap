@@ -1,0 +1,89 @@
+{
+    "Should run without failures": {
+        "content": [
+            {
+                "0": [
+                    [
+                        {
+                            "flu_segment": "",
+                            "sample_id": "12345_2_1",
+                            "sample_subtype": null,
+                            "selected_taxid": 694009,
+                            "id": "12345_2_1.33333",
+                            "virus": 694009
+                        },
+                        "12345_2_1.694009.nextclade.json:md5,b4194d74c914de2f4985bc3c6f2a155d",
+                        "12345_2_1.694009_nextclade.tar.gz:md5,4afea68232c38745163e7761d16c13e9"
+                    ],
+                    [
+                        {
+                            "flu_segment": 4,
+                            "sample_id": "12345_1_1",
+                            "sample_subtype": "H1",
+                            "selected_taxid": 2955291,
+                            "id": "12345_1_1.11111",
+                            "virus": 2955291
+                        },
+                        "12345_1_1.2955291.nextclade.json:md5,afe8a19e6635bb9a51fb04cd9946bcc6",
+                        "12345_1_1.2955291_nextclade.tar.gz:md5,77d242b48793ae9c806bcb66c40c79cd"
+                    ],
+                    [
+                        {
+                            "flu_segment": 6,
+                            "sample_id": "12345_1_2",
+                            "sample_subtype": "N1",
+                            "selected_taxid": 2955291,
+                            "id": "12345_1_2.22222",
+                            "virus": 2955291
+                        },
+                        "12345_1_2.2955291.nextclade.json:md5,56292784a0078c87c5f71d88a2a7c45d",
+                        "12345_1_2.2955291_nextclade.tar.gz:md5,f9f0c4a11a1df661ad5bb0c7da96b4f5"
+                    ]
+                ],
+                "final_nextclade_out_ch": [
+                    [
+                        {
+                            "flu_segment": "",
+                            "sample_id": "12345_2_1",
+                            "sample_subtype": null,
+                            "selected_taxid": 694009,
+                            "id": "12345_2_1.33333",
+                            "virus": 694009
+                        },
+                        "12345_2_1.694009.nextclade.json:md5,b4194d74c914de2f4985bc3c6f2a155d",
+                        "12345_2_1.694009_nextclade.tar.gz:md5,4afea68232c38745163e7761d16c13e9"
+                    ],
+                    [
+                        {
+                            "flu_segment": 4,
+                            "sample_id": "12345_1_1",
+                            "sample_subtype": "H1",
+                            "selected_taxid": 2955291,
+                            "id": "12345_1_1.11111",
+                            "virus": 2955291
+                        },
+                        "12345_1_1.2955291.nextclade.json:md5,afe8a19e6635bb9a51fb04cd9946bcc6",
+                        "12345_1_1.2955291_nextclade.tar.gz:md5,77d242b48793ae9c806bcb66c40c79cd"
+                    ],
+                    [
+                        {
+                            "flu_segment": 6,
+                            "sample_id": "12345_1_2",
+                            "sample_subtype": "N1",
+                            "selected_taxid": 2955291,
+                            "id": "12345_1_2.22222",
+                            "virus": 2955291
+                        },
+                        "12345_1_2.2955291.nextclade.json:md5,56292784a0078c87c5f71d88a2a7c45d",
+                        "12345_1_2.2955291_nextclade.tar.gz:md5,f9f0c4a11a1df661ad5bb0c7da96b4f5"
+                    ]
+                ]
+            }
+        ],
+        "meta": {
+            "nf-test": "0.9.2",
+            "nextflow": "25.04.4"
+        },
+        "timestamp": "2025-10-15T10:52:20.494327635"
+    }
+}
