@@ -44,7 +44,7 @@ workflow GENERATE_CONSENSUS {
 
     main:
         // align reads to reference
-        bwa_alignment_and_post_processing (sample_taxid_ch)
+        bwa_alignment_and_post_processing(sample_taxid_ch)
         bams_ch = bwa_alignment_and_post_processing.out
 
         // set ivar input channel
@@ -76,5 +76,4 @@ workflow GENERATE_CONSENSUS {
 
     emit:
         filtered_consensus_ch
-
 }
