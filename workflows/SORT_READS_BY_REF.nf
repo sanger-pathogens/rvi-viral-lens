@@ -229,14 +229,14 @@ workflow SORT_READS_BY_REF {
                 tuple(meta.taxid, meta, reads)
             }
             | combine(taxid_ref_files_map_ch, by:0) // [taxid, meta, reads, ref_files, ref_header]
-            | map {_taxid, meta, reads, ref_fa, ref_indexes, ref_header ->
+            | map {_taxid, meta, reads, ref_fa, ref_indices, ref_header ->
                 def new_meta = meta.plus([reference_header: ref_header])
-                tuple(new_meta, reads, ref_fa, ref_indexes)
+                tuple(new_meta, reads, ref_fa, ref_indices)
             }
             | set {sample_taxid_ch}
 
     emit:
-        sample_taxid_ch // tuple (meta, reads, ref_files)
+        sample_taxid_ch // tuple (meta, reads, ref_files, ref_indices)
         sample_pre_report_ch // pre_report
 
 }

@@ -7,8 +7,7 @@ include {run_nextclade; collate_nextclade_jsons} from '../modules/run_nextclade.
 
 workflow RUN_NEXTCLADE {
     take:
-    // meta, fa
-    input_ch // tuple(Sample_ID, Virus_Taxon_ID, Flu_Segment, Reference_Subtype)
+    input_ch // [meta, fa]
 
     main:
 
@@ -30,16 +29,14 @@ workflow RUN_NEXTCLADE {
             [meta, fa]
     }
     .set{ data_dir_ch}
-
     //data_dir_ch.not_found.view{"No nextclade data on nextclade_data_dir found for ${it[0].id}"}
 
     data_dir_ch.found.map{meta, fa, ref_dirs_map ->
         def dir_list = ref_dirs_map.collect { it.dir }
         [meta, fa, dir_list]
     }
-    .set { experimental_nextclade_In_ch }
-
-    run_nextclade(experimental_nextclade_In_ch)
+    .set { nextclade_In_ch }
+    run_nextclade(nextclade_In_ch)
     collate_nextclade_jsons(run_nextclade.out)
 
     emit:
@@ -68,7 +65,6 @@ List<File> findReferenceDirs(dataDir, virusTaxid,subtype = null, segNumber = nul
     }
 
     def baseDir = new File(parts.join(File.separator))
-
     if (!baseDir.isDirectory()) {
         return []
     }
