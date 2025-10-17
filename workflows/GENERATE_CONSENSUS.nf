@@ -50,7 +50,7 @@ workflow GENERATE_CONSENSUS {
         // set ivar input channel
         bams_ch
             | map {meta, _fastq, ref_fa, _ref_indices, bam, bam_idx ->
-                tuple(meta, bam, bam_idx, ref_fa)
+                [meta, bam, bam_idx, ref_fa]
             }
             | set {ivar_in_ch}
 
@@ -66,7 +66,7 @@ workflow GENERATE_CONSENSUS {
                 def json_map = new groovy.json.JsonSlurper().parse(new File(qc_json.toString()))
                 def filter_map = [("longest_non_n_subsequence"): json_map["longest_non_n_subsequence"]]
                 def new_meta = meta.plus(filter_map)
-                tuple(new_meta, bam, bam_idx, consensus, variants, qc_json) }
+                [new_meta, bam, bam_idx, consensus, variants, qc_json] }
             .set {qc_out_ch}
 
 

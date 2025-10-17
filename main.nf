@@ -133,19 +133,19 @@ workflow {
     SORT_READS_BY_REF.out.sample_pre_report_ch
         .map{ it ->
             def id="${it.sample_id}.${it.selected_taxid}"
-            tuple(id, it)
+            [id, it]
         }
         .set{sample_report_with_join_key_ch}
 
     // 5.1 - add report info to out qc metric chanel and branch for SCOV2 subtyping
     GENERATE_CONSENSUS.out.filtered_consensus_ch
         .map { meta, _bam, _bam_idx, consensus, _variants, _qc ->
-            tuple(meta.id, meta, consensus )
+            [meta.id, meta, consensus]
         }
         .join(sample_report_with_join_key_ch)
         .map {_id, meta, fasta, report ->
             def new_meta = meta.plus(report)
-            tuple (new_meta, fasta)
+            [new_meta, fasta]
         }
         .branch{ it ->
             scv2_subtyping_workflow_in_ch: it[0].ref_selected.contains("${params.scv2_keyword}")
@@ -321,7 +321,7 @@ def parse_mnf(mnf) {
                     // set files
                     def reads = [row.reads_1, row.reads_2]
                     // declare channel shape
-                    tuple(meta, reads)
+                    [meta, reads]
                  }
 
     return mnf_ch // tuple(meta, [fastq_pairs])
