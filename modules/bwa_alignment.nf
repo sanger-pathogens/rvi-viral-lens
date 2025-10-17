@@ -2,15 +2,15 @@
 process bwa_alignment_and_post_processing {
     /*
     *              Map reads to reference
-    
+
     The process is responsible for mapping sequencing reads
     to a reference genome using BWA (Burrows-Wheeler Aligner),
     followed by post-processing steps including conversion to
     BAM format, sorting, and indexing. At current version of
     this pipeline, this process generates high-quality, sorted
-    BAM files that are essential for consensus sequence 
+    BAM files that are essential for consensus sequence
     generation.
-    
+
     * --------------------------------------------------------------
     * Input Tuple:
         - `meta`: Metadata associated with the sample. The process
@@ -19,24 +19,24 @@ process bwa_alignment_and_post_processing {
             - `sample_id`: sample ID
         - `fastq`: Path to the FASTQ file(s) containing sequencing
             reads to be aligned.
-        - `ref_fasta`: Path to the reference files required for 
+        - `ref_fasta`: Path to the reference files required for
             alignment
         - `ref_indices` : list of paths to the index files for the ref fasta
-    
-    
+
+
     * Output Tuple:
         - Input tuple, plus:
           - Sorted BAM file (`*.sorted.bam`).
           - Index file for the sorted BAM (`*.sorted.bam.bai`).
-    
+
     * ---------------------------------------------------------------
-    * 
+    *
     */
     tag "${meta.id}"
     label "mem_2"
     label "cpu_1"
     label "time_queue_from_small"
-    
+
     input:
         tuple val(meta), path(fastq), path(ref_fa), path(ref_indices)
 
@@ -61,7 +61,6 @@ process bwa_alignment_and_post_processing {
         samtools index ${meta.id}.sorted.bam
         """
 }
-         
 /*
 
 # Script Breakdown
@@ -70,21 +69,21 @@ process bwa_alignment_and_post_processing {
 
 - `set -e`: Exits the script if any command returns a non-zero status,
     ensuring that errors are caught early.
-- `set -o pipefail`: Ensures that errors in piped commands are 
+- `set -o pipefail`: Ensures that errors in piped commands are
     correctly propagated.
 
 2. **BWA Alignment**:
 
 - Command: `bwa mem ${ref_fa} ${fastq} > ${meta.id}.sam`
   - Aligns the input sequencing reads (`${fastq}`) to the specified
-    reference genome (`${ref_fa}`), producing a SAM file 
+    reference genome (`${ref_fa}`), producing a SAM file
     (`${meta.id}.sam`) containing the raw alignments.
 
 3. **Convert SAM to BAM**:
 
 - Command: `samtools view -S -b ${meta.id}.sam -o ${meta.id}.bam`
-  - Converts the SAM file to BAM format, which is a compressed binary 
-  version of the alignment file, making it more efficient for storage 
+  - Converts the SAM file to BAM format, which is a compressed binary
+  version of the alignment file, making it more efficient for storage
   and processing.
 
 4. **Sort BAM File**:
@@ -96,7 +95,7 @@ process bwa_alignment_and_post_processing {
 5. **Generate BAM Index**:
 
 - Command: `samtools index ${meta.id}.sorted.bam`
-  - Indexes the sorted BAM file, creating an index file 
+  - Indexes the sorted BAM file, creating an index file
   (`*.sorted.bam.bai`) that allows for fast access to specific regions
   of the alignments.
 */
