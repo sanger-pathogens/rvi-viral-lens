@@ -2,6 +2,8 @@ process run_nextclade {
 
     tag "${meta.id}"
     label "nextclade"
+    label "cpu_1"
+    label "time_queue_from_small"
 
     input:
     tuple val(meta), path(input_fa), val(data_dir_list)
