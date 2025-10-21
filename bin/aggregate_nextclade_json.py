@@ -85,7 +85,7 @@ def main():
         file_paths.extend(glob.glob(pattern))
 
     if not file_paths:
-        ("No files found!!!.")
+        print("No files found!!!.")
         return
 
     print("Creating sample-level JSON...")
