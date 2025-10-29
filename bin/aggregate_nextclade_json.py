@@ -10,7 +10,7 @@ def load_json_files(file_paths_list):
     """
     data = []
     for path in file_paths_list:
-        assembly_name = path.split("/")[-1].split(".")[1]
+        assembly_name = ".".join(os.path.basename(path).split(".")[2:-1])
         with open(path, 'r') as f:
             try:
                 content = json.load(f)
