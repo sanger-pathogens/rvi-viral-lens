@@ -23,7 +23,7 @@ process write_classification_report_csv {
 
     * ---------------------------------------------------------------
     */
-   
+
     input:
         val(header_line)
         val(list_of_report_lines)
@@ -51,7 +51,7 @@ process write_classification_report_csv {
 1. **Output File Name**:
 The output report file is named classification_report.csv.
 
-2. **Replace Double Quotes**: 
+2. **Replace Double Quotes**:
     - `report_lines = list_of_report_lines.join("").replaceAll(/"/, "'")`
     - This line of Groovy script joins all the report lines into a
     single string and replaces double quotes (") with single quotes
@@ -60,11 +60,11 @@ The output report file is named classification_report.csv.
 
 3. **Write Header**:
 
-    - Command: 
+    - Command:
     ```
     echo "Sample_ID,...,Percentage_of_N_bases" > ${output_report_file}_pre`
     ```
-    - Writes the header line to the pre-output file 
+    - Writes the header line to the pre-output file
     (${output_report_file}_pre). The header defines the columns in the
     CSV file, which include various identifiers and metrics related to
     the samples and their classifications.
@@ -76,14 +76,14 @@ The output report file is named classification_report.csv.
 
 5. **Remove Carriage Return Characters**:
 
-    - Command: 
+    - Command:
     ```
     sed -e "s/\r//g" ${output_report_file}_pre > ${output_report_file}`
     ```
     - This command uses sed to remove any carriage return (\r) characters
-    that may be present in the file. These characters can be introduced 
-    when handling files across different operating systems (e.g., 
-    Windows vs. Unix-based systems), and their removal ensures 
+    that may be present in the file. These characters can be introduced
+    when handling files across different operating systems (e.g.,
+    Windows vs. Unix-based systems), and their removal ensures
     consistent file formatting.
 
 */

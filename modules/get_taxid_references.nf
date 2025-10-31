@@ -65,7 +65,7 @@ file and indexing them with BWA.
     sequences for multiple taxa.
   - It searches for headers (`>`) that contain the specified taxid
     (`|${taxid}|`).
-  - Once a matching sequence is found, it reads the sequence data 
+  - Once a matching sequence is found, it reads the sequence data
     until the next header or end of the file.
 
 - Output Generation:
@@ -76,6 +76,6 @@ file and indexing them with BWA.
 
 - BWA Indexing:
   - If a sequence is found and written to the output file, BWA is used to
-    index the FASTA file (`bwa index ${taxid}.fa`), preparing it for 
+    index the FASTA file (`bwa index ${taxid}.fa`), preparing it for
     alignment and further analysis.
 */

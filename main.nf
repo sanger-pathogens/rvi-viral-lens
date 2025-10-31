@@ -5,18 +5,16 @@
 nextflow.enable.dsl = 2
 
 // --- import modules ---------------------------------------------------------
-include {check_generate_consensus_params} from './workflows/GENERATE_CONSENSUS.nf'
 include {check_sort_reads_params} from './workflows/SORT_READS_BY_REF.nf'
-include {check_classification_report_params} from './workflows/GENERATE_CLASSIFICATION_REPORT.nf'
 include { validateParameters; paramsSummaryLog} from 'plugin/nf-schema'
 
 include {SORT_READS_BY_REF} from './workflows/SORT_READS_BY_REF.nf'
 include {GENERATE_CONSENSUS} from './workflows/GENERATE_CONSENSUS.nf'
-include {COMPUTE_QC_METRICS} from './workflows/COMPUTE_QC_METRICS.nf'
 include {SCOV2_SUBTYPING} from './workflows/SCOV2_SUBTYPING.nf'
 include {GENERATE_CLASSIFICATION_REPORT} from './workflows/GENERATE_CLASSIFICATION_REPORT.nf'
 include {RUN_NEXTCLADE} from './workflows/RUN_NEXTCLADE.nf'
-include {publish_consensus_files; publish_run_files} from './modules/publish_lite.nf'
+include {publish_consensus_files as publish_aln_files; publish_consensus_files as publish_nc_files; publish_consensus_files as publish_per_sample_json} from './modules/publish_lite.nf'
+include {publish_run_files} from './modules/publish_lite.nf'
 
 // Main entry-point workflow
 workflow {
@@ -55,6 +53,9 @@ workflow {
   --> viral subtyping branching parameters:
     --scv2_keyword             : ${params.scv2_keyword}
 
+  --> Nextclade parameters:
+    --nextclade_data_dir       : ${params.nextclade_data_dir}
+
   --> resource management:
     --default_error_strategy   : ${params.default_error_strategy}
     --mem_k2r_b0_offset        : ${params.mem_k2r_b0_offset}
@@ -87,12 +88,13 @@ workflow {
     // ==========================
     // === 2 - Map reads to taxid
     SORT_READS_BY_REF(reads_ch)
+
     // === 3 - Generate consensus ==
     GENERATE_CONSENSUS( SORT_READS_BY_REF.out.sample_taxid_ch )
 
     // === Run Nextclade
-    GENERATE_CONSENSUS.out
-    .map{meta, _bam, _bai, fa, _tsv -> [meta.id, meta, fa]}
+    GENERATE_CONSENSUS.out.filtered_consensus_ch
+    .map{meta, _bam, _bam_idx, consensus, _variants, _qc_json -> [meta.id, meta, consensus]}
     .set{consensus_fa_ch}
 
     SORT_READS_BY_REF.out.sample_pre_report_ch
@@ -106,49 +108,51 @@ workflow {
         [final_meta, fa]
     }
     .set {nextclade_In_ch}
+
     // TODO add check parameters
     if (params.nextclade_data_dir == null){
         log.warn("No nextclade_data_dir provided, skipping nextclade analysis step")
+        publish_nextclade_outputs_ch = Channel.empty()
+        per_consensus_nextclade_json_ch = Channel.empty()
     } else {
         RUN_NEXTCLADE(nextclade_In_ch)
+        RUN_NEXTCLADE.out
+            .map{meta, agg_json, tar_gz -> [meta, tar_gz] }
+            .set { publish_nextclade_outputs_ch }
+
+        RUN_NEXTCLADE.out
+            .map{meta, json, _tarball ->
+                    def join_key = meta.id
+                    [join_key, json]
+                }
+            .set{ per_consensus_nextclade_json_ch }
     }
-
-    // === 4 - Compute QC metrics ==
-    COMPUTE_QC_METRICS(GENERATE_CONSENSUS.out)
-
-    // Remove entries from output channel correponding to consensus sequences that are 100% N
-    COMPUTE_QC_METRICS.out
-        .filter{  it -> (it[0].longest_non_n_subsequence > 0) }
-        .set{filtered_consensus_ch}
-
 
     // === 5 - branching output from generate_consensus for viral specific subtyping
 
     SORT_READS_BY_REF.out.sample_pre_report_ch
         .map{ it ->
             def id="${it.sample_id}.${it.selected_taxid}"
-            tuple(id, it)
+            [id, it]
         }
         .set{sample_report_with_join_key_ch}
 
     // 5.1 - add report info to out qc metric chanel and branch for SCOV2 subtyping
-    filtered_consensus_ch
+    GENERATE_CONSENSUS.out.filtered_consensus_ch
         .map { meta, _bam, _bam_idx, consensus, _variants, _qc ->
-            tuple(meta.id, meta, consensus )
+            [meta.id, meta, consensus]
         }
         .join(sample_report_with_join_key_ch)
         .map {_id, meta, fasta, report ->
             def new_meta = meta.plus(report)
-            tuple (new_meta, fasta)
+            [new_meta, fasta]
         }
         .branch{ it ->
             scv2_subtyping_workflow_in_ch: it[0].ref_selected.contains("${params.scv2_keyword}")
             no_subtyping_ch: true
         }
-        .set {filtered_consensus_by_type_ch}
-    
-    //filtered_consensus_by_type_ch.no_subtyping_ch.first().view()
-    
+        .set { filtered_consensus_by_type_ch }
+
     // 5.2 - do SCOV2 subtyping
     if (params.do_scov2_subtyping == true){
         SCOV2_SUBTYPING(filtered_consensus_by_type_ch.scv2_subtyping_workflow_in_ch)
@@ -161,24 +165,32 @@ workflow {
         scov2_subtyped_ch = Channel.empty()
     }
     filtered_consensus_by_type_ch.no_subtyping_ch.concat(scov2_subtyped_ch)
-        .map{ meta, _fasta ->  meta }
-        .set{report_in_ch}
+        .map{ meta, _fasta ->  [meta.id, meta] }
+        .set{ report_in_ch }
 
-    GENERATE_CLASSIFICATION_REPORT(report_in_ch)
+    GENERATE_CONSENSUS.out.filtered_consensus_ch.map { meta, _bam, _bam_idx, _consensus, _variants, qc_json ->
+                    [meta.id, qc_json]
+                    }
+                .set{ qc_json_simplified_ch }
 
-    // === 7 - Finally, publish formal outputs of the pipeline
+    GENERATE_CONSENSUS.out.filtered_consensus_ch.map { meta, bam, bam_idx, consensus, _variants, _qc_json ->
+                    [meta, [bam, bam_idx, consensus]]
+                    }
+                .set{ aln_publish_ch }
 
-    publish_consensus_files (
-        // only publish consensus sequence, bams and properties; qc and variants file considered
-        // intermediate outputs
-        filtered_consensus_ch
-            .map{  meta, bam, bam_idx, fasta, _variants, _qc -> tuple( meta, [bam, bam_idx, fasta] ) }
-            .mix( GENERATE_CLASSIFICATION_REPORT.out.consensus_properties_ch )
-    )
-    publish_run_files(
-        GENERATE_CLASSIFICATION_REPORT.out.collated_properties_ch
-            .mix(GENERATE_CLASSIFICATION_REPORT.out.classification_report_ch)
-    )
+    report_in_ch // [meta.id, meta]
+            .join(qc_json_simplified_ch, remainder: true) // [meta.id, meta, qc_json]
+            .join(per_consensus_nextclade_json_ch, remainder: true) //  [meta.id, meta, qc_json, nc_json]
+            .set{ report_prep_ch }
+
+    GENERATE_CLASSIFICATION_REPORT(report_prep_ch)
+
+    // PUBLISH
+    publish_aln_files(aln_publish_ch)
+    publish_nc_files(publish_nextclade_outputs_ch)
+    // publish_per_sample_json(per_seq_json_publish_ch)
+    publish_per_sample_json(GENERATE_CLASSIFICATION_REPORT.out.publish_seq_level_ch)
+    publish_run_files(GENERATE_CLASSIFICATION_REPORT.out.publish_run_level_summaries_ch)
 
     workflow.onComplete = {
         // Log colors ANSI codes
@@ -198,7 +210,6 @@ workflow {
         Error report : ${ANSI_GREEN}${workflow.errorReport ?: '-'}${ANSI_RESET}
         """.stripIndent()
     }
-
 }
 
 def __check_if_params_file_exist(param_name, param_value){
@@ -225,7 +236,6 @@ def check_main_params(){
 
     errors += check_sort_reads_params()
 
-    errors += check_classification_report_params()
     if (errors > 0) {
         log.error("Parameter errors were found, the pipeline will not run.")
         exit 1
@@ -311,7 +321,7 @@ def parse_mnf(mnf) {
                     // set files
                     def reads = [row.reads_1, row.reads_2]
                     // declare channel shape
-                    tuple(meta, reads)
+                    [meta, reads]
                  }
 
     return mnf_ch // tuple(meta, [fastq_pairs])

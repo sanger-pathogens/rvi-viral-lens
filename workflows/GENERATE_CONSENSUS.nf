@@ -2,6 +2,7 @@
 
 include {bwa_alignment_and_post_processing} from '../modules/bwa_alignment.nf'
 include {run_ivar} from '../modules/run_ivar.nf'
+include {run_qc_script} from '../modules/run_qc_script.nf'
 
 workflow GENERATE_CONSENSUS {
     /*
@@ -43,25 +44,36 @@ workflow GENERATE_CONSENSUS {
 
     main:
         // align reads to reference
-        bwa_alignment_and_post_processing (sample_taxid_ch)
+        bwa_alignment_and_post_processing(sample_taxid_ch)
         bams_ch = bwa_alignment_and_post_processing.out
 
         // set ivar input channel
         bams_ch
             | map {meta, _fastq, ref_fa, _ref_indices, bam, bam_idx ->
-                tuple(meta, bam, bam_idx, ref_fa)
+                [meta, bam, bam_idx, ref_fa]
             }
             | set {ivar_in_ch}
 
         run_ivar(ivar_in_ch)
 
-    emit:
         run_ivar.out
+            .set { ivar_out_ch }
 
-}
+        run_qc_script(ivar_out_ch)
 
-def check_generate_consensus_params(){
-    // < placeholder >
-    def errors = 0
-    return errors
+        run_qc_script.out
+            .map {meta, bam, bam_idx, consensus, variants, qc_json ->
+                def json_map = new groovy.json.JsonSlurper().parse(new File(qc_json.toString()))
+                def filter_map = [("longest_non_n_subsequence"): json_map["longest_non_n_subsequence"]]
+                def new_meta = meta.plus(filter_map)
+                [new_meta, bam, bam_idx, consensus, variants, qc_json] }
+            .set {qc_out_ch}
+
+
+        qc_out_ch
+        .filter{  it -> (it[0].longest_non_n_subsequence > 0) }
+        .set{filtered_consensus_ch}
+
+    emit:
+        filtered_consensus_ch
 }

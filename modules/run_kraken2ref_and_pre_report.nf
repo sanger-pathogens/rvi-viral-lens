@@ -5,9 +5,9 @@ process run_k2r_sort_reads {
     /*
     * Parse kraken report and write tax_to_reads_json
 
-    This process runs Kraken2Ref to parse Kraken reports and sort 
+    This process runs Kraken2Ref to parse Kraken reports and sort
     reads by taxonomic classification. It generates JSON files that
-    map taxonomic IDs to read IDs and performs sorting based on the 
+    map taxonomic IDs to read IDs and performs sorting based on the
     reference-selection output JSON if available.
 
     * --------------------------------------------------------------
@@ -20,7 +20,7 @@ process run_k2r_sort_reads {
     * Output
         - JSON files mapping taxonomic IDs to read IDs
             (`${meta.id}_tax_to_reads.json`)
-        - decomposed JSON file (`${meta.id}_decomposed.json`). The 
+        - decomposed JSON file (`${meta.id}_decomposed.json`). The
             reference-selection output JSON is optional and only
             generated if applicable.
 
@@ -43,7 +43,7 @@ process run_k2r_sort_reads {
     """
     kraken2ref -s ${meta.id} parse_report -i ${kraken_report} -o ./ \
                -t ${params.min_reads_for_taxid} -m ${params.k2r_polling_mode}
-    
+
     # if empty file, no decomposed json file will be generated
     if [ -e "${meta.id}_decomposed.json" ]; then
         kraken2ref -s ${meta.id} sort_reads -k ${kraken_output} -r ./${meta.id}_decomposed.json -m tree -u
@@ -56,7 +56,7 @@ process run_k2r_sort_reads {
 
 # Script Breakdown
 
-1. **Parsing Kraken Report**: 
+1. **Parsing Kraken Report**:
     ```
     kraken2ref -s ${meta.id} parse_report -i ${kraken_report} -o ./
      -t ${params.min_reads_for_taxid}
@@ -66,9 +66,9 @@ process run_k2r_sort_reads {
     to read IDs. The `-t` option sets the minimum number of reads for
     a taxonomic ID to be included.
 
-2. **Sorting Reads**: 
+2. **Sorting Reads**:
     ```
-    kraken2ref -s ${meta.id} sort_reads -k ${kraken_output} 
+    kraken2ref -s ${meta.id} sort_reads -k ${kraken_output}
     -r ./${meta.id}_decomposed.json -m tree -u
     ```
 
@@ -76,7 +76,7 @@ process run_k2r_sort_reads {
     based on a taxonomy tree structure. If the decomposed JSON file is
     missing, sorting is skipped with a warning message.
 
-> **TODO**: we check for decomposed json file, at this point 
+> **TODO**: we check for decomposed json file, at this point
 there should not be empty fastq files, so I think we should let the
 pipeline brake if this is the case.
 */
@@ -107,14 +107,14 @@ process run_k2r_dump_fastqs_and_pre_report {
             data.
 
     * Output
-        - FASTQ files with extracted reads by taxonomic 
+        - FASTQ files with extracted reads by taxonomic
             classification.
-        - Preliminary TSV report file containing classification 
+        - Preliminary TSV report file containing classification
             summary data.
-    
+
     * Parameters
         - `k2r_dump_fq_mem`: the amount of memory to be requested
-            for this process 
+            for this process
 
     * --------------------------------------------------------------
     */
@@ -134,7 +134,7 @@ process run_k2r_dump_fastqs_and_pre_report {
     shell:
     fq_1 = classified_fqs[0]
     fq_2 = classified_fqs[1]
-    
+
     '''
     if [ "!{meta.splitted}" = "true" ]; then
         part=$(echo !{fq_1}| awk -F'[.]' '{print $(NF-1)}')
@@ -182,7 +182,7 @@ process concatenate_fqs_parts {
     *              Concatenate splitted fastqs
 
     This process concatenates FASTQ files from multiple parts into
-    final combined FASTQ files for each taxonomic classification. 
+    final combined FASTQ files for each taxonomic classification.
     This process ensures that all parts corresponding to the same
     taxonomic ID are merged into single files.
 
@@ -237,7 +237,7 @@ process concatenate_fqs_parts {
 1. **File Loop**: Iterates over FASTQ files with suffix `_R1.fq` and
     `_R2.fq`, assuming paired-end sequencing data.
 
-2. **Output Filename Construction**: Constructs output filenames 
+2. **Output Filename Construction**: Constructs output filenames
     based on sample or taxonomic ID and checks if concatenation has
     already been completed to avoid redundancy.
 

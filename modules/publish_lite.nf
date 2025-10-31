@@ -1,7 +1,7 @@
 
 //
-// Since files can (currently) only be published via processes, these 
-// dummy process acts to publsh any file we like. Two processes are 
+// Since files can (currently) only be published via processes, these
+// dummy process acts to publsh any file we like. Two processes are
 // provided: one for publishing files with an associated meta
 // ( for per-consensus publishing), and one without (for run-level)
 //
