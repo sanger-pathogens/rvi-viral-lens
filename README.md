@@ -67,6 +67,10 @@ This pipeline will generate, if possible, high quality consensus sequences for e
 
 The pipeline takes a manifest containing  **fastq pairs file** paths and a **kraken detabase** as inputs (check [Inputs section](#inputs) for more details) and outputs a **classification report**, **consensus sequences** and a (optionally) **collection of intermediate files**. Here is an broad overview of the pipeline logic
 
+0. **Preprocessing** (Optional): An optional preprocessing workflow is provided on this pipeline, activated by `--do_preprocessing true`. 
+The Preprocessing pipeline remove adapters (via `trimmomatic`), tandem repeats (via `TRF`) and remove human reads (via `sra-human-scrubber`) from fastq files. Each of those steps can be set on/off (`--run_trimmomatic`, `--run_trf`, `--run_hrr`).
+
+
 1. **Sort Reads**: The initial step is sort reads using `kraken2` for each fastq pairs according to the database provided. The classified reads is used as input to [kraken2ref](https://github.com/genomic-surveillance/kraken2ref) which will generate one pair of fastq files per taxid found.
    - An option to split big files is provided (check [Parameter section](#parameters)).
 
