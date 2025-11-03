@@ -2,8 +2,8 @@
 process run_kraken {
     /*
     *                 Assign Reads to Taxids
-    
-    The `run_kraken` process is designed to perform taxonomic 
+
+    The `run_kraken` process is designed to perform taxonomic
     classification of sequencing reads using Kraken2, a widely-used
     tool for rapid classification of metagenomic sequences. This
     process classifies reads into taxonomic categories, and outputs
@@ -12,7 +12,7 @@ process run_kraken {
 
     * ---------------------------------------------------------------
     * Input
-    - `meta`: Metadata associated with the sample, it assumes it 
+    - `meta`: Metadata associated with the sample, it assumes it
         includes
         - `ID`: identifier
     - `fastqs`: Paths to the paired-end FASTQ files that will be
@@ -27,7 +27,7 @@ process run_kraken {
     - A summary report `(*.report.txt)`.
     * ---------------------------------------------------------------
 
-    > TODO: We should consider add multithreading options 
+    > TODO: We should consider add multithreading options
         (`--threads ${params.kraken2_threads}`). This add control for
         the user to set the amount of cpus to be allocated.
     * ---------------------------------------------------------------
@@ -35,7 +35,7 @@ process run_kraken {
 
     tag "${meta.id} - c=${task.cpus} - m=${task.memory}"
     label "kraken"
-    // baseline for kraken2 will be 4 CPUs and 2 GB; but both of these are overridable 
+    // baseline for kraken2 will be 4 CPUs and 2 GB; but both of these are overridable
     // with command-line options (see config)
     label 'mem_2'
     label "cpu_4"
@@ -69,27 +69,27 @@ process run_kraken {
 /*
 # Command Breakdown
 
-- `set -e`: This command ensures that the script exits immediately if 
+- `set -e`: This command ensures that the script exits immediately if
     any command exits with a non-zero status, which is useful for
     handling errors during execution.
 - `set -u`: This command treats unset variables as an error and exits
     immediately, adding an additional layer of error checking.
-- `kraken2`: This command runs Kraken2 to classify the sequencing 
+- `kraken2`: This command runs Kraken2 to classify the sequencing
     reads. Options used:
   - `--db ${db_path}`: Specifies the path to the Kraken2 database used
     for classification.
-  - `--output ${meta.id}.kraken.output`: Outputs the classification 
+  - `--output ${meta.id}.kraken.output`: Outputs the classification
     results to a file named with the sample ID and .kraken.output
     extension.
   - `--paired`: Indicates that the input reads are paired-end.
-  - `--classified-out ${meta.id}.class_seqs#.fq`: Outputs classified 
+  - `--classified-out ${meta.id}.class_seqs#.fq`: Outputs classified
     reads to files prefixed with the sample ID and .class_seqs
     extension.
-  - `--unclassified-out ${meta.id}.unclass_seqs#.fq`: Outputs 
-    unclassified reads to files prefixed with the sample ID and 
+  - `--unclassified-out ${meta.id}.unclass_seqs#.fq`: Outputs
+    unclassified reads to files prefixed with the sample ID and
     .unclass_seqs extension.
   - `--report ${meta.id}.report.txt`: Generates a detailed report of
-    the classification results, including the number of reads 
+    the classification results, including the number of reads
     classified to each taxonomic level.
 
 For more details, check:

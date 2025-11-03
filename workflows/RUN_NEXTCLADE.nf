@@ -2,13 +2,12 @@
 
 // import workflow
 nextflow.enable.dsl = 2
-include {run_nextclade} from '../modules/run_nextclade.nf'
 include {publish_consensus_files} from '../modules/publish_lite.nf'
+include {run_nextclade; collate_nextclade_jsons} from '../modules/run_nextclade.nf'
 
 workflow RUN_NEXTCLADE {
     take:
-    // meta, fa
-    input_ch // tuple(Sample_ID, Virus_Taxon_ID, Flu_Segment, Reference_Subtype)
+    input_ch // [meta, fa]
 
     main:
 
@@ -30,42 +29,18 @@ workflow RUN_NEXTCLADE {
             [meta, fa]
     }
     .set{ data_dir_ch}
+    //data_dir_ch.not_found.view{"No nextclade data on nextclade_data_dir found for ${it[0].id}"}
 
-    //data_dir_ch.not_found.view{"No nextclade data on nextclade_data_dir found for ${it[0].id} ${it}"}
-
-    data_dir_ch.found
-    .flatMap{list -> expandList(list)} // [[meta, fa, ref_dir_map_a], [meta, fa, ref_dir_map_b]]
-    .map{meta, fa, ref_dirs_map ->
-        def new_meta = meta + ref_dirs_map
-
-        [new_meta, fa, new_meta.dir]
+    data_dir_ch.found.map{meta, fa, ref_dirs_map ->
+        def dir_list = ref_dirs_map.collect { it.dir }
+        [meta, fa, dir_list]
     }
-    .set {nextclade_In_ch}
+    .set { nextclade_In_ch }
+    run_nextclade(nextclade_In_ch)
+    collate_nextclade_jsons(run_nextclade.out)
 
-    // publish nextclade output files
-    run_nextclade(nextclade_In_ch, params.nextclade_output_verbosity)
-    run_nextclade.out
-    .map{meta, csv, tar_gz -> [meta, [csv,tar_gz]] }
-    .set {publish_files_In_ch}
-
-    publish_consensus_files{publish_files_In_ch}
-
-}
-
-
-def expandList(List input) {
-    if (input.isEmpty()) return []
-
-    def prefix = input[0..-2] // everything except the last element
-    def last   = input[-1] // last element (may be a list or not)
-
-    if (last instanceof List) {
-        // Expand each element of the last list with the prefix
-        return last.collect { item -> prefix + item }
-    } else {
-        // If last isn't a list, just wrap the input
-        return [input]
-    }
+    emit:
+    collate_nextclade_jsons.out
 }
 
 
@@ -90,7 +65,6 @@ List<File> findReferenceDirs(dataDir, virusTaxid,subtype = null, segNumber = nul
     }
 
     def baseDir = new File(parts.join(File.separator))
-
     if (!baseDir.isDirectory()) {
         return []
     }
@@ -104,19 +78,19 @@ List<File> findReferenceDirs(dataDir, virusTaxid,subtype = null, segNumber = nul
     return output
 }
 
-List<Map> buildReferenceTags(dataDir, sampleId,taxid,subtype = null, segNumber = null) {
+List<Map> buildReferenceTags(dataDir, sampleId, species_taxid, subtype = null, segNumber = null) {
     /**
     * Build tag IDs for all reference dirs found under the Nextclade hierarchy.
     *
-    * Case 1: <taxid>/<assembly>/reference.fasta
-    *   tag_id = <sample_id>.<taxid>.<assembly>
+    * Case 1: <species_taxid>/<assembly>/reference.fasta
+    *   tag_id = <sample_id>.<species_taxid>.<assembly>
     *
-    * Case 2: <taxid>/<subtype>/<seg_number>/<assembly>/reference.fasta
-    *   tag_id = <sample_id>.<taxid>.<subtype>.segment<seg_number>.<assembly>
+    * Case 2: <species_taxid>/<subtype>/<seg_number>/<assembly>/reference.fasta
+    *   tag_id = <sample_id>.<species_taxid>.<subtype>.segment<seg_number>.<assembly>
     *
     * @return List of [File referenceDir, String tagId] pairs
     */
-    def dirs = findReferenceDirs(dataDir, taxid, subtype, segNumber)
+    def dirs = findReferenceDirs(dataDir, species_taxid, subtype, segNumber)
 
     if (dirs == []){
         return []
@@ -126,10 +100,10 @@ List<Map> buildReferenceTags(dataDir, sampleId,taxid,subtype = null, segNumber =
             def tagId
             if (subtype && segNumber) {
                 // Case 2
-                tagId = "${sampleId}.${taxid}.${subtype}.segment${segNumber}.${assembly}"
+                tagId = "${sampleId}.${species_taxid}.${subtype}.segment${segNumber}.${assembly}"
             } else {
                 // Case 1
-                tagId = "${sampleId}.${taxid}.${assembly}"
+                tagId = "${sampleId}.${species_taxid}.${assembly}"
             }
             [dir: dir.toString(), tag_id: tagId]
         }

@@ -1,55 +1,85 @@
 process run_nextclade {
 
-    tag "${meta.tag_id}"
+    tag "${meta.id}"
     label "nextclade"
+    label "cpu_1"
+    label "time_queue_from_small"
 
     input:
-    tuple val(meta), path(input_fa), val(data_dir)
-    val(nextclade_output_verbosity)
+    tuple val(meta), path(input_fa), val(data_dir_list)
 
     output:
-    tuple val(meta), path("${meta.tag_id}.csv"), path("${meta.tag_id}_nextclade.tar.gz")
+    tuple val(meta), path("*.json"), path("*.nextclade.tar.gz")
 
     script:
-    def ref_fasta = "${data_dir}/reference.fasta"
-    def ref_tree = "${data_dir}/tree.json"
-    def ref_gff = "${data_dir}/genome_annotation.CDS.gff3"
+    def agg_label = "${meta.sample_id}.${meta.selected_taxid}"
+    def cmd_lines = data_dir_list.collect { assembly_path ->
+        def assembly_name = assembly_path.toString().split('/')[-1]
 
-    if (file(ref_tree).exists())
-        """
-        #!/bin/bash
-        set -e
+        def ref_fasta = "${assembly_path}/reference.fasta"
+        def ref_tree = "${assembly_path}/tree.json"
+        def ref_gff = "${assembly_path}/genome_annotation.CDS.gff3"
 
-        nextclade run \
-            -r ${ref_fasta} \
-            -a ${ref_tree} \
-            -m ${ref_gff} \
-            -O ${meta.tag_id}_nextclade \
-            -s ${nextclade_output_verbosity} \
-            -n ${meta.tag_id} \
-            --include-reference true \
-            ${input_fa}
+        def data_label = ""
+        if (meta.flu_segment != "") {
+            data_label = "${meta.sample_id}.${meta.selected_taxid}.${assembly_name}.segment${meta.flu_segment}"
+        } else {
+            data_label = "${meta.sample_id}.${meta.selected_taxid}.${assembly_name}"
+        }
 
-        cp ./${meta.tag_id}_nextclade/${meta.tag_id}.csv .
-        tar -czf ${meta.tag_id}_nextclade.tar.gz ./${meta.tag_id}_nextclade
-        """
+        if (file(ref_tree).exists()) {
+            """
+            nextclade run \
+                -r ${ref_fasta} \
+                -a ${ref_tree} \
+                -m ${ref_gff} \
+                -O ${data_label}.nextclade \
+                -s "all" \
+                -n ${data_label} \
+                --include-reference true \
+                ${input_fa}
+            cp ${data_label}.nextclade/${data_label}.json .
+            """.stripIndent()
 
-    else
-        """
-        #!/bin/bash
-        set -e
+        } else {
+            """
+            nextclade run \
+                -r ${ref_fasta} \
+                -m ${ref_gff} \
+                -O ${data_label}.nextclade \
+                -s "all" \
+                -n ${data_label} \
+                --include-reference true \
+                ${input_fa}
+            cp ${data_label}.nextclade/${data_label}.json .
+            """.stripIndent()
+        }
+    }
 
-        nextclade run \
-            -r ${ref_fasta} \
-            -m ${ref_gff} \
-            -O ${meta.tag_id}_nextclade \
-            -s ${nextclade_output_verbosity} \
-            -n ${meta.tag_id} \
-            --include-reference true \
-            ${input_fa}
+    """
+    #!/bin/bash
+    set -e
 
-        cp ./${meta.tag_id}_nextclade/${meta.tag_id}.csv .
-        tar -czf ${meta.tag_id}_nextclade.tar.gz ./${meta.tag_id}_nextclade
-        """
+    ${cmd_lines.join('\n\n')}
 
+    mkdir $agg_label && mv ./*.nextclade/ $agg_label
+    mv $agg_label ${agg_label}.nextclade
+    tar -czf ${agg_label}.nextclade.tar.gz ${agg_label}.nextclade
+    """
+}
+
+process collate_nextclade_jsons {
+    tag "${meta.id}"
+
+    input:
+    tuple val(meta), val(json_path_list), path(nextclade_tarball)
+
+    output:
+    tuple val(meta), path("${meta.sample_id}.${meta.selected_taxid}.nextclade.json"), path(nextclade_tarball)
+
+    script:
+    def json_file_args = ([json_path_list].flatten()*.toString()).join(" ")
+    """
+    aggregate_nextclade_json.py ${json_file_args} -o ${meta.sample_id}.${meta.selected_taxid}.nextclade.json
+    """
 }

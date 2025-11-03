@@ -1,8 +1,6 @@
 // Copyright (C) 2023 Genome Surveillance Unit/Genome Research Ltd.
 
-include {write_classification_report_csv} from '../modules/write_classification_report.nf'
-include { write_single_properties_json } from '../modules/write_properties_json.nf'
-include { write_collated_properties_json } from '../modules/write_properties_json.nf'
+include { write_sequence_level_summaries; write_run_level_summaries } from '../modules/write_summary_report.nf'
 
 
 workflow GENERATE_CLASSIFICATION_REPORT {
@@ -13,14 +11,14 @@ workflow GENERATE_CLASSIFICATION_REPORT {
     The GENERATE_CLASSIFICATION_REPORT workflow generates some reports
     based on metadata collected during the pipeline:
     - A JSON properties file for each consensus sequence
-    - A collated JSON properties files for all consensus sequennce 
+    - A collated JSON properties files for all consensus sequennce
     - A collated TSV "classification report" file for all consensii
 
     -----------------------------------------------------------------
     # Inputs
 
     - **Metadata Channel**: A channel containing metadata for each
-    sample. 
+    sample.
 
     # Outputs
         - Per-consensus properties.json file channel
@@ -29,105 +27,24 @@ workflow GENERATE_CLASSIFICATION_REPORT {
     */
 
     take:
-        report_in_ch // meta
+        report_prep_ch //  [meta.id, meta, qc_json, nc_json]
 
     main:
-        // write individual JSONs, and a collated JSON
-        consensus_properties_ch = write_single_properties_json( report_in_ch )
+        write_sequence_level_summaries(report_prep_ch)
+        write_sequence_level_summaries.out.set{publish_seq_level_ch}
 
-        collated_properties_ch = write_collated_properties_json( report_in_ch.collect(), "consensus_sequence_properties" )
+        write_sequence_level_summaries.out
+            .map{meta, per_con_json -> [per_con_json]}
+            .collect()
+            .set{all_summaries_pre_ch}
 
-        report_in_ch.map { meta ->
-            // convert any empty or null values to "None"
-            def new_meta = meta.collectEntries { key, value ->
-                [(key): (value in [null, ''] ? 'None' : value)]
-            }
-            get_report_line( new_meta )
-        }.collect().set{ report_lines_ch }
-
-        // Write all of the per-sample report lines to a report file
-        classification_report_ch = write_classification_report_csv(
-            get_header_line(),
-            report_lines_ch ,
-            "classification_report"
-        )
+        write_run_level_summaries(all_summaries_pre_ch)
+        write_run_level_summaries.out.set{publish_run_level_summaries_ch}
 
     emit:
-        consensus_properties_ch
-        collated_properties_ch
-        classification_report_ch 
-/*
----------------------------------------------------------------------
-# Example Manifest File
+        publish_seq_level_ch
+        publish_run_level_summaries_ch
 
-The manifest file should be in CSV format and include headers 
-matching the required metadata keys. Example:
-
-```csv
-sample_id,taxid,ref_selected,virus_name,virus_subtype,flu_segment,percentage_genome_coverage,total_mapped_reads,longest_no_N_segment,percentage_of_N_bases
-sample_001,12345,ref1.fasta,Influenza A,H1N1,Segment 1,95.5,10000,500,2.5
-sample_002,67890,ref2.fasta,Influenza B,,Segment 2,90.0,9500,450,5.0
-```
----------------------------------------------------------------------
-*/
-
-}
-
-
-def get_header_line() {
-
-    def sample_headers_1 = "Sample_ID,Virus_Taxon_ID,Virus,Species"
-    def sample_headers_2="Reference_Taxon_ID,Selected_Reference,Flu_Segment,Reference_Subtype,Sample_Subtype"
-    def qc_headers="Percentage_of_Genome_Covered,Total_Mapped_Reads,Total_Mapped_Bases,Longest_non_N_segment,Percentage_non_N_bases"
-    def mut_info_headers = "total_mutations,n_insertions,n_deletions,n_snps,ti_tv_ratio"
-
-    return "${sample_headers_1},${sample_headers_2},${qc_headers},${mut_info_headers}"
-}
-
-def get_report_line(meta) {
-    /*
-    -----------------------------------------------------------------
-    Concatenates a list of report lines into a single string.
-
-    - **Input**: A list of strings, where each string is a line of
-    the report.
-    - **Output**: A single string containing all lines concatenated
-    together, separated by newlines.
-
-    -----------------------------------------------------------------
-
-    */
-    // HEADERS:
-    // sample_info_1:
-    // sample_id, virus, report_name, virus_name, 
-    // sample_info_2:
-    // taxid, reference_selected, flu_segment, virus_subtype, sample_subtype, 
-    // qc_info_v:
-    // percentage_genome_coverage, total_mapped_reads, longest_no_N_segment, percentage_of_N_bases
-    // mut_info_v:
-    // total_mutations,n_insertions,n_deletions,n_snps,ti_tv_ratio
-    
-    def sample_info_1 = "${meta.sample_id},${meta.virus},${meta.report_name},${meta.virus_name}"
-    def sample_info_2 = "${meta.taxid},${meta.ref_selected.replace(",","|")},${meta.flu_segment},${meta.virus_subtype},${meta.sample_subtype}"
-    def qc_info_v = "${meta.percent_positions_exceeding_depth_10},${meta.reads_mapped},${meta.bases_mapped},${meta.longest_non_n_subsequence},${meta.percent_non_n_bases}"
-    def mut_info_v = "${meta.mutations},${meta.insertions},${meta.deletions},${meta.snps},${meta.ti_tv_ratio}"
-    return "${sample_info_1},${sample_info_2},${qc_info_v},${mut_info_v}\n"
-}
-
-def check_classification_report_params(){
-    /*
-    -----------------------------------------------------------------
-    Checks for necessary parameters and validates paths to ensure 
-    they exist. Logs errors if any required parameters are missing.
-    -----------------------------------------------------------------
-
-    - **Output**: Number of errors encountered during the checks.
-
-    -----------------------------------------------------------------
-
-    */
-    def errors = 0
-    return errors
 }
 
 

@@ -96,7 +96,7 @@ workflow SORT_READS_BY_REF {
                 ])
 
                 //_new_meta.fqs_total_size = fq_1_size + fq_2_size
-                return tuple (_new_meta, kraken_output, kraken_report)
+                return [_new_meta, kraken_output, kraken_report]
             }
             | set {sort_reads_in_ch}
 
@@ -124,13 +124,13 @@ workflow SORT_READS_BY_REF {
                 // branch channels
                 needs_fq_spliting: _new_meta.class_fq_n_reads > params.k2r_max_total_reads_per_fq
                     def new_meta_2 = _new_meta.plus([splitted: true])
-                    return tuple(new_meta_2, new_meta_2.classified_fq_filepair[0], new_meta_2.classified_fq_filepair[1])
+                    return [new_meta_2, new_meta_2.classified_fq_filepair[0], new_meta_2.classified_fq_filepair[1]]
 
                 no_fq_spliting: _new_meta.class_fq_n_reads <= params.k2r_max_total_reads_per_fq
                     def new_meta_no_splt = _new_meta.plus([splitted: false])
-                    return tuple(new_meta_no_splt, new_meta_no_splt.classified_fq_filepair,
+                    return [new_meta_no_splt, new_meta_no_splt.classified_fq_filepair,
                                 new_meta_no_splt.tax_to_reads_json, new_meta_no_splt.decomposed_json,
-                                new_meta_no_splt.kraken_report)
+                                new_meta_no_splt.kraken_report]
             }
             | set {k2r_sorted_read_Out_ch}
 
@@ -139,7 +139,7 @@ workflow SORT_READS_BY_REF {
             | splitFastq(pe:true, by:params.k2r_max_total_reads_per_fq, file:true)
             | map {meta, reads_1_part, reads_2_part ->
                 //meta.part = reads_1_part.name.tokenize(".")[-2]
-                tuple (meta, [reads_1_part, reads_2_part], meta.tax_to_reads_json, meta.decomposed_json, meta.kraken_report)
+                [meta, [reads_1_part, reads_2_part], meta.tax_to_reads_json, meta.decomposed_json, meta.kraken_report]
             }
             | concat(k2r_sorted_read_Out_ch.no_fq_spliting)
             | set {k2r_dump_fq_In_ch}
@@ -158,11 +158,11 @@ workflow SORT_READS_BY_REF {
         // merge all parts into a single channel item
         k2r_dump_out_fqs.do_concatenate
             | map { meta, taxid_fastqs_list ->
-                tuple(meta.id, taxid_fastqs_list)
+                [meta.id, taxid_fastqs_list]
             }
             | groupTuple()
             | map {id, taxid_fastqs_list ->
-                tuple(id, taxid_fastqs_list.flatten())
+                [id, taxid_fastqs_list.flatten()]
             }
             | set {concatenate_fqs_In_ch}
 
@@ -209,13 +209,13 @@ workflow SORT_READS_BY_REF {
                         taxid:it[0].tokenize(".")[-1]] //taxid
                 meta.id = "${meta.sample_id}.${meta.taxid}"
                 def reads = [it[1], it[2]]
-                tuple(meta, reads) // new meta object created for taxid FASTQ pair - tuple(meta, [fq_1, fq_2])
+                [meta, reads] // new meta object created for taxid FASTQ pair - tuple(meta, [fq_1, fq_2])
             }
             | set {pre_sample_taxid_ch}
 
         // 5 - get references files
         pre_sample_taxid_ch
-            .map{meta, _reads -> tuple(meta.taxid)}
+            .map{meta, _reads -> [meta.taxid]}
             .collect()
             .flatten()
             .unique()
@@ -226,17 +226,17 @@ workflow SORT_READS_BY_REF {
 
         pre_sample_taxid_ch
             | map {meta, reads ->
-                tuple(meta.taxid, meta, reads)
+                [meta.taxid, meta, reads]
             }
             | combine(taxid_ref_files_map_ch, by:0) // [taxid, meta, reads, ref_files, ref_header]
-            | map {_taxid, meta, reads, ref_fa, ref_indexes, ref_header ->
+            | map {_taxid, meta, reads, ref_fa, ref_indices, ref_header ->
                 def new_meta = meta.plus([reference_header: ref_header])
-                tuple(new_meta, reads, ref_fa, ref_indexes)
+                [new_meta, reads, ref_fa, ref_indices]
             }
             | set {sample_taxid_ch}
 
     emit:
-        sample_taxid_ch // tuple (meta, reads, ref_files)
+        sample_taxid_ch // tuple (meta, reads, ref_files, ref_indices)
         sample_pre_report_ch // pre_report
 
 }
