@@ -6,9 +6,9 @@ nextflow.enable.dsl = 2
 
 // --- import modules ---------------------------------------------------------
 include {check_sort_reads_params} from './workflows/SORT_READS_BY_REF.nf'
-include { validateParameters; paramsSummaryLog} from 'plugin/nf-schema'
+include {validateParameters; paramsSummaryLog} from 'plugin/nf-schema'
 
-include { PREPROCESSING } from "./rvi_toolbox/subworkflows/preprocessing.nf"
+include {PREPROCESSING} from "./rvi_toolbox/subworkflows/preprocessing.nf"
 include {SORT_READS_BY_REF} from './workflows/SORT_READS_BY_REF.nf'
 include {GENERATE_CONSENSUS} from './workflows/GENERATE_CONSENSUS.nf'
 include {SCOV2_SUBTYPING} from './workflows/SCOV2_SUBTYPING.nf'
@@ -88,17 +88,15 @@ workflow {
 
     // === Preprocessing ===
     if (params.do_preprocessing) {
-        //log.info "Starting preprocessing of reads"
         reads_ch.map{ meta, fastqs ->
             return [meta, fastqs[0], fastqs[1]]
-            }.set{preproc_in_ch}
+        }.set{preproc_in_ch}
 
         PREPROCESSING(preproc_in_ch).out_ch.map{meta, read1, read2 ->
-                return [meta, [read1, read2]]
-            }.set{sort_reads_in_ch}
+            return [meta, [read1, read2]]
+        }.set{sort_reads_in_ch}
 
     } else {
-        //log.info "Skipping preprocessing of reads as per user request"
         sort_reads_in_ch = reads_ch
     }
 
