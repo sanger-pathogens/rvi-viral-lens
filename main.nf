@@ -6,8 +6,9 @@ nextflow.enable.dsl = 2
 
 // --- import modules ---------------------------------------------------------
 include {check_sort_reads_params} from './workflows/SORT_READS_BY_REF.nf'
-include { validateParameters; paramsSummaryLog} from 'plugin/nf-schema'
+include {validateParameters; paramsSummaryLog} from 'plugin/nf-schema'
 
+include {PREPROCESSING} from "./rvi_toolbox/subworkflows/preprocessing.nf"
 include {SORT_READS_BY_REF} from './workflows/SORT_READS_BY_REF.nf'
 include {GENERATE_CONSENSUS} from './workflows/GENERATE_CONSENSUS.nf'
 include {SCOV2_SUBTYPING} from './workflows/SCOV2_SUBTYPING.nf'
@@ -83,12 +84,25 @@ workflow {
     // === 1 - Process input ===
     check_main_params()
     // ==========================
-    reads_ch = parse_mnf(params.manifest)
+    reads_ch = parse_mnf(params.manifest) // tuple(meta, [fastq_1, fastq_2])
+
+    // === Preprocessing ===
+    if (params.do_preprocessing) {
+        reads_ch.map{ meta, fastqs ->
+            return [meta, fastqs[0], fastqs[1]]
+        }.set{preproc_in_ch}
+
+        PREPROCESSING(preproc_in_ch).out_ch.map{meta, read1, read2 ->
+            return [meta, [read1, read2]]
+        }.set{sort_reads_in_ch}
+
+    } else {
+        sort_reads_in_ch = reads_ch
+    }
 
     // ==========================
     // === 2 - Map reads to taxid
-    SORT_READS_BY_REF(reads_ch)
-
+    SORT_READS_BY_REF(sort_reads_in_ch)
     // === 3 - Generate consensus ==
     GENERATE_CONSENSUS( SORT_READS_BY_REF.out.sample_taxid_ch )
 
@@ -112,12 +126,12 @@ workflow {
     // TODO add check parameters
     if (params.nextclade_data_dir == null){
         log.warn("No nextclade_data_dir provided, skipping nextclade analysis step")
-        publish_nextclade_outputs_ch = Channel.empty()
-        per_consensus_nextclade_json_ch = Channel.empty()
+        publish_nextclade_outputs_ch = channel.empty()
+        per_consensus_nextclade_json_ch = channel.empty()
     } else {
         RUN_NEXTCLADE(nextclade_In_ch)
         RUN_NEXTCLADE.out
-            .map{meta, agg_json, tar_gz -> [meta, tar_gz] }
+            .map{meta, _agg_json, tar_gz -> [meta, tar_gz] }
             .set { publish_nextclade_outputs_ch }
 
         RUN_NEXTCLADE.out
@@ -162,7 +176,7 @@ workflow {
     // === 6 - write final classification reports
 
     if (!params.do_scov2_subtyping == true){
-        scov2_subtyped_ch = Channel.empty()
+        scov2_subtyped_ch = channel.empty()
     }
     filtered_consensus_by_type_ch.no_subtyping_ch.concat(scov2_subtyped_ch)
         .map{ meta, _fasta ->  [meta.id, meta] }
@@ -267,7 +281,7 @@ def parse_mnf(mnf) {
     -----------------------------------------------------------------
     */
     // Read manifest file into a list of rows
-    def mnf_rows = Channel.fromPath(mnf).splitCsv(header: true, sep: ',')
+    def mnf_rows = channel.fromPath(mnf).splitCsv(header: true, sep: ',')
 
     // Collect sample IDs and validate
     def sample_ids = []

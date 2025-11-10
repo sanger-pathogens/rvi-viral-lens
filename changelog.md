@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [unreleased]
 
+- **[added]**: add optional preprocessing steps
 - **[added]**: add Nextclade to compute QC metrics optionally
 - **[change]**: Nextclade process now runs one consensus to many datasets, instead of one process for each dataset
 - **[change]**: Move QC metrics calling into GENERATE_CONSENSUS; this workflow now emits ONLY data where consensus is not all-N. COMPUTE_QC_METRICS workflow now removed.
