@@ -151,6 +151,27 @@
     "nextclade_output_verbosity": {
       "type": "string",
       "default": "all"
+    },
+    "do_preprocessing": {
+      "type": "boolean"
+    },
+    "run_trimmomatic": {
+      "type": "boolean",
+      "default": true
+    },
+    "run_trf": {
+      "type": "boolean",
+      "default": true
+    },
+    "run_hrr": {
+      "type": "boolean",
+      "default": true
+    },
+    "publish_clean_reads": {
+      "type": "boolean"
+    },
+    "debug_preproc_output": {
+      "type": "boolean"
     }
   }
 }
