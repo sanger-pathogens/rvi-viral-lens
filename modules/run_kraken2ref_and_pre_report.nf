@@ -30,6 +30,7 @@ process run_k2r_sort_reads {
     tag "${meta.id} - ${task.attempt} - ${task.memory}"
     cache 'lenient'
     label 'kraken2ref'
+    label 'cpu_1'
     label 'mem_k2r_escalate'
 
     input:
@@ -122,7 +123,9 @@ process run_k2r_dump_fastqs_and_pre_report {
     tag "${meta.id} - ${task.attempt} - ${task.memory}"
     cache 'lenient'
     label 'kraken2ref'
-    memory params.k2r_dump_fq_mem//'mem_k2r_escalate'
+    label 'cpu_1'
+    label 'mem_4'
+    label 'time_queue_from_small'
 
     input:
         tuple val(meta), path(classified_fqs), path(json_tax_to_readsid), path(decomposed_json), path(kraken_report)
@@ -146,7 +149,7 @@ process run_k2r_dump_fastqs_and_pre_report {
     kraken2ref -s ${prefix} dump_fastqs \
             -fq1 !{fq_1} -fq2 !{fq_2} \
             --tax_to_readsid_path !{json_tax_to_readsid} \
-            -o ./ --fq_load_mode !{params.k2r_fq_load_mode} \
+            -o ./ \
             -r !{decomposed_json}
 
     # write pre_report
@@ -246,3 +249,4 @@ process concatenate_fqs_parts {
     convention for each taxonomic classification.
 */
 }
+

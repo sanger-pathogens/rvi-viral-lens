@@ -23,7 +23,7 @@ CACHED_PROPERTY_VER="1.5.2"
 SCIPY_VER="1.12.0"
 BIOPYTHON_VER="1.83"
 
-KRAKEN2REF_RELEASE="v2.1.0"
+KRAKEN2REF_RELEASE="v2.2.0"
 
 # enables the "exit on error" mode
 set -e
