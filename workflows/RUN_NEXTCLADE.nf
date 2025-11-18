@@ -44,37 +44,31 @@ workflow RUN_NEXTCLADE {
 }
 
 
-List<File> findReferenceDirs(dataDir, virusTaxid,subtype = null, segNumber = null) {
-    /**
-    * Find directories that contain a `reference.fasta` exactly one level below a base path.
-    *
-    * Case 1: base = <dataDir>/<virusTaxid>
-    * Case 2: base = <dataDir>/<virusTaxid>/<subtype>/<segNumber>
-    *
-    * Returns a List<File> of the matching directories (sorted), or [] if none.
-    */
-    // Build the base path depending on whether subtype/segNumber are provided
-    def parts = [dataDir, virusTaxid]
+List<File> findReferenceDirs(nc_index_file, virusTaxid, segNumber = null) {
+    def nc_index = new groovy.json.JsonSlurper().parse(new File(nc_index_file))
 
-    if (segNumber != null) {
-        parts << segNumber
+    if (!segNumber) {
+        segNumber = "ALL"
     }
 
-    if (subtype != null) {
-        parts << subtype
+    def data_dirs = []
+    def virus_data = nc_index.get(virusTaxid)
+    if (virus_data != null) {
+        data_dirs = virus_data.get(segNumber)
+    } else {
+        log.warn("No nextclade data for $virusTaxid")
     }
 
-    def baseDir = new File(parts.join(File.separator))
-    if (!baseDir.isDirectory()) {
+    if (!data_dirs) {
+        log.warn("No nextclade data for $virusTaxid, $segNumber")
         return []
     }
-
-    // Look only at immediate subdirectories under baseDir,
-    // and keep those that contain a file named "reference.fasta"
-    def output = (baseDir.listFiles()) //?: [])
-        .findAll { it.isDirectory() && new File(it, "reference.fasta").isFile() }
-        .collect { it.canonicalFile }   // normalize paths
-        .sort { it.path }               // deterministic order
+    if (virusTaxid == "3418604") {
+        println "$data_dirs"
+    }
+    def output = data_dirs
+                    .collect { new File(it).canonicalFile }
+                    .sort { it.path }
     return output
 }
 
@@ -90,7 +84,7 @@ List<Map> buildReferenceTags(dataDir, sampleId, species_taxid, subtype = null, s
     *
     * @return List of [File referenceDir, String tagId] pairs
     */
-    def dirs = findReferenceDirs(dataDir, species_taxid, subtype, segNumber)
+    def dirs = findReferenceDirs(params.nextclade_index_json, species_taxid, segNumber)
 
     if (dirs == []){
         return []
