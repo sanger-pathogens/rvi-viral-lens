@@ -17,8 +17,6 @@ process run_nextclade {
         def assembly_name = assembly_path.toString().split('/')[-1]
 
         def ref_fasta = "${assembly_path}/reference.fasta"
-        def ref_tree = "${assembly_path}/tree.json"
-        def ref_gff = "${assembly_path}/genome_annotation.CDS.gff3"
 
         def data_label = ""
         if (meta.flu_segment != "") {
@@ -27,34 +25,20 @@ process run_nextclade {
             data_label = "${meta.sample_id}.${meta.selected_taxid}.${assembly_name}"
         }
 
-        if (file(ref_tree).exists()) {
-            """
-            nextclade run \
-                -r ${ref_fasta} \
-                -a ${ref_tree} \
-                -m ${ref_gff} \
-                -O ${data_label}.nextclade \
-                -s "all" \
-                -n ${data_label} \
-                --include-reference true \
-                ${input_fa}
-            cp ${data_label}.nextclade/${data_label}.json .
-            """.stripIndent()
 
-        } else {
-            """
-            nextclade run \
-                -r ${ref_fasta} \
-                -m ${ref_gff} \
-                -O ${data_label}.nextclade \
-                -s "all" \
-                -n ${data_label} \
-                --include-reference true \
-                ${input_fa}
-            cp ${data_label}.nextclade/${data_label}.json .
-            """.stripIndent()
+        """
+        nextclade run \
+            --input-dataset ${assembly_path} \
+            -r ${ref_fasta} \
+            -O ${data_label}.nextclade \
+            -s "all" \
+            -n ${data_label} \
+            --include-reference true \
+            ${input_fa}
+        cp ${data_label}.nextclade/${data_label}.json .
+        """.stripIndent()
         }
-    }
+
 
     """
     #!/bin/bash
