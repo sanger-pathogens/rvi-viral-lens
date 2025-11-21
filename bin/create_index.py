@@ -17,7 +17,8 @@ def nc_dataset_map():
                             "orthoebolavirus": "3052462",
                             "rsv": "3049954",
                             "rubella": "2846071",
-                            "yellow-fever": "3046277"
+                            "yellow-fever": "3046277",
+                            "ev-d68": "3428506"
                             }
     return nc_taxid_name_map
 
@@ -33,7 +34,7 @@ def construct_nc_index(git_nc_db_dir):
     nc_taxid_name_map = nc_dataset_map()
     segmented = ["2955291", "2955465"]
     git_data_index = {}
-    flu_seg_map = {
+    flu_A_map = {
         "pb2": "1",
         "pb1": "2",
         "pa": "3",
@@ -43,6 +44,18 @@ def construct_nc_index(git_nc_db_dir):
         "mp": "7",
         "ns": "8",
     }
+
+    flu_B_map = {
+        "pb1": "1",
+        "pb2": "2",
+        "pa": "3",
+        "ha": "4",
+        "np": "5",
+        "na": "6",
+        "mp": "7",
+        "ns": "8",
+    }
+
     leaf_dirs = list_leaf_dirs(git_nc_db_dir)
     for leaf_dir in leaf_dirs:
         for name, taxid in nc_taxid_name_map.items():
@@ -53,11 +66,9 @@ def construct_nc_index(git_nc_db_dir):
                     else:
                         git_data_index[taxid]["ALL"].append(leaf_dir)
                 else:
-                    print(f"{leaf_dir = }")
+                    flu_seg_map = flu_B_map if "/vic/" in leaf_dir else flu_A_map
                     for gene, segnum in flu_seg_map.items():
-                        print(f"Checking {gene}")
                         if f"/{gene}" in leaf_dir or f"/{gene}/" in leaf_dir:
-                            print(f"Found {gene = }")
                             if taxid not in git_data_index:
                                 git_data_index[taxid] = {segnum: [leaf_dir]}
                             else:
@@ -84,13 +95,16 @@ def construct_local_index(local_nc_db_dir):
             refseq_index[taxid] = {"ALL": [leaf_dir]}
     return refseq_index
 
-def write_output(git_nc_db_dir, local_nc_db_dir = None, outfname = "nextclade_index.json", outdir = "."):
-    git_data_index = construct_nc_index(git_nc_db_dir) if git_nc_db_dir else {}
-    refseq_index = construct_local_index(local_nc_db_dir) if local_nc_db_dir else {}
-
+def write_output(git_nc_db_dir, local_nc_db_dir = None, nc_include = ["nextstrain"], outfname = "nextclade_index.json", outdir = "."):
     combined_index = {}
+
+    refseq_index = construct_local_index(local_nc_db_dir)
     combined_index.update(refseq_index)
-    combined_index.update(git_data_index)
+
+    for dir_to_include in nc_include:
+        git_subdir = os.path.abspath(os.path.join(git_nc_db_dir, dir_to_include))
+        git_data_index = construct_nc_index(git_subdir)
+        combined_index.update(git_data_index)
 
     abs_outdir = os.path.abspath(outdir)
     outfile = os.path.join(abs_outdir, outfname)
@@ -101,9 +115,14 @@ def write_output(git_nc_db_dir, local_nc_db_dir = None, outfname = "nextclade_in
     outhandle.close()
 
 def main():
+    if sys.argv[1] == "-h":
+        print("USAGE:")
+        print("python create_index.py path/to/nextclade_data/data path/to/local/nextclade/datasets nextstrain,enpen")
+        exit(0)
     git_nc_db_dir = os.path.abspath(sys.argv[1])
     local_nc_db_dir = os.path.abspath(sys.argv[2])
-    write_output(git_nc_db_dir, local_nc_db_dir)
+    nc_include = sys.argv[3].split(",") if sys.argv[3] else ["nextstrain"]
+    write_output(git_nc_db_dir, local_nc_db_dir, nc_include)
 
 if __name__ == "__main__":
     main()
