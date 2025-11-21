@@ -63,9 +63,7 @@ List<File> findReferenceDirs(nc_index_file, virusTaxid, segNumber = null) {
         log.warn("No nextclade data for $virusTaxid, $segNumber")
         return []
     }
-    if (virusTaxid == "3418604") {
-        println "$data_dirs"
-    }
+
     def output = data_dirs
                     .collect { new File(it).canonicalFile }
                     .sort { it.path }
