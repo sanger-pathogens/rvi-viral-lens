@@ -103,6 +103,9 @@ def write_output(git_nc_db_dir, local_nc_db_dir = None, nc_include = ["nextstrai
 
     for dir_to_include in nc_include:
         git_subdir = os.path.abspath(os.path.join(git_nc_db_dir, dir_to_include))
+        if not os.path.exists(git_subdir):
+            print(f"Path: {git_subdir} not found. Skipping.")
+            continue
         git_data_index = construct_nc_index(git_subdir)
         combined_index.update(git_data_index)
 
