@@ -148,10 +148,6 @@
     "nextclade_data_dir": {
       "type": "string"
     },
-    "nextclade_output_verbosity": {
-      "type": "string",
-      "default": "all"
-    },
     "do_preprocessing": {
       "type": "boolean"
     },
