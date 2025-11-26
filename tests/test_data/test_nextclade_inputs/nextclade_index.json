@@ -1,0 +1,55 @@
+{
+    "12637": {
+        "ALL": [
+            "/lustre/scratch126/gsu/rvidata/gsu_non-production_runs/DT-3395_add_preproc_to_virallens/viral_pipeline/tests/test_data/test_nextclade_inputs/test_nextclade_db/12637/all"
+        ]
+    },
+    "2955291": {
+        "1": [
+            "/lustre/scratch126/gsu/rvidata/gsu_non-production_runs/DT-3395_add_preproc_to_virallens/viral_pipeline/tests/test_data/test_nextclade_inputs/test_nextclade_data/nextstrain/flu/h1n1pdm/pb2"
+        ],
+        "2": [
+            "/lustre/scratch126/gsu/rvidata/gsu_non-production_runs/DT-3395_add_preproc_to_virallens/viral_pipeline/tests/test_data/test_nextclade_inputs/test_nextclade_data/nextstrain/flu/h1n1pdm/pb1"
+        ],
+        "3": [
+            "/lustre/scratch126/gsu/rvidata/gsu_non-production_runs/DT-3395_add_preproc_to_virallens/viral_pipeline/tests/test_data/test_nextclade_inputs/test_nextclade_data/nextstrain/flu/h1n1pdm/pa"
+        ],
+        "4": [
+            "/lustre/scratch126/gsu/rvidata/gsu_non-production_runs/DT-3395_add_preproc_to_virallens/viral_pipeline/tests/test_data/test_nextclade_inputs/test_nextclade_data/nextstrain/flu/h1n1pdm/ha/MW626062",
+            "/lustre/scratch126/gsu/rvidata/gsu_non-production_runs/DT-3395_add_preproc_to_virallens/viral_pipeline/tests/test_data/test_nextclade_inputs/test_nextclade_data/nextstrain/flu/h1n1pdm/ha/CY121680"
+        ],
+        "5": [
+            "/lustre/scratch126/gsu/rvidata/gsu_non-production_runs/DT-3395_add_preproc_to_virallens/viral_pipeline/tests/test_data/test_nextclade_inputs/test_nextclade_data/nextstrain/flu/h1n1pdm/np"
+        ],
+        "6": [
+            "/lustre/scratch126/gsu/rvidata/gsu_non-production_runs/DT-3395_add_preproc_to_virallens/viral_pipeline/tests/test_data/test_nextclade_inputs/test_nextclade_data/nextstrain/flu/h1n1pdm/na/MW626056"
+        ],
+        "7": [
+            "/lustre/scratch126/gsu/rvidata/gsu_non-production_runs/DT-3395_add_preproc_to_virallens/viral_pipeline/tests/test_data/test_nextclade_inputs/test_nextclade_data/nextstrain/flu/h1n1pdm/mp"
+        ],
+        "8": [
+            "/lustre/scratch126/gsu/rvidata/gsu_non-production_runs/DT-3395_add_preproc_to_virallens/viral_pipeline/tests/test_data/test_nextclade_inputs/test_nextclade_data/nextstrain/flu/h1n1pdm/ns"
+        ]
+    },
+    "3418604": {
+        "ALL": [
+            "/lustre/scratch126/gsu/rvidata/gsu_non-production_runs/DT-3395_add_preproc_to_virallens/viral_pipeline/tests/test_data/test_nextclade_inputs/test_nextclade_data/nextstrain/sars-cov-2/wuhan-hu-1/orfs"
+        ]
+    },
+    "694009": {
+        "ALL": [
+            "/lustre/scratch126/gsu/rvidata/gsu_non-production_runs/DT-3395_add_preproc_to_virallens/viral_pipeline/tests/test_data/test_nextclade_inputs/test_nextclade_db/694009/GCF_XXXXXX.X"
+        ]
+    },
+    "H1": {
+        "ALL": [
+            "/lustre/scratch126/gsu/rvidata/gsu_non-production_runs/DT-3395_add_preproc_to_virallens/viral_pipeline/tests/test_data/test_nextclade_inputs/test_nextclade_db/2955291/4/H1/GCF_YYYYYYY.Y",
+            "/lustre/scratch126/gsu/rvidata/gsu_non-production_runs/DT-3395_add_preproc_to_virallens/viral_pipeline/tests/test_data/test_nextclade_inputs/test_nextclade_db/2955291/4/H1/GCF_XXXXXXX.X"
+        ]
+    },
+    "N1": {
+        "ALL": [
+            "/lustre/scratch126/gsu/rvidata/gsu_non-production_runs/DT-3395_add_preproc_to_virallens/viral_pipeline/tests/test_data/test_nextclade_inputs/test_nextclade_db/2955291/6/N1/GCF_XXXXXXX.X"
+        ]
+    }
+}
