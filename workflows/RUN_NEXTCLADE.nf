@@ -14,7 +14,6 @@ workflow RUN_NEXTCLADE {
     input_ch
     .map{meta, consensus_fa ->
         def ref_dirs_map = buildReferenceTags(
-                params.nextclade_data_dir,
                 meta.sample_id,
                 meta.virus,
                 meta.sample_subtype,
@@ -70,7 +69,7 @@ List<File> findReferenceDirs(nc_index_file, virusTaxid, segNumber = null) {
     return output
 }
 
-List<Map> buildReferenceTags(dataDir, sampleId, species_taxid, subtype = null, segNumber = null) {
+List<Map> buildReferenceTags(sampleId, species_taxid, subtype = null, segNumber = null) {
     /**
     * Build tag IDs for all reference dirs found under the Nextclade hierarchy.
     *
