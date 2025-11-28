@@ -188,7 +188,7 @@ By default, the pipeline will use the containers provided at [quay.io gsu-pipeli
 
 Singularity and Docker recipes for the containers used on this pipeline are available on this repository at `containers/` dir. To build the containers, run the commands bellow.
 
-```{bash}
+```bash
 cd containers/
 sudo singularity build base_container.sif baseContainer.sing
 sudo singularity build ivar.sif ivarContainer.sing
@@ -206,13 +206,13 @@ sudo singularity build kraken2ref.sif kraken2ref.sing
 1. **Generate manifest**
 For convenience, a script to generate the manifest is provided on this repo:
 
-```{bash}
+```bash
 python write_manifest.py ./path/to/my/fastqs_dir/ -fq1_ext my_r1_ext -fq2_ext my_r2_ext
 ```
 
 2. **Run pipeline**
 
-```{bash}
+```bash
 nextflow run /path/to/rvi_consensus_gen/main.nf --manifest /path/to/my/manifest.csv \
         --db_path /path/to/my/kraken_db \
         --outdir outputs/ \
@@ -527,7 +527,7 @@ The workflow & process unit tests for this pipeline are written in the [nf-test]
 
 The `nf-test` looks for an environment variable (`CONTAINER_DIR`) to set the containers directory. Therefore, set this variable before running `nf-test`.
 
-```{bash}
+```bash
 export CONTAINER_DIR=<my/container/dir/path>
 ```
 
@@ -535,13 +535,13 @@ The following command if entered from the repository top-level directory can be 
 
 **Run all tests**
 
-```{bash}
+```bash
 nf-test test ./
 ```
 
 **Run individual module/workflow test**
 
-```{bash}
+```bash
 nf-test test tests/<modules or workflows>/<module_to_test>.nf.test
 ```
 
