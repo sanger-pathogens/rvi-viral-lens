@@ -11,16 +11,11 @@ workflow RUN_NEXTCLADE {
 
     main:
 
-    input_ch
-    .map{meta, consensus_fa ->
-        def ref_dirs_map = buildReferenceTags(
-                meta.sample_id,
-                meta.virus,
-                meta.sample_subtype,
-                meta.flu_segment)
-        return [meta, consensus_fa, ref_dirs_map] // [[meta, fa, [[ref_dir_a], [ref_dir_b], ...]]
-    }
-    .branch{ meta, fa, ref_dirs_map ->
+    index_json = new groovy.json.JsonSlurper().parse(new File(params.nextclade_index_json))
+
+    input_ch.map { meta, consensus_fa ->
+        [meta, consensus_fa, buildReferenceTags(index_json, meta.sample_id, meta.virus, meta.sample_subtype, meta.flu_segment)]
+    }.branch{ meta, fa, ref_dirs_map ->
         found : ref_dirs_map != []
             [meta, fa, ref_dirs_map]
 
@@ -28,6 +23,7 @@ workflow RUN_NEXTCLADE {
             [meta, fa]
     }
     .set{ data_dir_ch}
+
     //data_dir_ch.not_found.view{"No nextclade data on nextclade_data_dir found for ${it[0].id}"}
 
     data_dir_ch.found.map{meta, fa, ref_dirs_map ->
@@ -43,8 +39,7 @@ workflow RUN_NEXTCLADE {
 }
 
 
-List<File> findReferenceDirs(nc_index_file, virusTaxid, segNumber = null) {
-    def nc_index = new groovy.json.JsonSlurper().parse(new File(nc_index_file))
+List<File> findReferenceDirs(nc_index, virusTaxid, segNumber = null) {
 
     if (!segNumber) {
         segNumber = "ALL"
@@ -69,7 +64,7 @@ List<File> findReferenceDirs(nc_index_file, virusTaxid, segNumber = null) {
     return output
 }
 
-List<Map> buildReferenceTags(sampleId, species_taxid, subtype = null, segNumber = null) {
+List<Map> buildReferenceTags(nc_index, sampleId, species_taxid, subtype = null, segNumber = null) {
     /**
     * Build tag IDs for all reference dirs found under the Nextclade hierarchy.
     *
@@ -81,7 +76,7 @@ List<Map> buildReferenceTags(sampleId, species_taxid, subtype = null, segNumber 
     *
     * @return List of [File referenceDir, String tagId] pairs
     */
-    def dirs = findReferenceDirs(params.nextclade_index_json, species_taxid, segNumber)
+    def dirs = findReferenceDirs(nc_index, species_taxid, segNumber)
 
     if (dirs == []){
         return []
