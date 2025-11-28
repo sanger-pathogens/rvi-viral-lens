@@ -27,13 +27,13 @@
                 "1": [
                     [
                         "consensus_sequence_properties.json:md5,c6cb58e5eefb57e7a64259ac67e5cf62",
-                        "summary_report.csv:md5,f211a99be984667130ce7effa84cd206"
+                        "summary_report.csv:md5,6142745d2580b8766d6de64338161999"
                     ]
                 ],
                 "publish_run_level_summaries_ch": [
                     [
                         "consensus_sequence_properties.json:md5,c6cb58e5eefb57e7a64259ac67e5cf62",
-                        "summary_report.csv:md5,f211a99be984667130ce7effa84cd206"
+                        "summary_report.csv:md5,6142745d2580b8766d6de64338161999"
                     ]
                 ],
                 "publish_seq_level_ch": [
@@ -64,6 +64,6 @@
             "nf-test": "0.9.2",
             "nextflow": "25.04.4"
         },
-        "timestamp": "2025-10-15T15:42:13.943058161"
+        "timestamp": "2025-11-28T17:02:01.713710609"
     }
 }
