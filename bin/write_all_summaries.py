@@ -178,10 +178,10 @@ def main():
 
         ## probably redundant
         sorted_csv_lines = sorted(csv_lines, key=lambda d: (d["Sample_ID"], d["Virus_Taxon_ID"], d["Flu_Segment"], d["Reference_Taxon_ID"], d["nc.qc.overallScore"]))
-
+        rounded_sorted_csv_lines = [{k: (float(f"{v:.3g}") if isinstance(v, float) else v) for k, v in d.items()} for d in sorted_csv_lines]
         summary_csv_fname = "summary_report.csv"
 
-        write_summary_csv(sorted_csv_lines, summary_csv_fname)
+        write_summary_csv(rounded_sorted_csv_lines, summary_csv_fname)
 
 if __name__ == "__main__":
     main()
