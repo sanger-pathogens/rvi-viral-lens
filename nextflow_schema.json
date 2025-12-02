@@ -145,13 +145,6 @@
     "developer_publish": {
       "type": "boolean"
     },
-    "nextclade_data_dir": {
-      "type": "string"
-    },
-    "nextclade_output_verbosity": {
-      "type": "string",
-      "default": "all"
-    },
     "do_preprocessing": {
       "type": "boolean"
     },
@@ -172,6 +165,9 @@
     },
     "debug_preproc_output": {
       "type": "boolean"
+    },
+    "nextclade_index_json": {
+      "type": "string"
     }
   }
 }

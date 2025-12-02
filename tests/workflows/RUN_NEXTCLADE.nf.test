@@ -1,4 +1,13 @@
 // Copyright (C) 2023 Genome Surveillance Unit/Genome Research Ltd.
+
+// Set up Nextclade index for testing
+def nextclade_data_dir = "tests/test_data/test_nextclade_inputs/test_nextclade_data/"
+def nextclade_db_dir = "tests/test_data/test_nextclade_inputs/test_nextclade_db/"
+def process = "python3 bin/create_index.py ${nextclade_data_dir} ${nextclade_db_dir} nextstrain".execute()
+process.waitFor()
+def moveIndexFile = "mv nextclade_index.json tests/test_data/test_nextclade_inputs/".execute()
+moveIndexFile.waitFor()
+
 nextflow_workflow {
 
     name "Test workflow RUN_NEXTCLADE"
@@ -11,6 +20,7 @@ nextflow_workflow {
             params {
                 test_loc="${projectDir}/tests/test_data/test_nextclade_inputs/"
                 nextclade_data_dir="${test_loc}/test_nextclade_db/"
+                nextclade_index_json="${test_loc}/nextclade_index.json"
 
                 meta_flu_4 = [
                     id: "12345_1_1.11111",
@@ -33,7 +43,6 @@ nextflow_workflow {
                 ]
 
                 flu_6_fa="${projectDir}/tests/test_data/test_nextclade_inputs/H1N1_seg6.fa"
-
 
                 meta_covid = [
                     id: "12345_2_1.33333",

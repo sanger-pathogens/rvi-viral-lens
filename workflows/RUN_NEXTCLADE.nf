@@ -11,17 +11,11 @@ workflow RUN_NEXTCLADE {
 
     main:
 
-    input_ch
-    .map{meta, consensus_fa ->
-        def ref_dirs_map = buildReferenceTags(
-                params.nextclade_data_dir,
-                meta.sample_id,
-                meta.virus,
-                meta.sample_subtype,
-                meta.flu_segment)
-        return [meta, consensus_fa, ref_dirs_map] // [[meta, fa, [[ref_dir_a], [ref_dir_b], ...]]
-    }
-    .branch{ meta, fa, ref_dirs_map ->
+    index_json = new groovy.json.JsonSlurper().parse(new File(params.nextclade_index_json))
+
+    input_ch.map { meta, consensus_fa ->
+        [meta, consensus_fa, buildReferenceTags(index_json, meta.sample_id, meta.virus, meta.sample_subtype, meta.flu_segment)]
+    }.branch{ meta, fa, ref_dirs_map ->
         found : ref_dirs_map != []
             [meta, fa, ref_dirs_map]
 
@@ -29,6 +23,7 @@ workflow RUN_NEXTCLADE {
             [meta, fa]
     }
     .set{ data_dir_ch}
+
     //data_dir_ch.not_found.view{"No nextclade data on nextclade_data_dir found for ${it[0].id}"}
 
     data_dir_ch.found.map{meta, fa, ref_dirs_map ->
@@ -44,41 +39,32 @@ workflow RUN_NEXTCLADE {
 }
 
 
-List<File> findReferenceDirs(dataDir, virusTaxid,subtype = null, segNumber = null) {
-    /**
-    * Find directories that contain a `reference.fasta` exactly one level below a base path.
-    *
-    * Case 1: base = <dataDir>/<virusTaxid>
-    * Case 2: base = <dataDir>/<virusTaxid>/<subtype>/<segNumber>
-    *
-    * Returns a List<File> of the matching directories (sorted), or [] if none.
-    */
-    // Build the base path depending on whether subtype/segNumber are provided
-    def parts = [dataDir, virusTaxid]
+List<File> findReferenceDirs(nc_index, virusTaxid, segNumber = null) {
 
-    if (segNumber != null) {
-        parts << segNumber
+    if (!segNumber) {
+        segNumber = "ALL"
     }
 
-    if (subtype != null) {
-        parts << subtype
+    def data_dirs = []
+    def virus_data = nc_index.get(virusTaxid)
+    if (virus_data != null) {
+        data_dirs = virus_data.get(segNumber)
+    } else {
+        log.warn("No nextclade data for $virusTaxid")
     }
 
-    def baseDir = new File(parts.join(File.separator))
-    if (!baseDir.isDirectory()) {
+    if (!data_dirs) {
+        log.warn("No nextclade data for $virusTaxid, $segNumber")
         return []
     }
 
-    // Look only at immediate subdirectories under baseDir,
-    // and keep those that contain a file named "reference.fasta"
-    def output = (baseDir.listFiles()) //?: [])
-        .findAll { it.isDirectory() && new File(it, "reference.fasta").isFile() }
-        .collect { it.canonicalFile }   // normalize paths
-        .sort { it.path }               // deterministic order
+    def output = data_dirs
+                    .collect { new File(it).canonicalFile }
+                    .sort { it.path }
     return output
 }
 
-List<Map> buildReferenceTags(dataDir, sampleId, species_taxid, subtype = null, segNumber = null) {
+List<Map> buildReferenceTags(nc_index, sampleId, species_taxid, subtype = null, segNumber = null) {
     /**
     * Build tag IDs for all reference dirs found under the Nextclade hierarchy.
     *
@@ -90,7 +76,7 @@ List<Map> buildReferenceTags(dataDir, sampleId, species_taxid, subtype = null, s
     *
     * @return List of [File referenceDir, String tagId] pairs
     */
-    def dirs = findReferenceDirs(dataDir, species_taxid, subtype, segNumber)
+    def dirs = findReferenceDirs(nc_index, species_taxid, segNumber)
 
     if (dirs == []){
         return []

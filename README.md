@@ -128,15 +128,20 @@ PIPELINE_CODES=<path to viral lens repo>
 MANIFEST=<path to my manifest>
 kraken_db_path=<path to my kraken DB>
 PIPELINE_CONTAINERS=<path to my containers dir>
+NEXTCLADE_INDEX_JSON=<path to my nextclade_index.json>
 
+## nextclade_index_json is optional -- required if Nextclade output is required
 nextflow run ${PIPELINE_CODES}/main.nf --manifest ${MANIFEST} \
     --db_path ${kraken_db_path} \
     --outdir ./output/ \
     --containers_dir ${PIPELINE_CONTAINERS} \
+    --nextclade_index_json ${NEXTCLADE_INDEX_JSON} \
     -with-trace -with-report -with-timeline \
     -profile sanger_local \
     -resume
 ```
+
+> See [below](#create-nextclade-index) for information on the `nextclade_index.json` file
 
 [**(&uarr;)**](#contents)
 
@@ -188,7 +193,7 @@ By default, the pipeline will use the containers provided at [quay.io gsu-pipeli
 
 Singularity and Docker recipes for the containers used on this pipeline are available on this repository at `containers/` dir. To build the containers, run the commands bellow.
 
-```{bash}
+```bash
 cd containers/
 sudo singularity build base_container.sif baseContainer.sing
 sudo singularity build ivar.sif ivarContainer.sing
@@ -206,17 +211,19 @@ sudo singularity build kraken2ref.sif kraken2ref.sing
 1. **Generate manifest**
 For convenience, a script to generate the manifest is provided on this repo:
 
-```{bash}
+```bash
 python write_manifest.py ./path/to/my/fastqs_dir/ -fq1_ext my_r1_ext -fq2_ext my_r2_ext
 ```
 
 2. **Run pipeline**
 
-```{bash}
+```bash
+## nextclade_index_json is optional -- required if Nextclade output is required
 nextflow run /path/to/rvi_consensus_gen/main.nf --manifest /path/to/my/manifest.csv \
         --db_path /path/to/my/kraken_db \
         --outdir outputs/ \
         --containers_dir /path/to/my/containers_dir/ \
+        --nextclade_index_json ${NEXTCLADE_INDEX_JSON} \
         -profile sanger_stantard -resume -with-trace -with-report -with-timeline
 ```
 
@@ -527,7 +534,7 @@ The workflow & process unit tests for this pipeline are written in the [nf-test]
 
 The `nf-test` looks for an environment variable (`CONTAINER_DIR`) to set the containers directory. Therefore, set this variable before running `nf-test`.
 
-```{bash}
+```bash
 export CONTAINER_DIR=<my/container/dir/path>
 ```
 
@@ -535,13 +542,13 @@ The following command if entered from the repository top-level directory can be 
 
 **Run all tests**
 
-```{bash}
+```bash
 nf-test test ./
 ```
 
 **Run individual module/workflow test**
 
-```{bash}
+```bash
 nf-test test tests/<modules or workflows>/<module_to_test>.nf.test
 ```
 
@@ -731,6 +738,51 @@ The script generates a CSV file containing various QC metrics for the sample. Th
 This command processes the provided files and generates a QC summary report in `sample123.qc.csv`. The minimum depth for coverage calculations is set to 10, and ivar was run with a minimum depth of 5.
 
 [**(&uarr;)**](#contents)
+
+
+#### Create Nextclade Index
+
+This is the script that generates the index JSON file for use with Nextclade. This is not run within the pipeline and must be run as a precursor if Nextclade outputs are required.
+
+Usage:
+
+```bash
+python <path/to/viral_pipeline>/bin/create_index.py path/to/cloned/github/nextclade_data/data path/to/local/custom/nextclade/datasets nextstrain,enpen
+```
+
+The third positional argument refers to the subdirectories under `path/to/cloned/github/nextclade_data/data` which should be included in the index JSON file.
+
+The expected structure of `path/to/local/custom/nextclade/datasets` is as follows:
+```bash
+path/to/local/custom/nextclade/datasets
+|--- virus_species_taxID
+      |--- assembly_ID
+            ├── genome_annotation.gff3
+            ├── pathogen.json
+            └── reference.fasta
+```
+
+The index JSON file has the following structure:
+```json
+...
+"taxID_1": {
+        "ALL": [
+            "path/to/29252/GCF_001500715.1"
+        ]
+    },
+"taxID_2": {
+    "segnum_1": [
+        "path/to/nextclade_data/data/nextstrain/flu/h1n1pdm/pb2",
+        "path/to/nextclade_data/data/nextstrain/flu/h3n2/pb2"
+    ],
+    "segnum_2": [
+        "path/to/nextclade_data/data/nextstrain/flu/h1n1pdm/pb1",
+        "path/to/nextclade_data/data/nextstrain/flu/h3n2/pb1"
+    ]
+}
+```
+
+Note that for monopartite viruses, segnum should be "ALL", whereas for multi-partite viruses it should correspond to the segment number for each dataset.
 
 ---
 

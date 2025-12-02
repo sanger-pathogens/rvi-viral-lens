@@ -124,7 +124,7 @@ workflow {
     .set {nextclade_In_ch}
 
     // TODO add check parameters
-    if (params.nextclade_data_dir == null){
+    if (params.nextclade_index_json == null){
         log.warn("No nextclade_data_dir provided, skipping nextclade analysis step")
         publish_nextclade_outputs_ch = channel.empty()
         per_consensus_nextclade_json_ch = channel.empty()

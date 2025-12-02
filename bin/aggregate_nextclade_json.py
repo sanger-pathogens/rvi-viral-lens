@@ -3,6 +3,7 @@
 import os
 import glob
 import json
+import math
 import argparse
 
 def load_json_files(file_paths_list):
@@ -14,10 +15,21 @@ def load_json_files(file_paths_list):
         with open(path, 'r') as f:
             try:
                 content = json.load(f)
-                content["dataset"] = assembly_name
-                data.append(content)
             except Exception as e:
                 print(f"Error reading {path}:\n{e}")
+
+        results = content["results"]
+        if results:
+            dataset_found = results[0]["datasetName"]
+            if "nextstrain" in dataset_found:
+                parts = dataset_found.split("/")
+                nc_name = "/".join(parts[parts.index("nextstrain")-2:])
+                content["dataset"] = nc_name
+            else:
+                content["dataset"] = assembly_name
+        else:
+            content["dataset"] = "NoDatasetSuitable"
+        data.append(content)
     return data
 
 def get_primary_key(obj):
@@ -32,7 +44,7 @@ def get_primary_key(obj):
         if len(obj["results"]) == 0:
             seq = obj["errors"][0]["seqName"]
             print(f"For sequence {seq}, found NO RESULTS.")
-    return 1.0
+    return math.inf
 
 def get_secondary_key(obj):
     """Get the secondary key from the nextclade JSON
@@ -46,7 +58,7 @@ def get_secondary_key(obj):
         if len(obj["results"]) == 0:
             seq = obj["errors"][0]["seqName"]
             print(f"For sequence {seq}, found NO RESULTS.")
-    return 0.0
+    return -math.inf
 
 def sort_json_list(json_list):
     """Given a list of nexclade outputs (decoded JSON)

@@ -54,12 +54,12 @@ def build_nc_mappings():
                     "nc.coverage": lambda d: d["results"][0]["coverage"] or "None",
                     "nc.qc.overallScore": lambda d: d["results"][0]["qc"]["overallScore"],
                     "nc.qc.overallStatus": lambda d: d["results"][0]["qc"]["overallStatus"] or "None",
-                    "nc.qc.missingData": lambda d: d["results"][0]["qc"]["missingData"] or "None",
-                    "nc.qc.mixedSites": lambda d: d["results"][0]["qc"]["mixedSites"] or "None",
-                    "nc.qc.privateMutations": lambda d: d["results"][0]["qc"]["privateMutations"] or "None",
-                    "nc.qc.snpClusters": lambda d: d["results"][0]["qc"]["snpClusters"] or "None",
-                    "nc.qc.frameShifts": lambda d: d["results"][0]["qc"]["frameShifts"] or "None",
-                    "nc.qc.stopCodons": lambda d: d["results"][0]["qc"]["stopCodons"] or "None"
+                    "nc.qc.missingData": lambda d: d["results"][0]["qc"]["missingData"]["status"] if d["results"][0]["qc"]["missingData"] else "None",
+                    "nc.qc.mixedSites": lambda d: d["results"][0]["qc"]["mixedSites"]["status"] if d["results"][0]["qc"]["mixedSites"] else "None",
+                    "nc.qc.privateMutations": lambda d: d["results"][0]["qc"]["privateMutations"]["status"] if d["results"][0]["qc"]["privateMutations"] else "None",
+                    "nc.qc.snpClusters": lambda d: d["results"][0]["qc"]["snpClusters"]["status"] if d["results"][0]["qc"]["snpClusters"] else "None",
+                    "nc.qc.frameShifts": lambda d: d["results"][0]["qc"]["frameShifts"]["status"] if d["results"][0]["qc"]["frameShifts"] else "None",
+                    "nc.qc.stopCodons": lambda d: d["results"][0]["qc"]["stopCodons"]["status"] if d["results"][0]["qc"]["stopCodons"] else "None"
                    }
     return nc_mappings
 
@@ -178,10 +178,10 @@ def main():
 
         ## probably redundant
         sorted_csv_lines = sorted(csv_lines, key=lambda d: (d["Sample_ID"], d["Virus_Taxon_ID"], d["Flu_Segment"], d["Reference_Taxon_ID"], d["nc.qc.overallScore"]))
-
+        rounded_sorted_csv_lines = [{k: (float(f"{v:.3g}") if isinstance(v, float) else v) for k, v in d.items()} for d in sorted_csv_lines]
         summary_csv_fname = "summary_report.csv"
 
-        write_summary_csv(sorted_csv_lines, summary_csv_fname)
+        write_summary_csv(rounded_sorted_csv_lines, summary_csv_fname)
 
 if __name__ == "__main__":
     main()
