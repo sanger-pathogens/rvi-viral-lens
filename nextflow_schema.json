@@ -54,15 +54,31 @@
       "type": "integer",
       "default": 10000000
     },
-    "k2r_dump_fq_mem": {
-      "type": "string",
-      "default": "6 GB"
+    "read_aligner": {
+        "type": "string",
+        "default": "minimap2"
     },
-    "ivar_min_depth": {
+    "read_aligner_params": {
+        "type": "string",
+        "default": "-ax sr -k11 -w4"
+    },
+    "mpileup_max_depth": {
+      "type": "integer",
+      "default": 2000
+    },
+    "ivar_initial_min_depth": {
+      "type": "integer",
+      "default": 1
+    },
+    "ivar_initial_freq_threshold": {
+      "type": "number",
+      "default": 0.75
+    },
+    "ivar_polish_min_depth": {
       "type": "integer",
       "default": 10
     },
-    "ivar_freq_threshold": {
+    "ivar_polish_freq_threshold": {
       "type": "number",
       "default": 0.75
     },
