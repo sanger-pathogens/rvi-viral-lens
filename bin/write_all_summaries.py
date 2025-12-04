@@ -28,11 +28,6 @@ def build_summary_csv_mapping():
             "bases_mapped": "Total_Mapped_Bases",
             "longest_non_n_subsequence": "Longest_non_N_segment",
             "percent_non_n_bases": "Percentage_non_N_bases",
-            "mutations": "total_mutations",
-            "insertions": "n_insertions",
-            "deletions": "n_deletions",
-            "snps": "n_snps",
-            "ti_tv_ratio": "ti_tv_ratio",
             "nc.selected_dataset": "nc.selected_dataset",
             "nc.coverage": "nc.coverage",
             "nc.qc.overallScore": "nc.qc.overallScore",
@@ -67,10 +62,10 @@ def write_summary_csv(data_list, output_path):
     fieldnames = ['Sample_ID', 'Virus_Taxon_ID', 'Virus', 'Species', 'Reference_Taxon_ID',
                   'Selected_Reference', 'Flu_Segment', 'Reference_Subtype', 'Sample_Subtype',
                   'Percentage_of_Genome_Covered', 'Total_Mapped_Reads', 'Total_Mapped_Bases',
-                  'Longest_non_N_segment', 'Percentage_non_N_bases', 'total_mutations', 'n_insertions',
-                  'n_deletions', 'n_snps', 'ti_tv_ratio', 'nc.selected_dataset', 'nc.coverage', 'nc.qc.overallScore',
-                  'nc.qc.overallStatus', 'nc.qc.missingData', 'nc.qc.mixedSites', 'nc.qc.privateMutations',
-                  'nc.qc.snpClusters', 'nc.qc.frameShifts', 'nc.qc.stopCodons', 'file_prefix']
+                  'Longest_non_N_segment', 'Percentage_non_N_bases', 'nc.selected_dataset', 
+                  'nc.coverage', 'nc.qc.overallScore','nc.qc.overallStatus', 'nc.qc.missingData', 
+                  'nc.qc.mixedSites', 'nc.qc.privateMutations','nc.qc.snpClusters', 'nc.qc.frameShifts', 
+                  'nc.qc.stopCodons', 'file_prefix']
 
     ## Write to CSV file
     with open(output_path, mode='w', newline='') as csvfile:

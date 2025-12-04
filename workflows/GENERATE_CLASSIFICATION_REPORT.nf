@@ -47,31 +47,3 @@ workflow GENERATE_CLASSIFICATION_REPORT {
 
 }
 
-
-workflow {
-    manifest_channel = Channel.fromPath(params.manifest_file)
-    | splitCsv(header: true, sep: ',')
-    | map { row ->
-        def meta = [[id:row.sample_id,
-            taxid:row.taxid,
-            ref_selected:row.ref_selected,
-            virus_name:row.virus_name,
-            virus_subtype:row.virus_subtype,
-            flu_segment:row.flu_segment,
-            percent_positions_exceeding_depth_10:row.percent_positions_exceeding_depth_10,
-            reads_mapped:row.reads_mapped,
-            bases_mapped:row.bases_mapped,
-            longest_non_n_subsequence:row.longest_non_n_subsequence,
-            percent_non_n_bases:row.percent_non_n_bases,
-            qc_status:row.qc_status,
-            mutations:row.mutations,
-            insertions:row.insertions,
-            deletions:row.deletions,
-            snps:row.snps,
-            ti_tv_ratio:row.ti_tv_ratio
-        ]]
-    }
-
-    GENERATE_CLASSIFICATION_REPORT(manifest_channel)
-}
-
