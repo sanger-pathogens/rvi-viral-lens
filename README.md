@@ -419,11 +419,11 @@ The `params` block defines key user-modifiable settings for the workflow.
 #### Consensus building Parameters
 
 - `do_consensus_polishing` : "polish" consensus by re-aligning the reads to the initial consensus and re-calling the consensus 
-  - Default: `true`.
+  - Default: `"true"`.
 - `read_aligner` : Use bwa or minimap2 for read alignment
-  - Default: `minimap2`
+  - Default: `"minimap2"`
 - `read_aligner_params`: Parameters to supply to the read aligner
-  - Default: `-ax sr -k11 -w 4` (assumes minimap2)
+  - Default: `"-ax sr -k11 -w 4"` (assumes minimap2)
 - `mpileup_max_depth` : max depth for samtools mpileup input to ivar
   - Default: `2000`
 - `ivar_initial_min_depth` : minimum depth for initial round of ivar consensus 
