@@ -45,17 +45,24 @@ workflow {
     --db_library_fa_path         : ${params.db_library_fa_path}
     --min_reads_for_taxid        : ${params.min_reads_for_taxid}
     --k2r_max_total_reads_per_fq : ${params.k2r_max_total_reads_per_fq}
-    --k2r_dump_fq_mem            : ${params.k2r_dump_fq_mem}
 
   --> GENERATE_CONSENSUS workflow parameters:
-    --ivar_min_depth           : ${params.ivar_min_depth}
-    --ivar_freq_threshold      : ${params.ivar_freq_threshold}
+    --do_consensus_polishing      : ${params.do_consensus_polishing }
+    --read_aligner                : ${params.read_aligner}
+    --read_aligner_params         : ${params.read_aligner_params}
+    --mpileup_max_depth           : ${params.mpileup_max_depth }
+    --ivar_initial_min_depth      : ${params.ivar_initial_min_depth}
+    --ivar_initial_freq_threshold : ${params.ivar_initial_min_depth}
+    --ivar_polish_min_depth       : ${params.ivar_polish_min_depth}
+    --ivar_polish_freq_threshold  : ${params.var_polish_freq_threshold}
+    --ivar_min_depth              : ${params.ivar_min_depth}
+    --ivar_freq_threshold         : ${params.ivar_freq_threshold}
 
   --> viral subtyping branching parameters:
     --scv2_keyword             : ${params.scv2_keyword}
 
   --> Nextclade parameters:
-    --nextclade_data_dir       : ${params.nextclade_data_dir}
+    --nextclade_index_json      : ${params.nextclade_index_json}
 
   --> resource management:
     --default_error_strategy   : ${params.default_error_strategy}
@@ -108,7 +115,7 @@ workflow {
 
     // === Run Nextclade
     GENERATE_CONSENSUS.out.filtered_consensus_ch
-    .map{meta, _bam, _bam_idx, consensus, _variants, _qc_json -> [meta.id, meta, consensus]}
+    .map{meta, _bam, _bam_idx, consensus, _qc_json -> [meta.id, meta, consensus]}
     .set{consensus_fa_ch}
 
     SORT_READS_BY_REF.out.sample_pre_report_ch
@@ -125,7 +132,7 @@ workflow {
 
     // TODO add check parameters
     if (params.nextclade_index_json == null){
-        log.warn("No nextclade_data_dir provided, skipping nextclade analysis step")
+        log.warn("No nextclade_index_json provided, skipping nextclade analysis step")
         publish_nextclade_outputs_ch = channel.empty()
         per_consensus_nextclade_json_ch = channel.empty()
     } else {
@@ -153,7 +160,7 @@ workflow {
 
     // 5.1 - add report info to out qc metric chanel and branch for SCOV2 subtyping
     GENERATE_CONSENSUS.out.filtered_consensus_ch
-        .map { meta, _bam, _bam_idx, consensus, _variants, _qc ->
+        .map { meta, _bam, _bam_idx, consensus, _qc ->
             [meta.id, meta, consensus]
         }
         .join(sample_report_with_join_key_ch)
@@ -182,12 +189,12 @@ workflow {
         .map{ meta, _fasta ->  [meta.id, meta] }
         .set{ report_in_ch }
 
-    GENERATE_CONSENSUS.out.filtered_consensus_ch.map { meta, _bam, _bam_idx, _consensus, _variants, qc_json ->
+    GENERATE_CONSENSUS.out.filtered_consensus_ch.map { meta, _bam, _bam_idx, _consensus, qc_json ->
                     [meta.id, qc_json]
                     }
                 .set{ qc_json_simplified_ch }
 
-    GENERATE_CONSENSUS.out.filtered_consensus_ch.map { meta, bam, bam_idx, consensus, _variants, _qc_json ->
+    GENERATE_CONSENSUS.out.filtered_consensus_ch.map { meta, bam, bam_idx, consensus, _qc_json ->
                     [meta, [bam, bam_idx, consensus]]
                     }
                 .set{ aln_publish_ch }
