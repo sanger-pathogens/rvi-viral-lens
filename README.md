@@ -64,19 +64,19 @@ This pipeline will generate, if possible, high quality consensus sequences for e
 
 ## Pipeline Summary
 
-The pipeline takes a manifest containing  **fastq pairs file** paths and a **kraken detabase** as inputs (check [Inputs section](#inputs) for more details) and outputs a **classification report**, **consensus sequences** and a (optionally) **collection of intermediate files**. Here is an broad overview of the pipeline logic
+The pipeline takes a manifest containing  **fastq pairs file** paths and a **kraken detabase** as inputs (check [Inputs section](#inputs) for more details) and outputs a collection of sequences reconstucted from the reads (using an alignment-and-consensus approach; see below), along with a number of reports. Here is an broad overview of the pipeline logic
 
 0. **Preprocessing** (Optional): An optional preprocessing workflow is provided on this pipeline, activated by `--do_preprocessing true`. 
 The Preprocessing pipeline remove adapters (via `trimmomatic`), tandem repeats (via `TRF`) and remove human reads (via `sra-human-scrubber`) from fastq files. Each of those steps can be set on/off (`--run_trimmomatic`, `--run_trf`, `--run_hrr`).
 
 
-1. **Sort Reads**: The initial step is sort reads using `kraken2` for each fastq pairs according to the database provided. The classified reads is used as input to [kraken2ref](https://github.com/genomic-surveillance/kraken2ref) which will generate one pair of fastq files per taxid found.
+1. **Sort Reads**: The initial step is classify reads using `kraken2` for each fastq pairs according to the database provided. The classified reads are used as input to [kraken2ref](https://github.com/genomic-surveillance/kraken2ref) which will generate one pair of fastq files per taxid found.
    - An option to split big files is provided (check [Parameter section](#parameters)).
 
-2. **Generate Consensus**: After all samples been classified, all references observed for that samples batch are fetch from the `kraken database` (or an arbitrary fasta file provided by the user). The classfied reads are aligned to their respective references (via `bwa`). The alignment is used as input for `ivar` to obtain a consensus sequence.
+2. **Generate Consensus**: After all samples been classified, all references observed for that samples batch are fetch from the `kraken database` (or an arbitrary fasta file provided by the user). The classfied reads are aligned to their respective references (via `bwa`
+or minimap2), with the resulting pileup being provided to `ivar` to determine the sequence by consensus (in either one or two rounds). 
 
-3. **Compute QC**: QC metrics are computed via `samtools` and a custom script (`qc.py`)
-
+3. **Compute QC**: QC metrics and properties are collated by custom script (`qc.py`)
 
 4. **SARS-CoV-2 Subtyping**: SARS-CoV-2 subtyping can be done if present on the sample
 
@@ -89,7 +89,7 @@ The Preprocessing pipeline remove adapters (via `trimmomatic`), tandem repeats (
 
 ## How to Cite
 
-This  software will be published soon. Until it is, please provide the URL to this GitHub repository when you use the software in your own work.
+This software will be published soon. Until it is, please provide the URL to this GitHub repository when you use the software in your own work.
 
 [**(&uarr;)**](#contents)
 
@@ -123,15 +123,15 @@ tar -xf  refseq_ncbiFlu_kfv2_20241027.tar.gz
 You will need a manifest and a kraken database (check [Inputs section](#inputs) and [Usage section](#usage) for more details)
 
 ```bash
-PIPELINE_CODES=<path to viral lens repo>
+PIPELINE_CODE=<path to viral lens repo>
 MANIFEST=<path to my manifest>
-kraken_db_path=<path to my kraken DB>
+KRAKEN_DB_PATH=<path to my kraken DB>
 PIPELINE_CONTAINERS=<path to my containers dir>
 NEXTCLADE_INDEX_JSON=<path to my nextclade_index.json>
 
 ## nextclade_index_json is optional -- required if Nextclade output is required
-nextflow run ${PIPELINE_CODES}/main.nf --manifest ${MANIFEST} \
-    --db_path ${kraken_db_path} \
+nextflow run ${PIPELINE_CODE}/main.nf --manifest ${MANIFEST} \
+    --db_path ${KRAKEN_DB_PATH} \
     --outdir ./output/ \
     --containers_dir ${PIPELINE_CONTAINERS} \
     --nextclade_index_json ${NEXTCLADE_INDEX_JSON} \
@@ -193,6 +193,7 @@ Singularity and Docker recipes for the containers used on this pipeline are avai
 ```bash
 cd containers/
 sudo singularity build base_container.sif baseContainer.sing
+sudo singularity build alignment.sif alignmentContainer.sing
 sudo singularity build ivar.sif ivarContainer.sing
 sudo singularity build pangolin.sif pangolinContainer.sing
 sudo singularity build kraken.sif krakenContainer.sing
@@ -237,7 +238,6 @@ This pipeline relies on two **main inputs**:
 - **`db_path`** : Path of a valid [kraken2 database](https://github.com/DerrickWood/kraken2/blob/master/docs/MANUAL.markdown#kraken-2-databases)
 
 ### Manifest
-
 
 The pipeline require as input a manifest containing a unique sample id (`sample_id`) and paths to each of the fastq pair file (`reads_1` and `reads_3`)
 
@@ -307,7 +307,7 @@ The output file tree should look like the tree bellow:
 ├── <sample_id>
 │   ├── <taxid>
 │   │   ├── <sample_id>.<taxid>.consensus.fa
-│   │   ├── <sample_id>.<taxid>.qc.csv
+│   │   ├── <sample_id>.<taxid>.properties.json
 │   │   ├── <sample_id>.<taxid>.sorted.bam
 │   │   └── <sample_id>.<taxid>.sorted.bam.bai
 │   ├── [...]
@@ -318,21 +318,21 @@ The output file tree should look like the tree bellow:
 │   ├── <sample_id>.unclass_seqs_1.fq
 │   ├── <sample_id>.unclass_seqs_2.fq
 ├── [...]
-├── classification_report.csv
+├── summary_report.csv
+├── consensus_sequence_properties.json
+
 ```
 
 ### Main output files
 
 - **Report CSV**: A csv file summarizing consensus sequences information and qc metrics obtained from each input samples.
-  - location: `<output_dir>/classification_report.csv`
+  - location: `<output_dir>/summary_report.csv`
 
 - **Consensus sequences per taxid**: the consensus sequence obtained for a given `taxid` and `sample_id` combination.
   - location: `<output_dir/<sample_id>/<sample_id>.<taxid>.consensus.fa`
 
-The **BWA output BAM files** generated by the `bwa_alignment_and_post_processing` process
-
-- `<sample_id>.<taxid>.sorted.bam`: A [Binary Alignment Map (BAM)](https://en.wikipedia.org/wiki/Binary_Alignment_Map) file resulted from the alignment between the `<sample_id>.<taxid>.fastq` pair outputed by kraken2ref output (`run_kraken2ref_dump_fastq`).
-- `<sample_id>.<taxid>.sorted.bai`: the index file of the `sorted.bam` file. the BAI file provide fast retrieval of alignments overlapping a specified region without going through the whole alignments, check [section 5 of the samtools documenation](https://samtools.github.io/hts-specs/SAMv1.pdf) for a more detailed description.
+The **Alignment output BAM files**: alignment that was the basis for the reported consensus sequence
+  - location: `<output_dir>/sample_id>/<sample_id>.<taxid>.sorted.bam` (and associated index file)
 
 ### Intemediate output files
 
@@ -369,15 +369,6 @@ U	A00948:701:HJHWGDSX7:2:1101:9498:1031	0	151|151	A:1 0:116 |:| 0:117
 U	A00948:701:HJHWGDSX7:2:1101:7699:1047	0	151|151	A:1 0:116 |:| 0:117
 C	A00948:701:HJHWGDSX7:2:1101:15058:1047	2697049	151|151	A:1 2697049:116 |:| 2697049:117
 U	A00948:701:HJHWGDSX7:2:1101:30481:1047	0	151|151	A:1 0:116 |:| 0:117
-```
-
-The **QC report** which is the output of `run_qc_script`.
-
-- `<sample_id>.<taxid>.qc.csv`: a csv containing QC metrics of the consensus sequence obtained (`<sample_id.<taxid>.consensus.fa`).
-
-```csv
-sample_name,pct_N_bases,pct_covered_bases,longest_no_N_run,num_aligned_reads,fasta,bam,qc_pass,total_mapped_reads,ivar_md,total_unmapped_reads
-<sample_id.<taxid>,0.76,99.19,3543,129724,<sample_id.<taxid>.consensus.fa,<sample_id.<taxid>.sorted.bam,TRUE,129837,10,0
 ```
 
 [**(&uarr;)**](#contents)
