@@ -1,6 +1,6 @@
 // Copyright (C) 2023 Genome Surveillance Unit/Genome Research Ltd.
 
-include {run_aligner as initial_alignment; run_aligner as re_alignment} from '../modules/alignment.nf'
+include {run_aligner as initial_alignment; run_aligner as re_alignment; run_aligner as final_alignment} from '../modules/alignment.nf'
 include {run_ivar as initial_consensus; run_ivar as polish_consensus} from '../modules/run_ivar.nf'
 include {run_qc_script} from '../modules/run_qc_script.nf'
 
@@ -63,7 +63,7 @@ workflow GENERATE_CONSENSUS {
             // Realign reads to consensus, and re-call consensus
 
             realignment_in_ch = consensus_initial_ch.map {
-                meta, fastq, bam, bam_idx, cons_fa ->
+                meta, fastq, _bam, _bam_idx, cons_fa ->
                     [meta, fastq, cons_fa] 
             }
 
@@ -83,8 +83,16 @@ workflow GENERATE_CONSENSUS {
             consensus_final_ch = consensus_initial_ch
         }
 
-        qc_script_in_ch = consensus_final_ch.map {
-            meta, _fastq, bam, bam_idx, cons_fa ->
+        // Realign reads reads back to final consensus
+        final_align_in_ch = consensus_final_ch.map {
+            meta, fastq, _bam, _bam_idx, cons_fa ->
+                [meta, fastq, cons_fa]    
+        }
+
+        final_alignment_ch = final_alignment( final_align_in_ch )
+
+        qc_script_in_ch = final_alignment_ch.map {
+            meta, _fastq, cons_fa, bam, bam_idx ->
                 [meta, bam, bam_idx, cons_fa]
         } 
 
