@@ -59,7 +59,7 @@ workflow GENERATE_CONSENSUS {
             params.ivar_initial_freq_threshold, 
             params.ivar_initial_min_depth )
 
-        if (params.do_consensus_polishing == 'true') {
+        if (params.do_consensus_polishing == true) {
             // Realign reads to consensus, and re-call consensus
 
             realignment_in_ch = consensus_initial_ch.map {
