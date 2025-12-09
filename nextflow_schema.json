@@ -38,10 +38,6 @@
       "type": "integer",
       "default": 4
     },
-    "k2r_fq_load_mode": {
-      "type": "string",
-      "default": "full"
-    },
     "k2r_polling_mode": {
       "type": "string",
       "default": "max"
@@ -55,12 +51,12 @@
       "default": 10000000
     },
     "read_aligner": {
-        "type": "string",
-        "default": "minimap2"
+      "type": "string",
+      "default": "minimap2"
     },
     "read_aligner_params": {
-        "type": "string",
-        "default": "-ax sr -k11 -w4"
+      "type": "string",
+      "default": "-ax sr -k11 -w 4"
     },
     "mpileup_max_depth": {
       "type": "integer",
@@ -72,7 +68,7 @@
     },
     "ivar_initial_freq_threshold": {
       "type": "number",
-      "default": 0.75
+      "default": 0.6
     },
     "ivar_polish_min_depth": {
       "type": "integer",
@@ -113,13 +109,6 @@
     "mem_k2r_a2": {
       "type": "integer",
       "default": 2
-    },
-    "use_local_containers": {
-      "type": "boolean"
-    },
-    "use_registry_containers": {
-      "type": "boolean",
-      "default": true
     },
     "tracedir": {
       "type": "string",
@@ -184,6 +173,10 @@
     },
     "nextclade_index_json": {
       "type": "string"
+    },
+    "do_consensus_polishing": {
+      "type": "boolean",
+      "default": true
     }
   }
 }
