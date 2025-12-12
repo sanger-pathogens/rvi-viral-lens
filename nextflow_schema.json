@@ -5,10 +5,6 @@
   "description": "identify the presence of Flu, SARS-CoV-2 and RSV and obtain, if possible, high quality consensus sequences for those virus.",
   "type": "object",
   "properties": {
-    "containers_dir": {
-      "type": "string",
-      "default": "$projectDir/containers/"
-    },
     "manifest": {
       "type": "string"
     },
