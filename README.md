@@ -2,12 +2,10 @@
 
 # Viral Lens
 
-The **Viral Lens** is a bioinformatic pipeline deal with short-read sequencing data generated from the bait-capture protocols for enrichment designed under the context of the [RVI project](https://www.sanger.ac.uk/group/respiratory-virus-and-microbiome-initiative/) by [GSU](https://www.sanger.ac.uk/collaboration/genomic-surveillance-unit/).
-This pipeline will generate, if possible, high quality consensus sequences for every virus identified according to a kraken database.
+**Viral Lens** (also known as viral-lens) is a bioinformatics pipeline for reconstructing and classifying viral genomes from short-read sequencing data. It was developed for the [RVI project](https://www.sanger.ac.uk/group/respiratory-virus-and-microbiome-initiative/) at the Wellcome Sanger Institute, and has been validated using data generated using the RVI target enrichment protocol.
 
 ---
 ## Contents
-- [Contents](#contents)
 - [Pipeline Summary](#pipeline-summary)
 - [How to Cite](#how-to-cite)
 - [Quick Start](#quick-start)
@@ -21,106 +19,49 @@ This pipeline will generate, if possible, high quality consensus sequences for e
 - [Outputs](#outputs)
   - [Main output files](#main-output-files)
   - [Intemediate output files](#intemediate-output-files)
-- [Configuration Sections](#configuration-sections)
+- [Configuration](#configuration)
   - [Parameters](#parameters)
-    - [input](#input)
-    - [Pipeline Flow Controls](#pipeline-flow-controls)
-    - [Kraken Database Parameters](#kraken-database-parameters)
-    - [Kraken2Ref Handling](#kraken2ref-handling)
-    - [Kraken2ref Report Filter](#kraken2ref-report-filter)
-    - [iVar Parameters](#ivar-parameters)
-    - [Virus Subtyping](#virus-subtyping)
-    - [Output Directory](#output-directory)
-    - [General](#general)
-  - [Containerization](#containerization)
+  - [Containers](#containers)
   - [Process Settings](#process-settings)
   - [Profiles](#profiles)
-    - [`sanger_standard` Profile](#sanger_standard-profile)
 - [Unit Tests](#unit-tests)
 - [Pipeline components documentation](#pipeline-components-documentation)
   - [Processes](#processes)
-      - [run\_kraken](#run_kraken)
-      - [run\_k2r\_sort\_reads](#run_k2r_sort_reads)
-      - [run\_k2r\_dump\_fastqs\_and\_pre\_report](#run_k2r_dump_fastqs_and_pre_report)
-      - [concatenate\_fqs\_parts](#concatenate_fqs_parts)
-      - [get\_taxid\_references](#get_taxid_references)
-      - [bwa\_alignment\_and\_post\_processing](#bwa_alignment_and_post_processing)
-      - [run\_ivar](#run_ivar)
-      - [run\_pangolin](#run_pangolin)
-      - [run\_qc\_script](#run_qc_script)
-  - [Workflow](#workflow)
-    - [SORT\_READS\_BY\_REF](#sort_reads_by_ref)
-    - [GENERATE\_CONSENSUS](#generate_consensus)
-    - [COMPUTE\_QC\_METRICS](#compute_qc_metrics)
-    - [SCOV2\_SUBTYPING](#scov2_subtyping)
-    - [GENERATE\_CLASSIFICATION\_REPORT](#generate_classification_report)
-    - [RUN\_NEXTCLADE](#run_nextclade)
-  - [Custom pipeline scripts](#custom-pipeline-scripts)
+  - [Workflows](#workflows)
+  - [Scripts](#sscripts)
     - [Kraken2ref JSON to TSV Report Script](#kraken2ref-json-to-tsv-report-script)
     - [QC Script for BAM and FASTA Files](#qc-script-for-bam-and-fasta-files)
+    - [Create Nextflow Index](#create-nextflow-index)
 - [Licence](#licence)
 
 ---
 
 ## Pipeline Summary
 
-The pipeline takes a manifest containing  **fastq pairs file** paths and a **kraken detabase** as inputs (check [Inputs section](#inputs) for more details) and outputs a collection of sequences reconstucted from the reads (using an alignment-and-consensus approach; see below), along with a number of reports. Here is an broad overview of the pipeline logic
+The pipeline takes as input (a) a manifest containing  **fastq pairs file** paths and (b) a **kraken detabase**  (see [Inputs section](#inputs) for more details) and outputs a collection of sequences reconstucted from the reads (using an alignment-and-consensus approach; see below), along with a number of reports. The broad steps followed by the pipeline are as follows:
 
-0. **Preprocessing** (Optional): An optional preprocessing workflow is provided on this pipeline, activated by `--do_preprocessing true`. 
-The Preprocessing pipeline remove adapters (via `trimmomatic`), tandem repeats (via `TRF`) and remove human reads (via `sra-human-scrubber`) from fastq files. Each of those steps can be set on/off (`--run_trimmomatic`, `--run_trf`, `--run_hrr`).
+0. **Preprocessing** (Optional): An optional preprocessing workflow (activated by `--do_preprocessing true`). This remove adapters (via `trimmomatic`), tandem repeats (via `TRF`) and human reads (via `sra-human-scrubber`) from the input fastq files. Each of those steps can be set on/off (`--run_trimmomatic`, `--run_trf`, `--run_hrr`).
 
+1. **Classify Reads and select references**: `kraken2` is initially used to classify the reads in the input fastq, using the input Kraken database. The resulting Kraken2 report is used to select partition the reads into groups, each associated with a selected reference sequence that will be used to guide the reconstruction of the viral genome. 
 
-1. **Sort Reads**: The initial step is classify reads using `kraken2` for each fastq pairs according to the database provided. The classified reads are used as input to [kraken2ref](https://github.com/genomic-surveillance/kraken2ref) which will generate one pair of fastq files per taxid found.
-   - An option to split big files is provided (check [Parameter section](#parameters)).
-
-2. **Generate Consensus**: After all samples been classified, all references observed for that samples batch are fetch from the `kraken database` (or an arbitrary fasta file provided by the user). The classfied reads are aligned to their respective references (via `bwa`
+2. **Generate Consensus**: The reads sets produced in the previous step are aligned to their respective references (via `bwa`
 or minimap2), with the resulting pileup being provided to `ivar` to determine the sequence by consensus (in either one or two rounds). 
 
-3. **Compute QC**: QC metrics and properties are collated by custom script (`qc.py`)
+3. **NextClade analysis**: (Optional) NextClade is run on the resulting viral genomes.
 
-4. **SARS-CoV-2 Subtyping**: SARS-CoV-2 subtyping can be done if present on the sample
-
-5. **RUN_NEXTCLADE**: Run nextclade based on a given nextclade database directory structure.
-
----
+4. **Pangolin analysis**: (Optional) For SARS-CoV-2 genomes, Pangolin is run to sub-type the genome. 
 
 [**(&uarr;)**](#contents)
-
+---
 
 ## How to Cite
 
 This software will be published soon. Until it is, please provide the URL to this GitHub repository when you use the software in your own work.
 
 [**(&uarr;)**](#contents)
-
 ---
-## Quick Start
 
-Assuming [dependencies](#dependencies) are installed on the system:
-
-1. Setup the pipeline:
-
-```bash
-# clone the repo
-git clone --recursive https://github.com/genomic-surveillance/rvi-viral-lens
-cd viral_pipeline/
-# (optional) build containers
-cd containers/
-sudo singularity build base_container.sif baseContainer.sing
-sudo singularity build ivar.sif ivarContainer.sing
-sudo singularity build pangolin.sif pangolinContainer.sing
-sudo singularity build kraken.sif krakenContainer.sing
-sudo singularity build kraken2ref.sif kraken2ref.sing
-
-# (optional) Download database
-cd ../
-wget https://rvi_kraken2_dbs.cog.sanger.ac.uk/refseq_ncbiFlu_kfv2_20241027.tar.gz
-tar -xf  refseq_ncbiFlu_kfv2_20241027.tar.gz
-```
-
-2. Run pipeline
-
-You will need a manifest and a kraken database (check [Inputs section](#inputs) and [Usage section](#usage) for more details)
+## Basic usage
 
 ```bash
 PIPELINE_CODE=<path to viral lens repo>
@@ -130,112 +71,77 @@ PIPELINE_CONTAINERS=<path to my containers dir>
 NEXTCLADE_INDEX_JSON=<path to my nextclade_index.json>
 
 ## nextclade_index_json is optional -- required if Nextclade output is required
-nextflow run ${PIPELINE_CODE}/main.nf --manifest ${MANIFEST} \
+nextflow run ${PIPELINE_CODE}/main.nf \
+    --manifest ${MANIFEST} \
     --db_path ${KRAKEN_DB_PATH} \
-    --outdir ./output/ \
-    --containers_dir ${PIPELINE_CONTAINERS} \
     --nextclade_index_json ${NEXTCLADE_INDEX_JSON} \
+    --outdir ./output/ \
     -with-trace -with-report -with-timeline \
     -profile sanger_local \
     -resume
 ```
 
-> See [below](#create-nextclade-index) for information on the `nextclade_index.json` file
-
 [**(&uarr;)**](#contents)
 
 ---
-## Installation
+## Installation and dependencies
 
-### dependencies
+### Software
 
-- [Nextflow](https://www.nextflow.io) (tested on `23.10.1`)
-- [Singularity](https://docs.sylabs.io/guides/latest/user-guide/) (required to use Singularity Containers, tested on ``ce version 3.11.4``)
+The following software in required to run the pipeline (with versions used for testing and validation listed):
 
-> We strongly recommend to run the pipeline using the containers provided at [quay.io gsu-pipeline](https://quay.io/organization/gsu-pipelines).
-
-If not using containers, all the software needs to be available at run time. Here is a list of all the softwares versions currently in use in the pipeline as set on each container.
-
-- **base container**
-  - Python3 
-
-- **alignment container**
+- Minimal requirements
+  - Nextflow = `23.10.1`
+  - Python3
+    - pytest = `6.2.2`
+    - importlib-resources = `5.1.0`
+    - flake8 = `7.0.0`
+    - pandas = `2.1.4`
+    - cached-property = `1.5.2`
+    - scipy = `1.12.0`
+  - kraken2 = `v2.1.3`
   - Samtools/htslib = `1.21`
   - BWA = `0.7.17`
   - minimap2 = `2.30`
-
-- **Ivar container**
-  - samtools/htslib = `1.21`
   - iVar = `1.4.3`
+  - [kraken2ref](https://github.com/genomic-surveillance/kraken2ref) = `v2.1.0`
+- If requiring NextClade analysis
+  - NextClade (CLI) = `3.16.0`
+- If requiring Pangolin analysis
+  - Pangolin `4.3.1`
+- When using containers
+  - [Singularity](https://docs.sylabs.io/guides/latest/user-guide/) is required to use Singularity Containers, tested on ``ce version 3.11.4``
 
-- **Kraken2Ref cotainer**:
-  - pytest = `6.2.2`
-  - importlib-resources = `5.1.0`
-  - flake8 = `7.0.0`
-  - pandas = `2.1.4`
-  - cached-property = `1.5.2`
-  - scipy = `1.12.0`
-  - kraken2ref = `v2.1.0`
+> NOTE: Running the pipeline under an environment which has the above software installed but with different versions may work, but has not been tested and validated.
 
-- **Kraken containers**
-  - kraken2 = `v2.1.3`
-  - kraken_tools = `v1.2`
-  - biopython = `v1.81`
+### Containers
 
-> NOTE: If not running under the provided containers, is strongly recommended to use the same versions described here.
+Out-of-the-box, the pipeline uses containers for these dependencies. Custom container images required by the pipeline have been deposited at quay.io at [quay.io gsu-pipeline](https://quay.io/organization/gsu-pipelines), and the pipeline is configured to use these containers. 
 
-### build containers
-
-By default, the pipeline will use the containers provided at [quay.io gsu-pipeline](https://quay.io/organization/gsu-pipelines).
-
-Singularity and Docker recipes for the containers used on this pipeline are available on this repository at `containers/` dir. To build the containers, run the commands bellow.
+Source code for these can be found in `"$projectDir/containers"`. To build the containers, run the commands bellow.
 
 ```bash
 cd containers/
-sudo singularity build base_container.sif baseContainer.sing
 sudo singularity build alignment.sif alignmentContainer.sing
 sudo singularity build ivar.sif ivarContainer.sing
 sudo singularity build pangolin.sif pangolinContainer.sing
-sudo singularity build kraken.sif krakenContainer.sing
 sudo singularity build kraken2ref.sif kraken2ref.sing
 ```
 
-> NOTE: To use local containers on the pipeline set the parameters `use_local_containers` to `true` and `use_registry_containers` to `false` either at the config file or at the CLI.
+> NOTE: To use local containers on the pipeline set the parameters, you will need to edit `"$projectDir/conf/containers.config"` and change the locations for each container. 
 
 [**(&uarr;)**](#contents)
 
-## Usage
-
-1. **Generate manifest**
-For convenience, a script to generate the manifest is provided on this repo:
-
-```bash
-python write_manifest.py ./path/to/my/fastqs_dir/ -fq1_ext my_r1_ext -fq2_ext my_r2_ext
-```
-
-2. **Run pipeline**
-
-```bash
-## nextclade_index_json is optional -- required if Nextclade output is required
-nextflow run /path/to/rvi_consensus_gen/main.nf --manifest /path/to/my/manifest.csv \
-        --db_path /path/to/my/kraken_db \
-        --outdir outputs/ \
-        --containers_dir /path/to/my/containers_dir/ \
-        --nextclade_index_json ${NEXTCLADE_INDEX_JSON} \
-        -profile sanger_standard -resume -with-trace -with-report -with-timeline
-```
-
-[**(&uarr;)**](#contents)
 
 ## Inputs
 
-This pipeline relies on two **main inputs**:
+This pipeline relies on three **main inputs**:
 
 - **`manifest`** : CSV Manifest of input fastq file pairs.
   - Must have `sample_id`,`reads_1` and `reads_2` columns
   - If you have your set of fastq pairs in a single dir, a script (`write_manifest.py`) is provided to facilitate this process.
-
 - **`db_path`** : Path of a valid [kraken2 database](https://github.com/DerrickWood/kraken2/blob/master/docs/MANUAL.markdown#kraken-2-databases)
+- **`nextclade_index_json`** : (Optional, if wanting NextClade analysis) Path to a JSON file mapping sequence products from the pipeline to NextClade datasets
 
 ### Manifest
 
@@ -250,99 +156,200 @@ sample3,/path/to/output/sample3_R1.fq,/path/to/output/sample3_R2.fq
 
 > NOTE: The collumn **`sample_id`** must be **unique, alphanumerics (non consecutive "_" are accepted) and cannot be empty**. Pipeline will fail if any of these conditions are not met.
 
-**Write Manifest Script**
+### Kraken2 Database
 
-For user convenience, a script to write a manifest (`write_manifest.py`). This script generates a CSV manifest file from a directory of FASTQ files.
+This pipeline essentially works with a Kraken2 database that has been built from Viral RefSeq in the standard way (e.g. see [here](https://benlangmead.github.io/aws-indexes/k2) for publicly available Kraken3 DBs). However, for respiratory viruses, we have improved the performance of the pipeline using a Kraken2 database that has been prepared in a specific way, namely:
 
-1. It takes a glob pattern to locate files, checks for paired-end FASTQ files (based on provided extensions)
-2. extracts metadata such as sample IDs (optionaly taxonomic IDs) from the filenames.
-    1. The user can specify if taxonomic IDs are included in the filenames, along with the filename separator. 
-    2. If reference files are provided for taxonomic IDs, they are linked to the samples in the output. 
+- The Influenza taxonomy is modified below the level of the species such that each segment is represented as its own distinct branch. 
+- Further, for specifically segments 4 (HA) and 6 (NA), those branches of the custom taxonomy have an additional level so that nodes representing subtypes H1, H2, H3... are directly below the segment 4 node, and similarly, nodes representing subtypes N1, N2, N3... fall directly under the segment 6 node. Essentially, the segments of the flu genome are considered as distinct sequences for the purposes of the kraken2 classification step
+- The number of Influenza, RSV (A and B), Rhinovirus and Metapneumovirus in the database is also expanded as compared to those found in viral RefSeq
 
-The script handles errors such as missing paired-end files or improperly formatted filenames, and generates a CSV manifest that includes sample information, file paths, and reference data (if applicable).
+An example database prepared in this way can be found [here](https://rvi_kraken2_dbs.cog.sanger.ac.uk/refseq_ncbiFlu_kfv2_20241027.tar.gz). 
 
-Example Command:
+A complimentary tool to viral-lens, [vl-kraken-prep](https://github.com/genomic-surveillance/krakenflu), can be used to prepare a Kraken2 database for viral-lens. 
+
+### NextClade index JSON
+
+#### Create Nextclade Index
+
+The index JSON file maps informs the pipeline of the locations of relevent NextClade datasets for the viral genomes it has reconstructed. It is organised by NCBI taxonomy id and segment id (where "ALL" is used as the segment id for monopartite viruses). Here is an example containing configuration for Influenza B (tax id 2955465) and Gammapapillomavirus 11 (tax id 1513256)
+```json
+{
+    "2955465": {
+        "1": [
+            "/path/to/nextclade_data/data/nextstrain/flu/vic/pb1"
+        ],
+        "2": [
+            "/path/to/nextclade_data/data/nextstrain/flu/vic/pb2"
+        ],
+        "3": [
+            "/path/to/nextclade_data/data/nextstrain/flu/vic/pa"
+        ],
+        "4": [
+            "/path/to/nextclade_data/data/nextstrain/flu/vic/ha/KX058884"
+        ],
+        "5": [
+            "/path/to/nextclade_data/data/nextstrain/flu/vic/np"
+        ],
+        "6": [
+            "/path/to/nextclade_data/data/nextstrain/flu/vic/na/CY073894"
+        ],
+        "7": [
+            "/path/to/nextclade_data/data/nextstrain/flu/vic/mp"
+        ],
+        "8": [
+            "/path/to/nextclade_data/data/nextstrain/flu/vic/ns"
+        ]
+    },
+    "1513256": {
+        "ALL": [
+            "/path/to/local_data/1513256/GCF_000898855.1",
+            "/path/to/local_data/1513256/GCF_000896435.1",
+            "/path/to/local_data/1513256/GCF_000908695.1",
+            "/path/to/local_data/1513256/GCF_000899695.1"
+        ]
+    }
+}
+```
+
+Note in this example that (a) the 8 segments of Influenza B each point to a different data set, and (b) Gammapapillomavirus 11 has 4 datasets (the pipeline will run NextClade against all 4 in this case).
+
+A script is bundled with the pipeline to help with the preparation of this file. 
+
+Usage:
 
 ```bash
-python write_manifest.py "output/*/reads_by_taxon/*.extracted_{1,2}.fq" \
-    -fq1_ext "_R1.fq" \
-    -fq2_ext "_R2.fq" \
-    -filename_sep "." \
-    -manifest_out "/path/to/output/manifest.csv"
+python <path/to/viral-lens>/bin/create_index.py /path/to/cloned/github/nextclade_data/data /path/to/local/custom/nextclade/datasets nextstrain,enpen
 ```
 
-**Breakdown**:
+The third positional argument refers to the subdirectories under `path/to/cloned/github/nextclade_data/data` which should be included in the index JSON file.
 
-- `"output/*/reads_by_taxon/*.extracted_{1,2}.fq"` - A glob pattern to locate the FASTQ files in the specified directory structure.
-- `-fq1_ext "_R1.fq"` - Specifies the naming pattern for the forward FASTQ files (e.g., `_R1.fq`).
-- `-fq2_ext "_R2.fq"` - Specifies the naming pattern for the reverse FASTQ files (e.g., `_R2.fq`).
-- `-filename_sep "."` - The separator used in the filename to extract sample id (e.g., `.`), anything before the separator will be considered as the value which should be the `sample_id`
-- `-manifest_out "/path/to/output/manifest.csv"` - The output path for the generated CSV manifest file.
-
-### Kraken Database
-
-This pipeline was developed under the RVI project and a modified Kraken2 database was developed to better account the phyogenetic structure of Flu and RSV.
-
-For the RVI project, this pipeline was run with a custom database built using [kraken_flu](https://github.com/genomic-surveillance/krakenflu). 
-This database is based on the NCBI viral taxonomy with the following modifications to the taxonomy structure:
-- The Influenza taxonomy is modified below the level of the species such that each segment is represented as its own distinct branch. Further, for specifically segments 4 (HA) and 6 (NA), those branches of the custom taxonomy have an additional level so that nodes representing subtypes H1, H2, H3... are directly below the segment 4 node, and similarly, nodes representing subtypes N1, N2, N3... fall directly under the segment 6 node. Essentially, the segments of the flu genome are considered as distinct sequences for the purposes of the kraken2 classification step
-- The number of Influenza sequences in the database is also expanded as compared to those found in viral RefSeq
-- The number of RSV A and B sequences has also been increased as compared to those found in viral RefSeq
-
-To download the database used on the RVI project, run the `wget` command bellow or check [here](https://rvi_kraken2_dbs.cog.sanger.ac.uk/refseq_ncbiFlu_kfv2_20241027.tar.gz
-):
-
-```
-wget https://rvi_kraken2_dbs.cog.sanger.ac.uk/refseq_ncbiFlu_kfv2_20241027.tar.gz
+The expected structure of `/path/to/local/custom/nextclade/datasets` is as follows:
+```bash
+path/to/local/custom/nextclade/datasets
+|--- virus_species_taxID
+      |--- assembly_ID
+            ├── genome_annotation.gff3
+            ├── pathogen.json
+            └── reference.fasta
 ```
 
 [**(&uarr;)**](#contents)
 
 ## Outputs
 
+### Primary outputs
+
 The output file tree should look like the tree bellow:
 
 ```bash
 <output_dir>/
-├── <sample_id>
-│   ├── <taxid>
-│   │   ├── <sample_id>.<taxid>.consensus.fa
-│   │   ├── <sample_id>.<taxid>.properties.json
-│   │   ├── <sample_id>.<taxid>.sorted.bam
-│   │   └── <sample_id>.<taxid>.sorted.bam.bai
-│   ├── [...]
-│   ├── <sample_id>.class_seqs_1.fq
-│   ├── <sample_id>.class_seqs_2.fq
-│   ├── <sample_id>.kraken.output
-│   ├── <sample_id>.report.txt
-│   ├── <sample_id>.unclass_seqs_1.fq
-│   ├── <sample_id>.unclass_seqs_2.fq
-├── [...]
 ├── summary_report.csv
 ├── consensus_sequence_properties.json
-
+├── <sample_id>
+│   ├── <sample_id>.kraken_report.txt
+│   ├── <ref_id>
+│   │   ├── <sample_id>.<ref_id>.consensus.fa
+│   │   ├── <sample_id>.<ref_id>.properties.json
+│   │   ├── <sample_id>.<ref_id>.nextclade.tar.gz
+│   │   ├── <sample_id>.<ref_id>.sorted.bam
+│   │   └── <sample_id>.<ref_id>.sorted.bam.bai
+│   ├── [...]
+├── [...]
 ```
 
-### Main output files
+...where <sample_id> is the identifier provided in the manifest, and <ref_id> is the taxonomy ID of the reference sequence used to create the consensus sequence (note: this may often not correspond to a real NCBI taxonomy id, because the custom kraken2 database used by viral-lens will usually contain many "artificial" nodes introduced to represent segments of multi-partite viruses; see above)
 
-- **Report CSV**: A csv file summarizing consensus sequences information and qc metrics obtained from each input samples.
-  - location: `<output_dir>/summary_report.csv`
+#### <sample_id>/<ref_id>/<sample_id>.<ref_id>.consensus.fa
 
-- **Consensus sequences per taxid**: the consensus sequence obtained for a given `taxid` and `sample_id` combination.
-  - location: `<output_dir/<sample_id>/<sample_id>.<taxid>.consensus.fa`
+Inferred consensus sequence for reference `ref_id` in sample `sample_id`
+ 
+#### <sample_id>/<ref_id>/<sample_id>.<ref_id>.properties.json
 
-The **Alignment output BAM files**: alignment that was the basis for the reported consensus sequence
-  - location: `<output_dir>/sample_id>/<sample_id>.<taxid>.sorted.bam` (and associated index file)
+A collection of observed and computed properties for the inferred consensus sequence. 
 
-### Intemediate output files
+- `id` 
+  - A unique identifier for the consensus sequence across the run (formed from sample id and reference id)  
+  - Example: `50213_1_67.8120647`
+- `sample_id` 
+  - ID of the sample (as provided in the manifest)
+  - Example: `50213_1_67`
+- `tax_id`  
+  - ID of the reference used to build the consensus sequence
+  - Example: `8120647`
+- `selected_taxid`
+  - Tax ID (in the custom database) of the reference used to construct the consensus
+  - Example: `8120647`
+- `ref_selected` 
+  - Description of the reference used to construct the consensus
+  - Example: `"A/swine/Guangxi/NS2394/2012(H3N2) segment 4"`
+- `reference_length` - 
+  - Length of the selected reference
+- `virus_subtype`
+  - Overall subtype of the selected reference
+  - Example: `"H3N2"`
+- `virus_name`
+  - NCBI species name of the selected reference
+  - Example: `Alphainfluenzavirus influenzae`
+- `report_name`
+  - "Common" name for the virus species for reporting
+- `virus` 
+  - NCBI taxonomy ID of the selected virus (species level node)   
+  - Example: `2955291"`
+- `sample_subtype`
+  - (Where sub-typing has been possible): Inferred sub-type of the sequence
+  - Example: `"H3"`
+- `flu_segment`
+  - (For segmented / multi-partite viruses) Inferred segment number of the consensus sequence
+  - Example: `4`
+- `longest_non_n_subsequence`
+  - Length of the longest stretch of non-N sequence in the consensus 
+- `num_reads`
+  - Number of read associated with the reference (by kraken2ref) 
+- `reads_mapped` 
+  - Number of reads successfully mapped back to the consensus
+- `reads_unmapped` - 
+  - Number of reads unmapped
+- `bases_mapped` - 
+  - Number of bases mapped mapped back to the consensus
+- `reads_mapped_in_proper_pairs` 
+  - Reads mapped in proper pairs (expected orientation and distance)  
+- `positions_exceeding_depth` - 
+  - Histogram containing the number of positions exceeding depths from 0 to 100 
+- `percent_positions_exceeding_depth_10` 
+  - Percentage of position exceeding depth 10 
+- `percent_non_n_bases` - 
+  - Percentage of bases in the final consensus that are non-M
+- `mean_depth_per_position`  
+  - Total number of mapped positions divided by length of consensus
+- `consensus_length`  
+  - Length of final consensus sequence
+- `nc.selected_dataset`
+  - The NextClade dataset used for the nc.qc.* properties. If NextClade was run on multiple datasets, this is the dataset that resulted in the lowest overall score
+  - Example: `nextclade_data/data/nextstrain/flu/h3n2/pb1`
+- `nc.coverage` 
+  - Coverage when aligning the consensus sequence to the reference in the selected NextClade dataset 
+  - Example: `0.9726612558735583`
+- `nc.qc.{overallScore,overallStaus,missingData,mixedSites,privateMutations,snpClusters,frameShifts,stopCodons}` - 
+  - QC Properties from the NextClade analysis using the selected dataset (see NextClade documentation for details)
+- `num_nextclade_datasets`  
+  - Number of NextClade datasets used for analysis (and correspondingly number of entries in the `nextclade_results` list)
+- `nextclade_results` 
+  - Full NextClade results (extracted from the JSON file produced by NextClade; see NextClade documentation for details)
 
-> intermediate files are published only if `--developer_puplish` parameter is set to `true`.
+Note: the values for all NextClade properties are set to `NextCladeNotRun` if NextClade was not configured to run. 
 
-**Kraken Output files** generated by run_kraken process
+#### <sample_id>/<ref_id>/<sample_id>.<ref_id>.nextclade.tar.gz
 
-- `<sample_id>.class_seqs_{1,2}.fq`: The pair of fastq files containing all reads which were associated to a `taxid` in the database.
-- `<sample_id>.unclass_seqs_{1,2}.fq`: The pair of fastq files containing all reads which were not classified to any `taxid` in the database
-- `<sample_id>.report.txt`: A `tsv` file sumarizing the number of reads associated to a given item in the taxonomic tree of the kraken database. For more details, check [this file format kraken2 documentation](https://github.com/DerrickWood/kraken2/blob/master/docs/MANUAL.markdown#sample-report-output-format)
+The raw output of NextClade for the consensus sequence. Only present if NextClade was configured to be run (see above). See NextClade documentation for details of the files in this tarball. 
+
+#### <sample_id>/<ref_id>/<sample_id>.<ref_id>.sorted.bam
+
+Result of re-aligning the reads to the final consensus sequence (associated index also included for convenience)
+
+#### <sample_id>/<sample_id>.kraken_report.txt
+
+A `tsv` file sumarizing the number of reads associated to a given item in the taxonomic tree of the kraken database. For more details, check [this file format kraken2 documentation](https://github.com/DerrickWood/kraken2/blob/master/docs/MANUAL.markdown#sample-report-output-format)
 
   - Here is an example of what the content of this file should look like:
 
@@ -360,38 +367,87 @@ The **Alignment output BAM files**: alignment that was the basis for the reporte
 [...]
 ```
 
-- `<sample_id>.kraken.output`: a `tsv` file containing classification of each reads id. For more details, check [this kraken2 output file specific documentation](https://github.com/DerrickWood/kraken2/blob/master/docs/MANUAL.markdown#standard-kraken-output-format)
-  - here is an example of its content:
+#### consensus_sequence_properties.json
 
+Collation of all of `<sample_id>/<ref_id>/<sample_id>.<ref_id>.properties.json` files for all consequence sequences in the entire run (for convenience)
+
+#### summary_report.tsv
+
+A csv file with selected properties (per sequence) from the properties.json files above. Note that column names are different fron the JSON property names for legacy / backwards compatibility readsons. Columns:
+
+- Sample_ID (correponds to `sample_id` in JSON)
+- Virus_Taxon_ID (`virus` in JSON)
+- Virus (`report_name` in JSON)
+- Species (`virus_name` in JSON)
+- Reference_Taxon_ID (`selected_taxid` in JSON)
+- Selected_Reference (`selected_ref` in JSON)
+- Flu_Segment (`flu_segment` in JSON)
+- Reference_Subtype (`virus_subtype` in JSON)
+- Sample_Subtype (`sample_subtype` in JSON)
+- Percentage_of_Genome_Covered (`percent_positions_exceeding_depth_10` in JSON)
+- Total_Mapped_Reads (`reads_mapped` in JSON)
+- Total_Mapped_Bases (`bases_mapped` in JSON)
+- Longest_non_N_segment (`longest_non_n_subsequence` in JSON)
+- Percentage_non_N_bases (`percent_non_n_bases` in JSON)
+- nc.selected_dataset (identical in JSON)
+- nc.{coverage,overallScore,overallStatus,missingData,mixedSites,privateMutation,snpClusters,frameShifts,stopCodons} (identical in JSON)
+- file_prefix (`id` in JSON)
+
+
+### Secondary output files
+
+> If the `--developer_puplish` parameter is set to `true`, the following additional files will appear in the output folder:
+
+```bash
+<output_dir>/
+├── developer_publish
+│   ├── <sample_id>
+│   │   └── reads_by_taxon
+│   │       ├── <sample_id>_<ref_id>_R1.fq
+│   │       ├── <sample_id>_<ref_id>_R2.fq
+│   │       ├── [...]
+│   │       ├── <sample_id>_decomposed.json
+│   │       ├── <sample_id>_pre_report.tsv
+│   │       └── <sample_id>_tax_to_reads.json
+│   └── reference_files
+│       ├── <ref_id>.fa
+│       ├── [...]
 ```
-U	A00948:701:HJHWGDSX7:2:1101:4218:1031	0	151|151	A:1 0:116 |:| 0:117
-U	A00948:701:HJHWGDSX7:2:1101:9498:1031	0	151|151	A:1 0:116 |:| 0:117
-U	A00948:701:HJHWGDSX7:2:1101:7699:1047	0	151|151	A:1 0:116 |:| 0:117
-C	A00948:701:HJHWGDSX7:2:1101:15058:1047	2697049	151|151	A:1 2697049:116 |:| 2697049:117
-U	A00948:701:HJHWGDSX7:2:1101:30481:1047	0	151|151	A:1 0:116 |:| 0:117
-```
+
+**Kraken Output files** generated by run_kraken process
+
+#### <sample_id>/reads_by_taxon/<sample_id>_decomposed.json 
+
+TBD
+
+#### <sample_id>/reads_by_taxon/<sample_id>_tax_to_reads.json
+
+TBD
+
+#### <sample_id>/reads_by_taxon/<sample_id>_pre_report.tsv
+
+TBD
+
+#### <sample_id>/reads_by_taxon/<sample_id>.<ref_id>_{R1,R2}.fq 
+
+Pair of fastq files containing all reads which were associated to the reference with id `ref_id` n the database.
 
 [**(&uarr;)**](#contents)
 
-## Configuration Sections
+## Configuration
 
 ### Parameters
 
-The `params` block defines key user-modifiable settings for the workflow.
+The following command-line parameters can be used to modify the behaviour of the pipeline.  
 
-#### input
-- `manifest`: Path to the manifest file (default: `null`).
-
-#### Pipeline Flow Controls
-
-- `do_scov2_subtyping` [Default = `true`] : Switch SARS-CoV-2 on and off.
-- `scv2_keyword` [Default = `"Severe acute respiratory syndrome coronavirus 2"`] : keyword to identified samples with SARS-CoV-2. This string is obtained from the kraken2 database, therefore, it should be in line with the database in use.
-
-#### Kraken Database Parameters
-
+#### Input and output 
+- `manifest`: Path to the manifest file 
 - `db_path`: Path to the Kraken database.
 - `db_library_fa_path` (OPTIONAL): Path to the Kraken database library FASTA file.
   - By default, it assumes there is a `${params.db_path}/library/library.fna`.
+- `nextclade_index_json` (OPTIONAL) : JSON file specifiying locations of datasets for nextclade analysis (see later section for how to create this file)
+  - If not provided, NextClade analysis will not be performed. 
+- `outdir` : folder where output files should be published. By default, it will create a subfolder called `results` in the pipeline launch directory. 
 
 #### Kraken2Ref Handling
 
@@ -399,8 +455,6 @@ The `params` block defines key user-modifiable settings for the workflow.
   - Default: `"full"`.
 - `k2r_max_total_reads_per_fq`: Maximum number of reads to process per fastq file.
   - Default: `10,000,000`.
-- `k2r_dump_fq_mem`: Memory allocated for dumping fastq files.
-  - Default: `"6 GB"`.
 
 #### Kraken2ref Report Filter
 
@@ -430,80 +484,12 @@ The `params` block defines key user-modifiable settings for the workflow.
 
 - `scv2_keyword`: Keyword to identify SARS-CoV-2 sequences. Any taxid name equal to the string set by this parameter will be considered as SCOV2 and subjected to specific SARS-CoV-2 subtyping.
   - Default: `"Severe acute respiratory syndrome coronavirus 2"`.
-
 - `do_scov2_subtyping`: Boolean flag to enable or disable SARS-CoV-2 subtyping via Pangolin.
   - Default: `true`.
 
-#### Classification report
-
-- `min_coverage_percent`: minimum coverage percent threshold, fractional values between 0.0 and 100.0 are accepted (default: `10.0`)
-
-#### Output Directory
-
-- `outdir`: Directory where output files will be published.
-  - Default: `"$launchDir/output/"`.
-
-#### General
-
-- `containers_dir` [DEFAULT =  `containers/` dir of this repository] : By default, the pipeline relies on Singularity containers and __assumes__ all containers are present on this directory and were named on a specific manner
-- `outdir` [DEFAULT = `$launchDir/output/`] : set where output files should be published. By default, it will write files to an `output/` dir (if not existent, it will be created) at pipeline launch directory.
-
-### Containerization
-
-Currently, the pipeline only provide Singularity containers.
-
-**Docker**
-
-- `enabled`: Flag to enable or disable Docker.
-  - Default: `false`.
-
-**Singularity**
-
-- `enabled`: Flag to enable or disable Singularity.
-  - Default: `true`.
-
-By default, the current version of the pipeline assumes all singularity containers are available on specific paths with specific names defined at `./conf/containers.config`.
-
-- Currently, `"$projectDir/containers/"` is the default location for the containers, it can be changed by the user using `containers_dir` parameter.
-
-All containers used by this pipeline recipes can be found at `./containers/` dir of this repository. The current containers in use are:
-
-- `base_container.sif`: the default container for all processes unless overridden.
-- `ivar.sif`: container to be used for processes using the `ivar` label
-- `kraken.sif`: container to be used for processes using the `kraken` label
-- `pangoling.sif`: container to be used for processes using the `pangolin` label
-- `kraken2ref.sif`: container to be used for processes using the `kraken2ref` label.
-
-### Process Settings
-
-- `cache='lenient'`: Defines the cache behavior for processes, allowing cached results to be reused even when minor changes occur.
-- `executor='local'`: The default executor is set to local, meaning processes will run on the local machine unless otherwise specified.
-
 ### Profiles
 
-Profiles define environment-specific configurations. Currently, there is a single predefined profile: `sanger_standard`. User should consider to write their own, check [profiles Nextflow documentation](https://www.nextflow.io/docs/latest/config.html#config-profiles) for more details
-
-#### `sanger_standard` Profile
-
-This profile is optimized for running jobs on the Sanger Institute's infrastructure and includes settings for using Singularity, job execution on the LSF scheduler, and handling of specific processes.
-
-**Singularity Settings**
-
-- `autoMounts`: Automatically mounts paths required for job execution.
-- `cacheDir`: Cache directory set to "`$PWD`" (the current working directory).
-- `runOptions`: Singularity run options to bind necessary paths (`/lustre`, `/nfs`, `/software`, `/data/`).
-
-**Process-Specific Settings**
-Inherited from the global process configuration
-- `cache='lenient'`: this makes `resume` more tolerant to changes in files attributes, such as timestamps. This is handy when using distributed file system which uses [Network File System protocols](https://en.wikipedia.org/wiki/Network_File_System), check [Nextflow documentation](https://www.nextflow.io/docs/latest/cache-and-resume.html#inconsistent-file-attributes) for more details.
-- `executor='local'`: Default executor is local unless overridden.
-
-
-**Job Naming and Memory Management**
-
-- `jobName`: Custom job name format for LSF jobs, based on the task name and tag (`"RVI-viral-lens - $task.name - $task.tag"`).
-
-- `perJobMemLimit=true`: Ensures that memory limits are set per job.
+The pipeline is bundled with a pre-defined computation profile, `sanger_standard`. This has been crafted for use on the Wellcome Sanger Institute's HPC infrastructure. A `standard` profile for use with Singularity has also been provided, but has not been tested.  User should consider writing a profile that is compatible with their own compute infrastructure (see [profiles Nextflow documentation](https://www.nextflow.io/docs/latest/config.html#config-profiles) for more details),
 
 [**(&uarr;)**](#contents)
 
@@ -513,35 +499,12 @@ Inherited from the global process configuration
 
 The workflow & process unit tests for this pipeline are written in the [nf-test](https://www.nf-test.com/) (`v0.8.4`) Nextflow testing framework.
 
-**Running Tests**
-
-The `nf-test` looks for an environment variable (`CONTAINER_DIR`) to set the containers directory. Therefore, set this variable before running `nf-test`.
-
-```bash
-export CONTAINER_DIR=<my/container/dir/path>
-```
-
-The following command if entered from the repository top-level directory can be used to execute all of the per-process & per-workflow unit tests:
-
-**Run all tests**
-
-```bash
-nf-test test ./
-```
-
-**Run individual module/workflow test**
-
-```bash
-nf-test test tests/<modules or workflows>/<module_to_test>.nf.test
-```
-
 [**(&uarr;)**](#contents)
 
 ---
 ## Pipeline components documentation
 
 ### Processes
-
 
 ##### run_kraken
 
@@ -578,6 +541,9 @@ The process runs the Pangolin tool on a consensus FASTA file to determine the SA
 
 This process runs a QC analysis on the input BAM, FASTA, and reference files, outputting QC metrics.
 
+##### run_nextclade
+
+This process runs nextClade on the reconstructed sequences, recording the results in JSON (see outputs section)
 
 [**(&uarr;)**](#contents)
 
@@ -607,25 +573,7 @@ The `GENERATE_CLASSIFICATION_REPORT` workflow generates a classification report 
 
 The `RUN_NEXCLADE` workflow generate QC metrics for sequences supported by a dataset (path set by `nextclade_data_dir` parameter) which provides a **reference FASTA**, a **GFF3 annotation** and (optionally) a **tree JSON** following the directory structure bellow:
 
-- Non-segmented viruses
-
-```bash
-<refseq_taxid>/<assembly_id>/{reference.fasta, genome_annotation.CDS.gff3, tree.json?}
-```
-
-- Segmented viruses (e.g. Flu B)
-
-```bash
-<refseq_taxid>/<assembly_id>/{reference.fasta, genome_annotation.CDS.gff3, tree.json?}
-```
-
-- Segmented viruses with subtype (e.g., Flu A)
-
-```bash
-<refseq_taxid>/<segment_number>/<subtype>/<assembly_id>/{reference.fa, genome_annotation.CDS.gff3, tree.json?}
-```
-
-> If `nextclade_data_dir` is not provided, this workflow will not run.
+If `nextclade_index_json` is not provided, this workflow will not run.
 
 ### Custom pipeline scripts
 
@@ -651,118 +599,9 @@ This command reads the JSON and report files, processes the data, and outputs a 
 
 #### QC Script for BAM and FASTA Files
 
-This Python script generates a quality control (QC) summary report for a sample by analyzing a BAM file, a consensus FASTA file, a reference FASTA, and a per-position depth file. The QC metrics include the percentage of N bases in the consensus, the largest contiguous gap of N bases, and the percentage of reference bases covered at a minimum depth. The script also integrates alignment statistics from a SAMtools `flagstat` output to provide additional insights on the quality of the aligned reads.
-
-**Inputs:**
-
-1. **Consensus FASTA File** (`--fasta`): The consensus sequence file.
-
-2. **Reference FASTA File** (`--ref`): The reference genome against which the reads were aligned and used for depth calculations.
-
-3. **BAM File** (`--bam`): The aligned and filtered BAM file, which contains the reads aligned to the reference.
-
-4. **Per-position Depths File** (`--depths_file`): A tab-delimited file listing read depth per position in the alignment.
-
-5. **SAMtools Flagstat File** (`--flagstat_file`): The output from the `samtools flagstat` command, providing alignment statistics.
-
-6. **Sample Name** (`--sample`): The name of the sample being processed.
-
-7. **Output File** (`--outfile`): The path where the QC summary report (in CSV format) will be written.
-
-8. **Minimum Depth** (`--minimum_depth`, optional): The minimum depth threshold used when calculating covered bases. Default is `10`.
-
-9. **Ivar Minimum Depth** (`--ivar_md`, optional): The minimum depth used by ivar when generating the consensus FASTA.
-
-**Outputs:**
-
-The script generates a CSV file containing various QC metrics for the sample. The output columns include:
-
-- `sample_name`: Name of the sample.
-- `pct_N_bases`: Percentage of N bases in the consensus FASTA.
-- `pct_covered_bases`: Percentage of the reference genome covered at or above the minimum depth threshold.
-- `longest_no_N_run`: Length of the largest contiguous region without N bases in the consensus.
-- `num_aligned_reads`: Number of aligned reads (from `SAMtools flagstat`).
-- `bam`: Path to the input BAM file.
-- `total_mapped_reads`: Total number of mapped reads (from `SAMtools flagstat`).
-- `total_unmapped_reads`: Total number of unmapped reads (from `SAMtools flagstat`).
-- `qc_pass`: Indicates whether the sample passed QC based on N content and gap size criteria.
-- `ivar_md`: If applicable, the minimum depth used by ivar.
-
-**Key Features:**
-
-- **N Content Analysis**: The script calculates the percentage of bases that are 'N' in the consensus FASTA and finds the longest contiguous stretch of N bases.
-
-- **Depth-Based Coverage**: It calculates the percentage of reference genome positions covered by reads at or above a specified depth threshold, using the per-position depths file.
-
-- **Alignment Statistics**: The script reads the `SAMtools flagstat` file to report the number of aligned, mapped, and unmapped reads.
-
-- **QC Pass/Fail**: The QC status is determined by evaluating N content (e.g., `TRUE` if the largest N gap exceeds `10,000` or if `N` bases constitute less than 50% of the sequence).
-
-**Workflow:**
-
-1. **QC Metric Calculation**:
-
-- It calculates the percentage of `N` bases and identifies the longest `N` gap in the consensus sequence.
-- It counts the positions in the depth file where the depth exceeds or equals the minimum threshold and calculates the coverage percentage.
-
-2. **Flagstat Integration**: The script reads alignment statistics from the SAMtools flagstat file.
-
-3. **QC Report Generation**: It assembles the calculated QC metrics into a dictionary, formats them, and writes them as a CSV report.
-
-**Example Command**
-
-```bash
-<path/to/viral_pipeline>/bin/generate_qc.py --outfile sample123.qc.csv --sample sample123 --ref ref.fasta --bam sample123.bam --fasta sample123.consensus.fasta --depths_file sample123.depths.txt --flagstat_file sample123.flagstat.txt --minimum_depth 10 --ivar_md 5
-```
-
-This command processes the provided files and generates a QC summary report in `sample123.qc.csv`. The minimum depth for coverage calculations is set to 10, and ivar was run with a minimum depth of 5.
+This Python script generates a quality control (QC) summary report for a sample by analyzing a BAM file, a consensus FASTA file, a reference FASTA, and a per-position depth file. The QC metrics include the percentage of N bases in the consensus, the largest contiguous gap of N bases, and the percentage of reference bases covered at a minimum depth. The script also integrates alignment statistics from a SAMtools `flagstat` output to provide additional insights on the quality of the aligned reads. The outputs of this script are wrapped into the properties.json file associated with each consensus sequence. 
 
 [**(&uarr;)**](#contents)
-
-
-#### Create Nextclade Index
-
-This is the script that generates the index JSON file for use with Nextclade. This is not run within the pipeline and must be run as a precursor if Nextclade outputs are required.
-
-Usage:
-
-```bash
-python <path/to/viral_pipeline>/bin/create_index.py path/to/cloned/github/nextclade_data/data path/to/local/custom/nextclade/datasets nextstrain,enpen
-```
-
-The third positional argument refers to the subdirectories under `path/to/cloned/github/nextclade_data/data` which should be included in the index JSON file.
-
-The expected structure of `path/to/local/custom/nextclade/datasets` is as follows:
-```bash
-path/to/local/custom/nextclade/datasets
-|--- virus_species_taxID
-      |--- assembly_ID
-            ├── genome_annotation.gff3
-            ├── pathogen.json
-            └── reference.fasta
-```
-
-The index JSON file has the following structure:
-```json
-...
-"taxID_1": {
-        "ALL": [
-            "path/to/29252/GCF_001500715.1"
-        ]
-    },
-"taxID_2": {
-    "segnum_1": [
-        "path/to/nextclade_data/data/nextstrain/flu/h1n1pdm/pb2",
-        "path/to/nextclade_data/data/nextstrain/flu/h3n2/pb2"
-    ],
-    "segnum_2": [
-        "path/to/nextclade_data/data/nextstrain/flu/h1n1pdm/pb1",
-        "path/to/nextclade_data/data/nextstrain/flu/h3n2/pb1"
-    ]
-}
-```
-
-Note that for monopartite viruses, segnum should be "ALL", whereas for multi-partite viruses it should correspond to the segment number for each dataset.
 
 ---
 
