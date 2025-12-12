@@ -36,7 +36,6 @@ workflow {
   --> general pipeline parameters:
     --use_local_containers     : ${params.use_local_containers}
     --use_registry_containers  : ${params.use_registry_containers}
-    --containers_dir           : ${params.containers_dir}
     --outdir                   : ${params.outdir}
 
   --> SORT_READS_BY_REF workflow parameters:
