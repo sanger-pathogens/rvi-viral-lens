@@ -34,8 +34,6 @@ workflow {
   Used parameters:
   -------------------------------------------
   --> general pipeline parameters:
-    --use_local_containers     : ${params.use_local_containers}
-    --use_registry_containers  : ${params.use_registry_containers}
     --outdir                   : ${params.outdir}
 
   --> SORT_READS_BY_REF workflow parameters:
@@ -53,10 +51,8 @@ workflow {
     --ivar_initial_min_depth      : ${params.ivar_initial_min_depth}
     --ivar_initial_freq_threshold : ${params.ivar_initial_min_depth}
     --ivar_polish_min_depth       : ${params.ivar_polish_min_depth}
-    --ivar_polish_freq_threshold  : ${params.var_polish_freq_threshold}
-    --ivar_min_depth              : ${params.ivar_min_depth}
-    --ivar_freq_threshold         : ${params.ivar_freq_threshold}
-
+    --ivar_polish_freq_threshold  : ${params.ivar_polish_freq_threshold}
+    
   --> viral subtyping branching parameters:
     --scv2_keyword             : ${params.scv2_keyword}
 
