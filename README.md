@@ -206,9 +206,7 @@ The index JSON file maps informs the pipeline of the locations of relevent NextC
 
 Note in this example that (a) the 8 segments of Influenza B each point to a different data set, and (b) Gammapapillomavirus 11 has 4 datasets (the pipeline will run NextClade against all 4 in this case).
 
-A script is bundled with the pipeline to help with the preparation of this file. 
-
-Usage:
+A script is bundled with the pipeline to help with the preparation of this file. Usage:
 
 ```bash
 python <path/to/viral-lens>/bin/create_index.py /path/to/cloned/github/nextclade_data/data /path/to/local/custom/nextclade/datasets nextstrain,enpen
