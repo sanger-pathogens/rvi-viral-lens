@@ -1,0 +1,103 @@
+Bootstrap: docker
+From: ubuntu:20.04
+Stage: spython-base
+
+%labels
+    NAME ivar
+    AUTHOR Antonio Marinho
+    ID ad45
+    TEAM ARD/DAE
+    VERSION 1.2
+    JIRA_TICKET DT-3023 DT-1998
+    NOTE This container is based on a modified recipe version of https://github.com/andersen-lab/ivar/blob/v1.4.3/Dockerfile
+
+%post
+    # // --- STAGING --- //
+    HTSLIB_VER="1.21"
+    SAMTOOLS_VER="1.21"
+    IVAR_TAG="1.4.4"
+    # enables the "exit on error" mode
+    set -e
+    set -u
+
+    DEBIAN_FRONTEND=noninteractive
+    # /-------------------/
+
+    # install basic requeriments
+    apt-get update
+    apt-get install -y build-essential autoconf zlib1g-dev python3 \
+                       wget libbz2-dev liblzma-dev libncurses-dev \
+                       git bedtools python3-pip vim nano
+
+    mkdir /app/
+
+    # // --- HTSlib --- //
+    cd /app/
+    wget https://github.com/samtools/htslib/releases/download/$HTSLIB_VER/htslib-$HTSLIB_VER.tar.bz2
+    tar xvf htslib-$HTSLIB_VER.tar.bz2
+    cd htslib-$HTSLIB_VER/
+    ./configure
+    make
+    make install
+    cd ../
+    rm htslib-$HTSLIB_VER.tar.bz2
+    LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+
+    # // --- SAMtools ---//
+    cd /app/
+    wget https://github.com/samtools/samtools/releases/download/$SAMTOOLS_VER/samtools-$SAMTOOLS_VER.tar.bz2
+    tar xvf samtools-$SAMTOOLS_VER.tar.bz2
+    cd samtools-$SAMTOOLS_VER/
+    ./configure
+    make
+    make install
+    cd ../
+    rm samtools-$SAMTOOLS_VER.tar.bz2
+
+    # iVar
+    cd /app/
+    git clone --depth 1 https://github.com/andersen-lab/ivar.git --tag $IVAR_TAG
+    cd $IVAR_TAG
+    ./autogen.sh
+    ./configure
+    make
+    make install
+
+    # |------------------|
+    # // --- LOGGING ---//
+    # //---> get versions which were actually installed
+
+    # get container build date
+    NOW=`date`
+    IVAR_VER=$(ivar version | grep -oP 'version \K[0-9]+\.[0-9]+\.[0-9]+')
+
+    # store variables on singularity environment
+    echo "export NOW=\"${NOW}\"" >> $SINGULARITY_ENVIRONMENT
+    echo "export IVAR_VER=\"${IVAR_VER}\"" >> $SINGULARITY_ENVIRONMENT
+    echo "export SAMTOOLS_VER=\"${SAMTOOLS_VER}\"" >> $SINGULARITY_ENVIRONMENT
+    echo "export HTSLIB_VER=\"${HTSLIB_VER}\"" >> $SINGULARITY_ENVIRONMENT
+
+    # |------------------|
+%environment
+    export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+    export PATH=/app/bwa-0.7.18:$PATH
+
+%runscript
+    echo "Container was created $NOW"
+    echo " --- VERSIONS:"
+    echo " -- dependencies "
+    echo "HTSLIB_VER=${HTSLIB_VER}"
+    echo "SAMTOOLS_VER=${SAMTOOLS_VER}"
+    echo " -- softwares "
+    echo "IVAR_VERSION=${IVAR_VER}"
+    echo " ------------ "
+    echo "Arguments received: $*"
+    echo " ------------ "
+    exec /bin/bash "$@"
+
+%test
+    ivar version
+    samtools --version
+
+%startscript
+    exec /bin/bash "$@"

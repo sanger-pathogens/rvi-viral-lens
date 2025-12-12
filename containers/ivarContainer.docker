@@ -1,0 +1,92 @@
+FROM ubuntu:20.04
+
+LABEL NAME="ivar" \
+      AUTHOR="Antonio Marinho" \
+      ID="ad45" \
+      TEAM="ARD/DAE" \
+      VERSION="1.2" \
+      JIRA_TICKET="DT-3023 DT-1998" \
+      NOTE="This container is based on a modified recipe version of https://github.com/andersen-lab/ivar/blob/v1.4.3/Dockerfile"
+
+# ----------------------------------------------------------------------
+# Build-time args & env (HTSlib / Samtools / iVar tag)
+# ----------------------------------------------------------------------
+ARG HTSLIB_VER=1.21
+ARG SAMTOOLS_VER=1.21
+ARG IVAR_TAG=v1.4.4
+
+ENV HTSLIB_VER=${HTSLIB_VER} \
+    SAMTOOLS_VER=${SAMTOOLS_VER} \
+    IVAR_TAG=${IVAR_TAG} \
+    DEBIAN_FRONTEND=noninteractive
+
+ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH \
+    PATH=/app/bwa-0.7.18:$PATH
+
+# Use bash for RUN steps
+SHELL ["/bin/bash", "-c"]
+
+RUN set -euo pipefail && \
+    apt-get update && \
+    apt-get install -y \
+        build-essential \
+        autoconf \
+        zlib1g-dev \
+        python3 \
+        wget \
+        libbz2-dev \
+        liblzma-dev \
+        libncurses-dev \
+        git \
+        bedtools \
+        python3-pip \
+        vim \
+        nano && \
+    \
+    mkdir -p /app && \
+    cd /app && \
+    \
+    # --- HTSlib --- \
+    wget https://github.com/samtools/htslib/releases/download/${HTSLIB_VER}/htslib-${HTSLIB_VER}.tar.bz2 && \
+    tar xvf htslib-${HTSLIB_VER}.tar.bz2 && \
+    cd htslib-${HTSLIB_VER} && \
+    ./configure && \
+    make && \
+    make install && \
+    cd /app && \
+    rm htslib-${HTSLIB_VER}.tar.bz2 && \
+    \
+    # --- SAMtools --- \
+    wget https://github.com/samtools/samtools/releases/download/${SAMTOOLS_VER}/samtools-${SAMTOOLS_VER}.tar.bz2 && \
+    tar xvf samtools-${SAMTOOLS_VER}.tar.bz2 && \
+    cd samtools-${SAMTOOLS_VER} && \
+    ./configure && \
+    make && \
+    make install && \
+    cd /app && \
+    rm samtools-${SAMTOOLS_VER}.tar.bz2 && \
+    \
+    # --- iVar --- \
+    git clone --depth 1 --branch ${IVAR_TAG} https://github.com/andersen-lab/ivar.git && \
+    cd ivar && \
+    ./autogen.sh && \
+    ./configure && \
+    make && \
+    make install && \
+    \
+    # --- LOGGING: capture build-time metadata --- \
+    NOW="$(date)" && \
+    IVAR_VER="$(ivar version | grep -oP 'version \\K[0-9]+\\.[0-9]+\\.[0-9]+')" && \
+    printf 'NOW="%s"\nIVAR_VER="%s"\nSAMTOOLS_VER="%s"\nHTSLIB_VER="%s"\n' \
+           "$NOW" "$IVAR_VER" "$SAMTOOLS_VER" "$HTSLIB_VER" > /etc/container-versions && \
+    \
+    # --- TEST --- \
+    ivar version && \
+    samtools --version && \
+    \
+    # Clean up
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /app/htslib-* /app/samtools-* /app/ivar
+
+CMD []
+WORKDIR /data
