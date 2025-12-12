@@ -8,30 +8,24 @@
 ## Contents
 - [Pipeline Summary](#pipeline-summary)
 - [How to Cite](#how-to-cite)
-- [Quick Start](#quick-start)
-- [Installation](#installation)
-  - [dependencies](#dependencies)
-  - [build containers](#build-containers)
-- [Usage](#usage)
+- [Basic usage](#basic-usagwe)
+- [Installation and dependencies](#installation-and-dependencies)
+  - [Software](#software)
+  - [Containers](#containers)
 - [Inputs](#inputs)
   - [Manifest](#manifest)
-  - [Kraken Database](#kraken-database)
+  - [Kraken2 Database](#kraken2-database)
+  - [NextClade config](#nextClade-index-json)
 - [Outputs](#outputs)
-  - [Main output files](#main-output-files)
-  - [Intemediate output files](#intemediate-output-files)
+  - [Primary outputs](#primary-outputs)
+  - [Secondary outputs](#secondary-outputs)
 - [Configuration](#configuration)
   - [Parameters](#parameters)
-  - [Containers](#containers)
-  - [Process Settings](#process-settings)
   - [Profiles](#profiles)
 - [Unit Tests](#unit-tests)
 - [Pipeline components documentation](#pipeline-components-documentation)
   - [Processes](#processes)
   - [Workflows](#workflows)
-  - [Scripts](#sscripts)
-    - [Kraken2ref JSON to TSV Report Script](#kraken2ref-json-to-tsv-report-script)
-    - [QC Script for BAM and FASTA Files](#qc-script-for-bam-and-fasta-files)
-    - [Create Nextflow Index](#create-nextflow-index)
 - [Licence](#licence)
 
 ---
@@ -170,8 +164,6 @@ A complimentary tool to viral-lens, [vl-kraken-prep](https://github.com/genomic-
 
 ### NextClade index JSON
 
-#### Create Nextclade Index
-
 The index JSON file maps informs the pipeline of the locations of relevent NextClade datasets for the viral genomes it has reconstructed. It is organised by NCBI taxonomy id and segment id (where "ALL" is used as the segment id for monopartite viruses). Here is an example containing configuration for Influenza B (tax id 2955465) and Gammapapillomavirus 11 (tax id 1513256)
 ```json
 {
@@ -283,7 +275,7 @@ A collection of observed and computed properties for the inferred consensus sequ
 - `ref_selected` 
   - Description of the reference used to construct the consensus
   - Example: `"A/swine/Guangxi/NS2394/2012(H3N2) segment 4"`
-- `reference_length` - 
+- `reference_length` 
   - Length of the selected reference
 - `virus_subtype`
   - Overall subtype of the selected reference
@@ -308,17 +300,17 @@ A collection of observed and computed properties for the inferred consensus sequ
   - Number of read associated with the reference (by kraken2ref) 
 - `reads_mapped` 
   - Number of reads successfully mapped back to the consensus
-- `reads_unmapped` - 
+- `reads_unmapped`
   - Number of reads unmapped
-- `bases_mapped` - 
+- `bases_mapped`
   - Number of bases mapped mapped back to the consensus
 - `reads_mapped_in_proper_pairs` 
   - Reads mapped in proper pairs (expected orientation and distance)  
-- `positions_exceeding_depth` - 
+- `positions_exceeding_depth`
   - Histogram containing the number of positions exceeding depths from 0 to 100 
 - `percent_positions_exceeding_depth_10` 
   - Percentage of position exceeding depth 10 
-- `percent_non_n_bases` - 
+- `percent_non_n_bases`
   - Percentage of bases in the final consensus that are non-M
 - `mean_depth_per_position`  
   - Total number of mapped positions divided by length of consensus
@@ -394,7 +386,7 @@ A csv file with selected properties (per sequence) from the properties.json file
 - file_prefix (`id` in JSON)
 
 
-### Secondary output files
+### Secondary outputs
 
 > If the `--developer_puplish` parameter is set to `true`, the following additional files will appear in the output folder:
 
@@ -547,7 +539,7 @@ This process runs nextClade on the reconstructed sequences, recording the result
 
 [**(&uarr;)**](#contents)
 
-### Workflow
+### Sub-workflows
 
 #### SORT_READS_BY_REF
 
@@ -574,34 +566,6 @@ The `GENERATE_CLASSIFICATION_REPORT` workflow generates a classification report 
 The `RUN_NEXCLADE` workflow generate QC metrics for sequences supported by a dataset (path set by `nextclade_data_dir` parameter) which provides a **reference FASTA**, a **GFF3 annotation** and (optionally) a **tree JSON** following the directory structure bellow:
 
 If `nextclade_index_json` is not provided, this workflow will not run.
-
-### Custom pipeline scripts
-
-#### Kraken2ref JSON to TSV Report Script
-
-The `kraken_report.py` script is designed to convert a Kraken2ref JSON output into a tab-separated values (TSV) report file. The script reads two main input files: the Kraken2ref JSON file and a corresponding Kraken2 taxonomic report. It then extracts relevant information about selected reference taxa, including virus subtypes and the number of reads per taxon, and generates a TSV report summarizing this data. The report provides detailed information on the sample, viruses, selected taxonomic IDs, flu segments, and subtyping data, specifically for influenza viruses if present.
-
-**Key Features**
-
-- **Taxonomic and Virus Information Extraction**: The script identifies the virus taxonomic IDs and names from both the Kraken2ref JSON and Kraken2 report, allowing detailed annotation of selected viruses and reference sequences.
-- **Influenza Subtyping**: If influenza is detected, the script extracts subtype information (e.g., H and N subtypes) and flu segment numbers. These details are specifically captured for influenza viruses, helping to identify the sample subtype.
-- **Reads Per Taxon**: The script reports the number of reads assigned to each selected taxonomic ID, providing insights into the abundance of each virus in the sample.
-
-Customizable Output: Users can specify the output file suffix, giving flexibility in naming the report files.
-
-**Example Command**
-
-```bash
-<path/to/viral_pipeline>/bin/kraken2ref_to_tsv.py -i kraken2ref_output.json -r kraken2_report.txt --out_suffix ".custom_report.tsv"
-```
-
-This command reads the JSON and report files, processes the data, and outputs a report named `<sample_id>.custom_report.tsv`.
-
-#### QC Script for BAM and FASTA Files
-
-This Python script generates a quality control (QC) summary report for a sample by analyzing a BAM file, a consensus FASTA file, a reference FASTA, and a per-position depth file. The QC metrics include the percentage of N bases in the consensus, the largest contiguous gap of N bases, and the percentage of reference bases covered at a minimum depth. The script also integrates alignment statistics from a SAMtools `flagstat` output to provide additional insights on the quality of the aligned reads. The outputs of this script are wrapped into the properties.json file associated with each consensus sequence. 
-
-[**(&uarr;)**](#contents)
 
 ---
 
