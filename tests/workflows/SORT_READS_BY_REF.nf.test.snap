@@ -24,8 +24,8 @@
                             "reference_header": ">kraken:taxid|9000016|NC_026438.1 Influenza A virus -A/California/07/2009-H1N1 segment 1, polymerase PB2 -PB2 gene, complete cds"
                         },
                         [
-                            "FluH1N1_SARSCoV2_hPIV1_33K_ea_P1_9000016_R1.fq:md5,9c3a99344dd54c1605674c3b00e5e312",
-                            "FluH1N1_SARSCoV2_hPIV1_33K_ea_P1_9000016_R2.fq:md5,27e5cd33de4116d17b47f25c988b28ff"
+                            "FluH1N1_SARSCoV2_hPIV1_33K_ea_P1_9000016_R1.fq:md5,8f7798c15073cd45bbbf68f5b57b68b1",
+                            "FluH1N1_SARSCoV2_hPIV1_33K_ea_P1_9000016_R2.fq:md5,3a20860499ce579a8982d539a09e26c4"
                         ],
                         "9000016.fa:md5,f5f85d01f06c78fe44ecb9dfce3652b7"
                     ],
@@ -50,8 +50,8 @@
                             "reference_header": ">kraken:taxid|9000016|NC_026438.1 Influenza A virus -A/California/07/2009-H1N1 segment 1, polymerase PB2 -PB2 gene, complete cds"
                         },
                         [
-                            "SARSCoV2_FluH1N1_50K_each_P1_9000016_R1.fq:md5,950b70ee147656de34f46886771e8fcb",
-                            "SARSCoV2_FluH1N1_50K_each_P1_9000016_R2.fq:md5,86a4947fe317f68d3de79488e326889e"
+                            "SARSCoV2_FluH1N1_50K_each_P1_9000016_R1.fq:md5,0ba7cd87e25d0d9208c99ef3bc3b20b8",
+                            "SARSCoV2_FluH1N1_50K_each_P1_9000016_R2.fq:md5,98a6e22e931935fd6dd21b7ba727ba0c"
                         ],
                         "9000016.fa:md5,f5f85d01f06c78fe44ecb9dfce3652b7"
                     ],
@@ -63,8 +63,8 @@
                             "reference_header": ">kraken:taxid|9000016|NC_026438.1 Influenza A virus -A/California/07/2009-H1N1 segment 1, polymerase PB2 -PB2 gene, complete cds"
                         },
                         [
-                            "Zeptometrix_Panel_2_1_Control1_P1_9000016_R1.fq:md5,bdbf8277c83689146886c8b3aa5e90e2",
-                            "Zeptometrix_Panel_2_1_Control1_P1_9000016_R2.fq:md5,1628ed7ad60c2627076b6ac6754895c5"
+                            "Zeptometrix_Panel_2_1_Control1_P1_9000016_R1.fq:md5,94540de063d589baa3ee5075da17dbc8",
+                            "Zeptometrix_Panel_2_1_Control1_P1_9000016_R2.fq:md5,81ef32ce874725ebf4415dc26a60c75b"
                         ],
                         "9000016.fa:md5,f5f85d01f06c78fe44ecb9dfce3652b7"
                     ]
@@ -225,8 +225,8 @@
                             "reference_header": ">kraken:taxid|9000016|NC_026438.1 Influenza A virus -A/California/07/2009-H1N1 segment 1, polymerase PB2 -PB2 gene, complete cds"
                         },
                         [
-                            "FluH1N1_SARSCoV2_hPIV1_33K_ea_P1_9000016_R1.fq:md5,9c3a99344dd54c1605674c3b00e5e312",
-                            "FluH1N1_SARSCoV2_hPIV1_33K_ea_P1_9000016_R2.fq:md5,27e5cd33de4116d17b47f25c988b28ff"
+                            "FluH1N1_SARSCoV2_hPIV1_33K_ea_P1_9000016_R1.fq:md5,8f7798c15073cd45bbbf68f5b57b68b1",
+                            "FluH1N1_SARSCoV2_hPIV1_33K_ea_P1_9000016_R2.fq:md5,3a20860499ce579a8982d539a09e26c4"
                         ],
                         "9000016.fa:md5,f5f85d01f06c78fe44ecb9dfce3652b7"
                     ],
@@ -251,8 +251,8 @@
                             "reference_header": ">kraken:taxid|9000016|NC_026438.1 Influenza A virus -A/California/07/2009-H1N1 segment 1, polymerase PB2 -PB2 gene, complete cds"
                         },
                         [
-                            "SARSCoV2_FluH1N1_50K_each_P1_9000016_R1.fq:md5,950b70ee147656de34f46886771e8fcb",
-                            "SARSCoV2_FluH1N1_50K_each_P1_9000016_R2.fq:md5,86a4947fe317f68d3de79488e326889e"
+                            "SARSCoV2_FluH1N1_50K_each_P1_9000016_R1.fq:md5,0ba7cd87e25d0d9208c99ef3bc3b20b8",
+                            "SARSCoV2_FluH1N1_50K_each_P1_9000016_R2.fq:md5,98a6e22e931935fd6dd21b7ba727ba0c"
                         ],
                         "9000016.fa:md5,f5f85d01f06c78fe44ecb9dfce3652b7"
                     ],
@@ -264,8 +264,8 @@
                             "reference_header": ">kraken:taxid|9000016|NC_026438.1 Influenza A virus -A/California/07/2009-H1N1 segment 1, polymerase PB2 -PB2 gene, complete cds"
                         },
                         [
-                            "Zeptometrix_Panel_2_1_Control1_P1_9000016_R1.fq:md5,bdbf8277c83689146886c8b3aa5e90e2",
-                            "Zeptometrix_Panel_2_1_Control1_P1_9000016_R2.fq:md5,1628ed7ad60c2627076b6ac6754895c5"
+                            "Zeptometrix_Panel_2_1_Control1_P1_9000016_R1.fq:md5,94540de063d589baa3ee5075da17dbc8",
+                            "Zeptometrix_Panel_2_1_Control1_P1_9000016_R2.fq:md5,81ef32ce874725ebf4415dc26a60c75b"
                         ],
                         "9000016.fa:md5,f5f85d01f06c78fe44ecb9dfce3652b7"
                     ]
@@ -276,6 +276,6 @@
             "nf-test": "0.9.2",
             "nextflow": "24.10.4"
         },
-        "timestamp": "2025-12-09T14:24:23.715018"
+        "timestamp": "2025-12-15T15:33:18.162034"
     }
 }
