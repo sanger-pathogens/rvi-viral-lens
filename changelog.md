@@ -2,16 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
-## [unreleased]
+## [1.5.0]
 
-- **[added]**: add optional preprocessing steps
-- **[added]**: add Nextclade to compute QC metrics optionally
-- **[change]**: Nextclade process now runs one consensus to many datasets, instead of one process for each dataset
-- **[change]**: Move QC metrics calling into GENERATE_CONSENSUS; this workflow now emits ONLY data where consensus is not all-N. COMPUTE_QC_METRICS workflow now removed.
-- **[change]**: QC JSON, and Nextclade JSON now aggregated at per-consensus level to create single properties file. `nc.` prefix indicates properties from the "best fit" nextclade dataset results if multiple.
-- **[added]**: Added `write_all_summaries.py` which produces per-consensus properties files (see above) and per-run JSON and CSV output. Run-level JSON contains ONLY "best fit" nextclade dataset outputs. For all (where multiple) see per-consensus properties JSON files
+- **[added]**: add Nextclade to compute QC metrics (optional)
+- **[added]**: added ability to run pre-processing workflow up front (optional)
+- **[added]**: consensus workflow now (by default) performs a second round of iVar consensus, after realigning reads to the initial consensus (original behaviour can be achieved with parameters; see README)
+- **[added]**: new script `write_all_summaries.py` which produces per-consensus properties files (JSON) and per-run properties files (JSON and CSV). Run-level JSON/CSV contains ONLY "best fit" nextclade dataset outputs
+- **[change]**: read alignment now uses minimap2 by default (bwa still available as an option)
+- **[change]**: moved QC metrics calling into GENERATE_CONSENSUS; this workflow now emits ONLY data where consensus is not all-N. COMPUTE_QC_METRICS workflow now removed.
+- **[change]**: QC JSON, and Nextclade JSON now aggregated at per-consensus level to create single properties file
 - **[change]**: `classification_report.csv` now called `summary_report.csv`
-- **[removed]**: Removed unused code and functions, general cleanup
+- **[change]**: tweaks to sanger_standard execution profile
+- **[removed]**: No longer run iVar variants (superseded by nextClade analysis); iVar variants properties removed from `summary_report.csv`
 
 ## [1.4.1]
 
