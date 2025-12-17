@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - **[added]**: consensus workflow now (by default) performs a second round of iVar consensus, after realigning reads to the initial consensus (original behaviour can be achieved with parameters; see README)
 - **[added]**: new script `write_all_summaries.py` which produces per-consensus properties files (JSON) and per-run properties files (JSON and CSV). Run-level JSON/CSV contains ONLY "best fit" nextclade dataset outputs
 - **[change]**: read alignment now uses minimap2 by default (bwa still available as an option)
+- **[change]**: samtools mpileup max depth (-d) can now be controlled with a parameter (default 2000)
 - **[change]**: moved QC metrics calling into GENERATE_CONSENSUS; this workflow now emits ONLY data where consensus is not all-N. COMPUTE_QC_METRICS workflow now removed.
 - **[change]**: QC JSON, and Nextclade JSON now aggregated at per-consensus level to create single properties file
 - **[change]**: `classification_report.csv` now called `summary_report.csv`
