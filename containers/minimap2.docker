@@ -1,0 +1,84 @@
+FROM ubuntu:20.04
+
+LABEL maintainer="ARD team" \
+      build="0.1" \
+      samtools="1.21" \
+      bwa="0.7.17"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LD_LIBRARY_PATH=/usr/local/lib \
+    LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/ \
+    C_INCLUDE_PATH=/usr/include/ \
+    PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig/ \
+    LC_ALL=C \
+    LC_NUMERIC=en_GB.UTF-8 \
+    PATH="/opt/miniconda/bin:${PATH}"
+
+ENV BWA_VERSION=0.7.17 \
+    HTSLIB_VERSION=1.21 \
+    SAMTOOLS_VER=1.21
+
+# Use bash for RUN steps so we can use variables easily
+SHELL ["/bin/bash", "-c"]
+
+RUN apt-get update && \
+    apt-get install -y \
+        curl \
+        wget \
+        autoconf \
+        gcc \
+        zlib1g \
+        zlib1g-dev \
+        libbz2-dev \
+        gfortran \
+        liblzma-dev \
+        make \
+        libncurses5-dev \
+        python3 \
+        python3-pip \
+        libjpeg9 && \
+    \
+    mkdir -p /app && \
+    cd /app && \
+    \
+    # ---------------- minimap2 ---------------- \
+    wget https://github.com/lh3/minimap2/releases/download/v2.30/minimap2-2.30_x64-linux.tar.bz2 && \
+    tar -xf minimap2-2.30_x64-linux.tar.bz2 && \
+    mv minimap2-2.30_x64-linux/minimap2 /usr/local/bin/minimap2 && \
+    \
+    # ---------------- HTSlib ------------------ \
+    cd /app && \
+    wget -O htslib.tar.bz2 https://github.com/samtools/htslib/releases/download/${HTSLIB_VERSION}/htslib-${HTSLIB_VERSION}.tar.bz2 && \
+    tar -xf htslib.tar.bz2 && \
+    cd htslib-${HTSLIB_VERSION} && \
+    autoheader && \
+    autoreconf -i && \
+    ./configure --prefix=/usr/local && \
+    make && \
+    make install && \
+    \
+    # ---------------- Samtools ---------------- \
+    cd /app && \
+    wget -O samtools.tar.bz2 https://github.com/samtools/samtools/releases/download/${SAMTOOLS_VER}/samtools-${SAMTOOLS_VER}.tar.bz2 && \
+    tar -xf samtools.tar.bz2 && \
+    cd samtools-${SAMTOOLS_VER} && \
+    autoheader && \
+    autoconf -Wno-syntax && \
+    ./configure --prefix=/usr/local && \
+    make && \
+    make install && \
+    \
+    # ---------------- BWA --------------------- \
+    cd /app && \
+    wget -O bwa-${BWA_VERSION}.tar.gz https://github.com/lh3/bwa/archive/v${BWA_VERSION}.tar.gz && \
+    tar -xf bwa-${BWA_VERSION}.tar.gz && \
+    cd bwa-${BWA_VERSION} && \
+    make && \
+    mv bwa /usr/local/bin && \
+    \
+    # ---------------- Clean up ---------------- \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /app/*.tar.* /app/minimap2-2.30_x64-linux /app/htslib-* /app/samtools-* /app/bwa-*
+
+# Default workdir
+WORKDIR /data

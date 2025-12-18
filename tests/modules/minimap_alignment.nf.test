@@ -2,7 +2,7 @@
 
 nextflow_process {
 
-    name "Test Process run_aligner with bwa"
+    name "Test Process run_aligner with minimap2"
     script "modules/alignment.nf"
     process "run_aligner"
 
@@ -15,8 +15,8 @@ nextflow_process {
                     sample_id:"test",
                     taxid:9000000
                 ]
-                read_aligner = "bwa"
-                read_aligner_params = ""
+                read_aligner = "minimap2"
+                read_aligner_params = "-ax sr -k11 -w 4"
             }
             process {
                 """

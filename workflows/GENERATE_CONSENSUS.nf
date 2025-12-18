@@ -1,7 +1,7 @@
 // Copyright (C) 2023 Genome Surveillance Unit/Genome Research Ltd.
 
-include {bwa_alignment_and_post_processing} from '../modules/bwa_alignment.nf'
-include {run_ivar} from '../modules/run_ivar.nf'
+include {run_aligner as initial_alignment; run_aligner as re_alignment; run_aligner as final_alignment} from '../modules/alignment.nf'
+include {run_ivar as initial_consensus; run_ivar as polish_consensus} from '../modules/run_ivar.nf'
 include {run_qc_script} from '../modules/run_qc_script.nf'
 
 workflow GENERATE_CONSENSUS {
@@ -40,39 +40,73 @@ workflow GENERATE_CONSENSUS {
     */
 
     take:
-        sample_taxid_ch // tuple (meta, reads, ref_files)
+        sample_taxid_ch // tuple (meta, reads, ref_genome)
 
     main:
-        // align reads to reference
-        bwa_alignment_and_post_processing(sample_taxid_ch)
-        bams_ch = bwa_alignment_and_post_processing.out
+
+        // First round of alignment
+        alignment_ch = initial_alignment( sample_taxid_ch )
 
         // set ivar input channel
-        bams_ch
-            | map {meta, _fastq, ref_fa, _ref_indices, bam, bam_idx ->
-                [meta, bam, bam_idx, ref_fa]
+        consensus_initial_in_ch = alignment_ch.map {
+            meta, fastq, _ref_fa, bam, bam_idx ->
+                [meta, fastq, bam, bam_idx]
+        }
+        
+        consensus_initial_ch = initial_consensus(
+            consensus_initial_in_ch, 
+            params.mpileup_max_depth, 
+            params.ivar_initial_freq_threshold, 
+            params.ivar_initial_min_depth )
+
+        if (params.do_consensus_polishing == true) {
+            // Realign reads to consensus, and re-call consensus
+
+            realignment_in_ch = consensus_initial_ch.map {
+                meta, fastq, _bam, _bam_idx, cons_fa ->
+                    [meta, fastq, cons_fa] 
             }
-            | set {ivar_in_ch}
 
-        run_ivar(ivar_in_ch)
+            realignment_ch = re_alignment( realignment_in_ch ) 
 
-        run_ivar.out
-            .set { ivar_out_ch }
+            consensus_final_in_ch = realignment_ch.map {
+                meta, fastq, _ref_fa, bam, bam_idx ->
+                    [meta, fastq, bam, bam_idx]
+            }
+        
+            consensus_final_ch = polish_consensus(
+                consensus_final_in_ch, 
+                params.mpileup_max_depth, 
+                params.ivar_polish_freq_threshold, 
+                params.ivar_polish_min_depth )
+        } else {
+            consensus_final_ch = consensus_initial_ch
+        }
 
-        run_qc_script(ivar_out_ch)
+        // Realign reads reads back to final consensus
+        final_align_in_ch = consensus_final_ch.map {
+            meta, fastq, _bam, _bam_idx, cons_fa ->
+                [meta, fastq, cons_fa]    
+        }
 
-        run_qc_script.out
-            .map {meta, bam, bam_idx, consensus, variants, qc_json ->
+        final_alignment_ch = final_alignment( final_align_in_ch )
+
+        qc_script_in_ch = final_alignment_ch.map {
+            meta, _fastq, cons_fa, bam, bam_idx ->
+                [meta, bam, bam_idx, cons_fa]
+        } 
+
+        qc_ch = run_qc_script(qc_script_in_ch)
+
+        qc_augmented_ch = qc_ch.map {
+            meta, bam, bam_idx, consensus, qc_json ->
                 def json_map = new groovy.json.JsonSlurper().parse(new File(qc_json.toString()))
                 def filter_map = [("longest_non_n_subsequence"): json_map["longest_non_n_subsequence"]]
                 def new_meta = meta.plus(filter_map)
-                [new_meta, bam, bam_idx, consensus, variants, qc_json] }
-            .set {qc_out_ch}
-
-
-        qc_out_ch
-        .filter{  it -> (it[0].longest_non_n_subsequence > 0) }
-        .set{filtered_consensus_ch}
+                [new_meta, bam, bam_idx, consensus, qc_json] 
+        }
+        
+        filtered_consensus_ch = qc_augmented_ch.filter{  it -> (it[0].longest_non_n_subsequence > 0) }
 
     emit:
         filtered_consensus_ch

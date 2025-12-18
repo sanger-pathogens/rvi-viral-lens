@@ -1,9 +1,4 @@
 {
-    "mutations": 111,
-    "insertions": 0,
-    "deletions": 0,
-    "snps": 111,
-    "ti_tv_ratio": "98/13",
     "reads_mapped": 74032,
     "bases_mapped": 10181526,
     "reads_mapped_in_proper_pairs": 70158,

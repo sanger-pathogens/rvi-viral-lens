@@ -49,12 +49,9 @@ List<File> findReferenceDirs(nc_index, virusTaxid, segNumber = null) {
     def virus_data = nc_index.get(virusTaxid)
     if (virus_data != null) {
         data_dirs = virus_data.get(segNumber)
-    } else {
-        log.warn("No nextclade data for $virusTaxid")
-    }
+    } 
 
     if (!data_dirs) {
-        log.warn("No nextclade data for $virusTaxid, $segNumber")
         return []
     }
 

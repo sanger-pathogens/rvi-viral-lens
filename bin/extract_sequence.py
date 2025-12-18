@@ -29,4 +29,3 @@ if found:
     with open(output_file, "w") as output:
         output.write(header_to_write + "\n" + seq + "\n")
     print(header_to_write, end="")
-    subprocess.run(["bwa", "index", output_file])

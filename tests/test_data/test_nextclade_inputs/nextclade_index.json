@@ -1,0 +1,55 @@
+{
+    "12637": {
+        "ALL": [
+            "/nfs/team335/personal/klh/code/gitlab/gsu-pipelines/viral_lens/dev/iterative_consensus/viral-lens/tests/test_data/test_nextclade_inputs/test_nextclade_db/12637/all"
+        ]
+    },
+    "2955291": {
+        "1": [
+            "/nfs/team335/personal/klh/code/gitlab/gsu-pipelines/viral_lens/dev/iterative_consensus/viral-lens/tests/test_data/test_nextclade_inputs/test_nextclade_data/nextstrain/flu/h1n1pdm/pb2"
+        ],
+        "2": [
+            "/nfs/team335/personal/klh/code/gitlab/gsu-pipelines/viral_lens/dev/iterative_consensus/viral-lens/tests/test_data/test_nextclade_inputs/test_nextclade_data/nextstrain/flu/h1n1pdm/pb1"
+        ],
+        "3": [
+            "/nfs/team335/personal/klh/code/gitlab/gsu-pipelines/viral_lens/dev/iterative_consensus/viral-lens/tests/test_data/test_nextclade_inputs/test_nextclade_data/nextstrain/flu/h1n1pdm/pa"
+        ],
+        "4": [
+            "/nfs/team335/personal/klh/code/gitlab/gsu-pipelines/viral_lens/dev/iterative_consensus/viral-lens/tests/test_data/test_nextclade_inputs/test_nextclade_data/nextstrain/flu/h1n1pdm/ha/CY121680",
+            "/nfs/team335/personal/klh/code/gitlab/gsu-pipelines/viral_lens/dev/iterative_consensus/viral-lens/tests/test_data/test_nextclade_inputs/test_nextclade_data/nextstrain/flu/h1n1pdm/ha/MW626062"
+        ],
+        "5": [
+            "/nfs/team335/personal/klh/code/gitlab/gsu-pipelines/viral_lens/dev/iterative_consensus/viral-lens/tests/test_data/test_nextclade_inputs/test_nextclade_data/nextstrain/flu/h1n1pdm/np"
+        ],
+        "6": [
+            "/nfs/team335/personal/klh/code/gitlab/gsu-pipelines/viral_lens/dev/iterative_consensus/viral-lens/tests/test_data/test_nextclade_inputs/test_nextclade_data/nextstrain/flu/h1n1pdm/na/MW626056"
+        ],
+        "7": [
+            "/nfs/team335/personal/klh/code/gitlab/gsu-pipelines/viral_lens/dev/iterative_consensus/viral-lens/tests/test_data/test_nextclade_inputs/test_nextclade_data/nextstrain/flu/h1n1pdm/mp"
+        ],
+        "8": [
+            "/nfs/team335/personal/klh/code/gitlab/gsu-pipelines/viral_lens/dev/iterative_consensus/viral-lens/tests/test_data/test_nextclade_inputs/test_nextclade_data/nextstrain/flu/h1n1pdm/ns"
+        ]
+    },
+    "3418604": {
+        "ALL": [
+            "/nfs/team335/personal/klh/code/gitlab/gsu-pipelines/viral_lens/dev/iterative_consensus/viral-lens/tests/test_data/test_nextclade_inputs/test_nextclade_data/nextstrain/sars-cov-2/wuhan-hu-1/orfs"
+        ]
+    },
+    "694009": {
+        "ALL": [
+            "/nfs/team335/personal/klh/code/gitlab/gsu-pipelines/viral_lens/dev/iterative_consensus/viral-lens/tests/test_data/test_nextclade_inputs/test_nextclade_db/694009/GCF_XXXXXX.X"
+        ]
+    },
+    "H1": {
+        "ALL": [
+            "/nfs/team335/personal/klh/code/gitlab/gsu-pipelines/viral_lens/dev/iterative_consensus/viral-lens/tests/test_data/test_nextclade_inputs/test_nextclade_db/2955291/4/H1/GCF_XXXXXXX.X",
+            "/nfs/team335/personal/klh/code/gitlab/gsu-pipelines/viral_lens/dev/iterative_consensus/viral-lens/tests/test_data/test_nextclade_inputs/test_nextclade_db/2955291/4/H1/GCF_YYYYYYY.Y"
+        ]
+    },
+    "N1": {
+        "ALL": [
+            "/nfs/team335/personal/klh/code/gitlab/gsu-pipelines/viral_lens/dev/iterative_consensus/viral-lens/tests/test_data/test_nextclade_inputs/test_nextclade_db/2955291/6/N1/GCF_XXXXXXX.X"
+        ]
+    }
+}

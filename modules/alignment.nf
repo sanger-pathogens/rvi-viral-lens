@@ -1,5 +1,5 @@
 // Copyright (C) 2023 Genome Surveillance Unit/Genome Research Ltd.
-process bwa_alignment_and_post_processing {
+process run_aligner {
     /*
     *              Map reads to reference
 
@@ -21,8 +21,6 @@ process bwa_alignment_and_post_processing {
             reads to be aligned.
         - `ref_fasta`: Path to the reference files required for
             alignment
-        - `ref_indices` : list of paths to the index files for the ref fasta
-
 
     * Output Tuple:
         - Input tuple, plus:
@@ -33,31 +31,48 @@ process bwa_alignment_and_post_processing {
     *
     */
     tag "${meta.id}"
+    label "aligner"
     label "mem_2"
     label "cpu_1"
     label "time_queue_from_small"
 
     input:
-        tuple val(meta), path(fastq), path(ref_fa), path(ref_indices)
+        tuple val(meta), path(fastq), path(ref_fa)
 
     output:
-        tuple val(meta), path(fastq), path(ref_fa), path(ref_indices), path("${meta.id}.sorted.bam"), path("${meta.id}.sorted.bam.bai")
+        tuple val(meta), path(fastq), path(ref_fa), path("${meta.id}.sorted.bam"), path("${meta.id}.sorted.bam.bai")
 
     script:
+        aligner = "${params.read_aligner}"
+        aligner_params = "${params.read_aligner_params}"
         """
         set -e
         set -o pipefail
 
-        #for each fasta file, get simple file name and run bwa mem
-        bwa mem ${ref_fa} ${fastq} > ${meta.id}.sam
+        if [ "$aligner" = "bwa" ]; then
+            echo "[INFO] Running BWA on sample ${meta.id}"
+            # bwa needs an index
+            bwa index ${ref_fa}
 
-        # convert sam to bam
-        samtools view -S -b ${meta.id}.sam -o ${meta.id}.bam
+            # Align and convert to BAM
+            bwa mem ${aligner_params} ${ref_fa} ${fastq} \
+                | samtools view -S -b - \
+                | samtools sort -o ${meta.id}.sorted.bam
 
-        # sort alignment by leftmost coordinates
-        samtools sort ${meta.id}.bam -o ${meta.id}.sorted.bam
+        elif [ "$aligner" = "minimap2" ]; then
+            echo "[INFO] Running minimap2 on sample ${meta.id}"
 
-        # generate indexes
+            # Minimap2 does not need indexing
+            minimap2 ${aligner_params} ${ref_fa} ${fastq} \
+                | samtools view -S -b - \
+                | samtools sort -o ${meta.id}.sorted.bam
+
+        else
+            echo "[ERROR] Unknown aligner: $aligner"
+            exit 1
+        fi
+
+        # Index the sorted BAM
         samtools index ${meta.id}.sorted.bam
         """
 }
@@ -74,25 +89,18 @@ process bwa_alignment_and_post_processing {
 
 2. **BWA Alignment**:
 
-- Command: `bwa mem ${ref_fa} ${fastq} > ${meta.id}.sam`
+- Command: `bwa mem ${ref_fa} ${fastq} | samtools view -S -b - -o ${meta.id}.bam
   - Aligns the input sequencing reads (`${fastq}`) to the specified
-    reference genome (`${ref_fa}`), producing a SAM file
+    reference genome (`${ref_fa}`), producing a BAM file
     (`${meta.id}.sam`) containing the raw alignments.
 
-3. **Convert SAM to BAM**:
-
-- Command: `samtools view -S -b ${meta.id}.sam -o ${meta.id}.bam`
-  - Converts the SAM file to BAM format, which is a compressed binary
-  version of the alignment file, making it more efficient for storage
-  and processing.
-
-4. **Sort BAM File**:
+3. **Sort BAM File**:
 
 - Command: `samtools sort ${meta.id}.bam -o ${meta.id}.sorted.bam`
   - Sorts the BAM file by the leftmost coordinates of the alignments,
   a necessary step for many downstream analyses.
 
-5. **Generate BAM Index**:
+4. **Generate BAM Index**:
 
 - Command: `samtools index ${meta.id}.sorted.bam`
   - Indexes the sorted BAM file, creating an index file
