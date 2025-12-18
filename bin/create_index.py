@@ -19,6 +19,7 @@ def nc_dataset_map():
                             "flu/h1n1pdm": "2955291",
                             "flu/h3n2": "2955291",
                             "flu/vic": "2955465",
+                            "flu/yam": "2955465", ## fluB_yamagata - only HA in nextclade_data
                             "sars-cov-2": "3418604",
                             "herpes": "3050292",
                             "hmpv": "3048148",
