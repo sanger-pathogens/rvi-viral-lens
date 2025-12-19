@@ -49,7 +49,7 @@ workflow {
     --read_aligner_params         : ${params.read_aligner_params}
     --mpileup_max_depth           : ${params.mpileup_max_depth }
     --ivar_initial_min_depth      : ${params.ivar_initial_min_depth}
-    --ivar_initial_freq_threshold : ${params.ivar_initial_min_depth}
+    --ivar_initial_freq_threshold : ${params.ivar_initial_freq_threshold}
     --ivar_polish_min_depth       : ${params.ivar_polish_min_depth}
     --ivar_polish_freq_threshold  : ${params.ivar_polish_freq_threshold}
     
