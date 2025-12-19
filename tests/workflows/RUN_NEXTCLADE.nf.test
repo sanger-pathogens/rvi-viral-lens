@@ -1,0 +1,95 @@
+// Copyright (C) 2023 Genome Surveillance Unit/Genome Research Ltd.
+
+// Set up Nextclade index for testing
+def nextclade_data_dir = "tests/test_data/test_nextclade_inputs/test_nextclade_data/"
+def nextclade_db_dir = "tests/test_data/test_nextclade_inputs/test_nextclade_db/"
+def process = "python3 bin/create_index.py ${nextclade_data_dir} ${nextclade_db_dir} nextstrain".execute()
+process.waitFor()
+def moveIndexFile = "mv nextclade_index.json tests/test_data/test_nextclade_inputs/".execute()
+moveIndexFile.waitFor()
+
+nextflow_workflow {
+
+    name "Test workflow RUN_NEXTCLADE"
+    script "workflows/RUN_NEXTCLADE.nf"
+    workflow "RUN_NEXTCLADE"
+
+    test("Should run without failures") {
+
+        when {
+            params {
+                test_loc="${projectDir}/tests/test_data/test_nextclade_inputs/"
+                nextclade_data_dir="${test_loc}/test_nextclade_db/"
+                nextclade_index_json="${test_loc}/nextclade_index.json"
+
+                meta_flu_4 = [
+                    id: "12345_1_1.11111",
+                    sample_id: "12345_1_1",
+                    virus: 2955291,
+                    selected_taxid: 2955291,
+                    flu_segment: 4,
+                    sample_subtype: "H1",
+                ]
+
+                flu_4_fa="${projectDir}/tests/test_data/test_nextclade_inputs/H1N1_seg4.fa"
+
+                meta_flu_6 = [
+                    id: "12345_1_2.22222",
+                    sample_id: "12345_1_2",
+                    virus: 2955291,
+                    selected_taxid: 2955291,
+                    flu_segment: 6,
+                    sample_subtype: "N1",
+                ]
+
+                flu_6_fa="${projectDir}/tests/test_data/test_nextclade_inputs/H1N1_seg6.fa"
+
+                meta_covid = [
+                    id: "12345_2_1.33333",
+                    sample_id: "12345_2_1",
+                    virus: 694009,
+                    selected_taxid: 694009,
+                    flu_segment: "",
+                    sample_subtype: null,
+                ]
+
+                covid_fa = "${projectDir}/tests/test_data/test_nextclade_inputs/covid.fa"
+
+                meta_non_data = [
+                    id: "12345_3_1.44444",
+                    sample_id: "12345_3_1",
+                    virus: 99999999,
+                    selected_taxid: 99999999,
+                    flu_segment: "",
+                    sample_subtype: null,
+                ]
+
+                non_data_fa = "${projectDir}/tests/test_data/test_nextclade_inputs/non_data.fa"
+            }
+
+            workflow {
+                """
+                // define inputs of the process here. Example:
+                input[0] = Channel.of(
+                            tuple(params.meta_flu_4, params.flu_4_fa),
+                            tuple(params.meta_flu_6, params.flu_6_fa),
+                            tuple(params.meta_covid, params.covid_fa),
+                            tuple(params.meta_non_data, params.non_data_fa)
+                        )
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            // NOTE: The output jsons are not checked here, just that the process completes without error.
+            // the json file contains timestamps that make it not possible to use md5sum or similar.
+            // TODO: Add a more robust test (parse the json and check for expected values).
+
+            //assert snapshot(workflow.out).match()
+            //assert workflow.stdout.contains("No nextclade data on nextclade_data_dir found for 12345_3_1.44444")
+        }
+
+    }
+
+}

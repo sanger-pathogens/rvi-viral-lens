@@ -47,8 +47,6 @@ nextflow_pipeline {
                 test_loc="${projectDir}/tests/test_data"
                 db_path="${projectDir}/tests/test_data/test_kraken_databases/minimal"
                 manifest="${params.test_loc}/test_manifest_checks/consecutive_underscore_mnf_located.csv"
-                min_coverage_percent = 10.0
-
             }
         }
 

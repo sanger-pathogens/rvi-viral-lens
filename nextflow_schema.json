@@ -5,10 +5,6 @@
   "description": "identify the presence of Flu, SARS-CoV-2 and RSV and obtain, if possible, high quality consensus sequences for those virus.",
   "type": "object",
   "properties": {
-    "containers_dir": {
-      "type": "string",
-      "default": "$projectDir/containers/"
-    },
     "manifest": {
       "type": "string"
     },
@@ -32,15 +28,11 @@
     },
     "kraken2_mem": {
       "type": "string",
-      "default": "1 GB"
+      "default": "2.GB"
     },
     "kraken2_cpus": {
       "type": "integer",
-      "default": 16
-    },
-    "k2r_fq_load_mode": {
-      "type": "string",
-      "default": "full"
+      "default": 4
     },
     "k2r_polling_mode": {
       "type": "string",
@@ -54,15 +46,31 @@
       "type": "integer",
       "default": 10000000
     },
-    "k2r_dump_fq_mem": {
+    "read_aligner": {
       "type": "string",
-      "default": "6 GB"
+      "default": "minimap2"
     },
-    "ivar_min_depth": {
+    "read_aligner_params": {
+      "type": "string",
+      "default": "-ax sr -k11 -w 4"
+    },
+    "mpileup_max_depth": {
+      "type": "integer",
+      "default": 2000
+    },
+    "ivar_initial_min_depth": {
+      "type": "integer",
+      "default": 1
+    },
+    "ivar_initial_freq_threshold": {
+      "type": "number",
+      "default": 0.6
+    },
+    "ivar_polish_min_depth": {
       "type": "integer",
       "default": 10
     },
-    "ivar_freq_threshold": {
+    "ivar_polish_freq_threshold": {
       "type": "number",
       "default": 0.75
     },
@@ -97,13 +105,6 @@
     "mem_k2r_a2": {
       "type": "integer",
       "default": 2
-    },
-    "use_local_containers": {
-      "type": "boolean"
-    },
-    "use_registry_containers": {
-      "type": "boolean",
-      "default": true
     },
     "tracedir": {
       "type": "string",
@@ -144,6 +145,34 @@
     },
     "developer_publish": {
       "type": "boolean"
+    },
+    "do_preprocessing": {
+      "type": "boolean"
+    },
+    "run_trimmomatic": {
+      "type": "boolean",
+      "default": true
+    },
+    "run_trf": {
+      "type": "boolean",
+      "default": true
+    },
+    "run_hrr": {
+      "type": "boolean",
+      "default": true
+    },
+    "publish_clean_reads": {
+      "type": "boolean"
+    },
+    "debug_preproc_output": {
+      "type": "boolean"
+    },
+    "nextclade_index_json": {
+      "type": "string"
+    },
+    "do_consensus_polishing": {
+      "type": "boolean",
+      "default": true
     }
   }
 }

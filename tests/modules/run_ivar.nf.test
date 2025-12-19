@@ -22,10 +22,17 @@ nextflow_process {
                 // define inputs of the process here. Example:
                 input[0]=tuple(
                     params.meta,
+                    [
+                        file("${params.test_loc}/test_input_fastqs/test_1.fastq.gz"),
+                        file("${params.test_loc}/test_input_fastqs/test_2.fastq.gz")
+                    ],
                     file("${params.test_loc}/test_alignments/test2.9000000.sorted.bam"),
                     file("${params.test_loc}/test_alignments/test2.9000000.sorted.bam.bai"),
                     file("${params.test_loc}/test_references/9000000.fa")
                 )
+                input[1] = "0"
+                input[2] = "0.75"
+                input[3] = "10"
                 """
             }
         }

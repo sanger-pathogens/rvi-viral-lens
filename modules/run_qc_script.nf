@@ -42,10 +42,10 @@ process run_qc_script {
     label "cpu_1"
 
     input:
-    tuple val(meta), path(bam), path(bam_index), path(fasta), path(ivar_variants)
+    tuple val(meta), path(bam), path(bam_index), path(fasta)
 
     output:
-    tuple val(meta), path(bam), path( bam_index), path(fasta), path(ivar_variants), path("${meta.id}.qc.json")
+    tuple val(meta), path(bam), path( bam_index), path(fasta), path("${meta.id}.qc.json")
 
     script:
     samtools_flagstat="${meta.id}.flagstat.txt"
@@ -63,8 +63,7 @@ process run_qc_script {
         --fasta_file ${fasta} \
         --samtools_depth_file ${samtools_depth} \
         --samtools_flagstat_file ${samtools_flagstat} \
-        --samtools_bam_header_file ${samtools_bam_header} \
-        --ivar_variants_file ${ivar_variants}
+        --samtools_bam_header_file ${samtools_bam_header}
     """
 
 }

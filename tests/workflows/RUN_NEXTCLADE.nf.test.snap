@@ -1,0 +1,51 @@
+{
+    "Should run without failures": {
+        "content": [
+            {
+                "0": [
+                    [
+                        {
+                            "flu_segment": "",
+                            "sample_id": "12345_2_1",
+                            "sample_subtype": null,
+                            "selected_taxid": 694009,
+                            "id": "12345_2_1.33333",
+                            "virus": 694009
+                        },
+                        "12345_2_1.694009.nextclade.json:md5,337abab54b4e243d003a2728b395ff76",
+                        "12345_2_1.694009_nextclade.tar.gz:md5,1659c63ddb727fa126ff0315a79459bc"
+                    ],
+                    [
+                        {
+                            "flu_segment": 4,
+                            "sample_id": "12345_1_1",
+                            "sample_subtype": "H1",
+                            "selected_taxid": 2955291,
+                            "id": "12345_1_1.11111",
+                            "virus": 2955291
+                        },
+                        "12345_1_1.2955291.nextclade.json:md5,47420b42eb83225848f430e0b3ad47ea",
+                        "12345_1_1.2955291_nextclade.tar.gz:md5,e10fb6b6e34468ec7e146a828753163e"
+                    ],
+                    [
+                        {
+                            "flu_segment": 6,
+                            "sample_id": "12345_1_2",
+                            "sample_subtype": "N1",
+                            "selected_taxid": 2955291,
+                            "id": "12345_1_2.22222",
+                            "virus": 2955291
+                        },
+                        "12345_1_2.2955291.nextclade.json:md5,00119242ee78aeadfbb3032acc988ee8",
+                        "12345_1_2.2955291_nextclade.tar.gz:md5,877285a01b5944b41c67d8fac7f494a8"
+                    ]
+                ]
+            }
+        ],
+        "meta": {
+            "nf-test": "0.9.2",
+            "nextflow": "25.04.4"
+        },
+        "timestamp": "2025-10-15T11:06:37.754752934"
+    }
+}

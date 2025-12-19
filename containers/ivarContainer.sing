@@ -7,23 +7,20 @@ Stage: spython-base
     AUTHOR Antonio Marinho
     ID ad45
     TEAM ARD/DAE
+    VERSION 1.2
     JIRA_TICKET DT-3023 DT-1998
-    NOTE This container is modified recipe version of https://github.com/andersen-lab/ivar/blob/v1.4.3/Dockerfile
+    NOTE This container is based on a modified recipe version of https://github.com/andersen-lab/ivar/blob/v1.4.3/Dockerfile
 
 %post
     # // --- STAGING --- //
     HTSLIB_VER="1.21"
     SAMTOOLS_VER="1.21"
-    IVAR_TAG="v1.4.3"
-    BWA_VER="0.7.18"
-    SNAKEMAKE_VER="7.32.4"
-    PANDAS_VER="2.0.3"
-
+    IVAR_TAG="1.4.4"
     # enables the "exit on error" mode
     set -e
     set -u
 
-    DEBIAN_FRONTEND=noninteractive 
+    DEBIAN_FRONTEND=noninteractive
     # /-------------------/
 
     # install basic requeriments
@@ -66,19 +63,6 @@ Stage: spython-base
     make
     make install
 
-    # bwa
-    cd /app/
-    wget https://github.com/lh3/bwa/archive/v$BWA_VER.tar.gz 
-    tar xvf v$BWA_VER.tar.gz
-    cd bwa-$BWA_VER/
-    make
-    cd ../
-    rm v$BWA_VER.tar.gz
-    PATH=/app/bwa-$BWA_VER:$PATH
-
-    # Snakemake
-    pip3 install pandas==$PANDAS_VER snakemake==$SNAKEMAKE_VER
-
     # |------------------|
     # // --- LOGGING ---//
     # //---> get versions which were actually installed
@@ -90,9 +74,6 @@ Stage: spython-base
     # store variables on singularity environment
     echo "export NOW=\"${NOW}\"" >> $SINGULARITY_ENVIRONMENT
     echo "export IVAR_VER=\"${IVAR_VER}\"" >> $SINGULARITY_ENVIRONMENT
-    echo "export PANDAS_VER=\"${PANDAS_VER}\"" >> $SINGULARITY_ENVIRONMENT
-    echo "export SNAKEMAKE_VER=\"${SNAKEMAKE_VER}\"" >> $SINGULARITY_ENVIRONMENT
-    echo "export BWA_VER=\"${BWA_VER}\"" >> $SINGULARITY_ENVIRONMENT
     echo "export SAMTOOLS_VER=\"${SAMTOOLS_VER}\"" >> $SINGULARITY_ENVIRONMENT
     echo "export HTSLIB_VER=\"${HTSLIB_VER}\"" >> $SINGULARITY_ENVIRONMENT
 
@@ -107,9 +88,6 @@ Stage: spython-base
     echo " -- dependencies "
     echo "HTSLIB_VER=${HTSLIB_VER}"
     echo "SAMTOOLS_VER=${SAMTOOLS_VER}"
-    echo "BWA_VER=${BWA_VER}"
-    echo "PANDAS_VER=${PANDAS_VER}"
-    echo "SNAKEMAKE_VER=${SNAKEMAKE_VER}"
     echo " -- softwares "
     echo "IVAR_VERSION=${IVAR_VER}"
     echo " ------------ "
@@ -119,7 +97,6 @@ Stage: spython-base
 
 %test
     ivar version
-    bwa
     samtools --version
 
 %startscript

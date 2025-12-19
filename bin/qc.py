@@ -28,6 +28,12 @@ def collect_mutation_stats(stats:dict, ivar_variants_file:str):
     Format of ivar variants file documented here: https://andersen-lab.github.io/ivar/html/manualpage.html
     """
 
+    stats['mutations'] = 0
+    stats['insertions'] = 0
+    stats['deletions'] = 0
+    stats['snps'] = 0
+    stats["ti_tv_ratio"] = "0/0"
+
     # Define transition pairs
     transitions = {
         ('A', 'G'), ('G', 'A'), # Purine <-> Purine
@@ -210,12 +216,6 @@ def parse_fasta_to_string(filepath):
 ############
 def generate_qc_file(args: argparse.ArgumentParser.parse_args):
     stats = {
-        # ivar mutation stats
-        'mutations' : 0,
-        'insertions': 0,
-        'deletions': 0,
-        'snps': 0,
-        "ti_tv_ratio": "0/0",
         # read alignment stats
         "reads_mapped" : 0,
         "bases_mapped" : 0,
@@ -230,7 +230,8 @@ def generate_qc_file(args: argparse.ArgumentParser.parse_args):
     }
 
     collect_bam_header_stats( stats, args.samtools_bam_header_file )
-    collect_mutation_stats( stats, args.ivar_variants_file )
+    if args.ivar_variants_file is not None:
+        collect_mutation_stats( stats, args.ivar_variants_file )
     collect_read_stats( stats, args.samtools_flagstat_file)
     collect_depth_stats ( stats, args.samtools_depth_file )
     collect_consensus_sequence_stats( stats, args.fasta_file)
@@ -252,7 +253,7 @@ def main():
         help='''Output of samtools depth on source BAM file for the consensus.''')
     parser.add_argument('--samtools_flagstat_file', required=True, type=str,
         help='''Output of samtools flagstat on source BAM file for the consensus''')
-    parser.add_argument('--ivar_variants_file', required=True, type=str,
+    parser.add_argument('--ivar_variants_file', type=str,
         help='''Output of ivar variants command, to allow summary mutation information to be reported''')
   
     args = parser.parse_args()

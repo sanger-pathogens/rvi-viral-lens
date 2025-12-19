@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.0]
+
+- **[added]**: add Nextclade to compute QC metrics (optional)
+- **[added]**: added ability to run pre-processing workflow up front (optional)
+- **[added]**: consensus workflow now (by default) performs a second round of iVar consensus, after realigning reads to the initial consensus (original behaviour can be achieved with parameters; see README)
+- **[added]**: new script `write_all_summaries.py` which produces per-consensus properties files (JSON) and per-run properties files (JSON and CSV). Run-level JSON/CSV contains ONLY "best fit" nextclade dataset outputs
+- **[change]**: read alignment now uses minimap2 by default (bwa still available as an option)
+- **[change]**: samtools mpileup max depth (-d) can now be controlled with a parameter (default 2000)
+- **[change]**: moved QC metrics calling into GENERATE_CONSENSUS; this workflow now emits ONLY data where consensus is not all-N. COMPUTE_QC_METRICS workflow now removed.
+- **[change]**: QC JSON, and Nextclade JSON now aggregated at per-consensus level to create single properties file
+- **[change]**: `classification_report.csv` now called `summary_report.csv`
+- **[change]**: tweaks to sanger_standard execution profile
+- **[removed]**: No longer run iVar variants (superseded by nextClade analysis); iVar variants properties removed from `summary_report.csv`
+
 ## [1.4.1]
 
 - **[improvement]**: promote kraken report per sample (*.kraken_report.txt) to a primary output
@@ -36,7 +50,7 @@ All notable changes to this project will be documented in this file.
 
 ## [1.1.1]
 
-- **[fix]**: fix sanger local 
+- **[fix]**: fix sanger local
 
 ## [1.1.0]
 
@@ -108,11 +122,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- **[added]**: LSF memory escalation strategy for kraken2ref 
+- **[added]**: LSF memory escalation strategy for kraken2ref
 - **[added]**: Columns Virus_Taxon_ID, Virus, Species, Reference_Taxon_ID, Selected_Reference added/populated to classification report
 
 ### Added
-- **[added]**: add LSF memory escalation strategy for kraken2ref 
+- **[added]**: add LSF memory escalation strategy for kraken2ref
 - **[added]**: Columns Virus_Taxon_ID, Virus, Species, Reference_Taxon_ID, Selected_Reference added/populated to classification report
 
 ## [0.2.1] - 2024-06-20
@@ -170,7 +184,7 @@ All notable changes to this project will be documented in this file.
 
 ### Removed
 
-- **[Removed]**: writing manifest process removed from `SORT_READS_BY_REF.nf` 
+- **[Removed]**: writing manifest process removed from `SORT_READS_BY_REF.nf`
 - **[Removed]**: json resource files and fasta files provided on the repo
 
 ---

@@ -2,9 +2,9 @@
 
 nextflow_process {
 
-    name "Test Process bwa_alignment_and_post_processing"
-    script "modules/bwa_alignment.nf"
-    process "bwa_alignment_and_post_processing"
+    name "Test Process run_aligner with bwa"
+    script "modules/alignment.nf"
+    process "run_aligner"
 
     test("Should run without failures") {
 
@@ -15,7 +15,8 @@ nextflow_process {
                     sample_id:"test",
                     taxid:9000000
                 ]
-                test_loc="${projectDir}/tests/test_data"
+                read_aligner = "bwa"
+                read_aligner_params = ""
             }
             process {
                 """
@@ -23,11 +24,10 @@ nextflow_process {
                 input[0] = tuple(
                     params.meta,
                     [
-                        file("${params.test_loc}/test_input_fastqs/test_1.fastq.gz"),
-                        file("${params.test_loc}/test_input_fastqs/test_2.fastq.gz")
+                        file("${projectDir}/tests/test_data/test_input_fastqs/test_1.fastq.gz"),
+                        file("${projectDir}/tests/test_data/test_input_fastqs/test_2.fastq.gz")
                     ],
-                    file("${params.test_loc}/test_references/9000000.fa"),
-                    file("${params.test_loc}/test_references/9000000.fa.*")
+                    file("${projectDir}/tests/test_data/test_references/9000000.fa")
                     )
                 """
             }

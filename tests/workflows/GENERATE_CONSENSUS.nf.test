@@ -1,4 +1,5 @@
 // Copyright (C) 2023 Genome Surveillance Unit/Genome Research Ltd.
+
 nextflow_workflow {
 
     name "Test Workflow GENERATE_CONSENSUS"
@@ -12,25 +13,20 @@ nextflow_workflow {
                 meta = [
                     sample_id: "FluH1N1_SARSCoV2_hPIV1_33K_ea_P1",
                     taxid: "2697049",
-                    id: "FluH1N1_SARSCoV2_hPIV1_33K_ea_P1.2697049",
-                    ref_files: [
-                        "${projectDir}/tests/test_data/test_references/2697049.fa",
-                        "${projectDir}/tests/test_data/test_references/2697049.fa.amb",
-                        "${projectDir}/tests/test_data/test_references/2697049.fa.ann",
-                        "${projectDir}/tests/test_data/test_references/2697049.fa.bwt",
-                        "${projectDir}/tests/test_data/test_references/2697049.fa.pac",
-                        "${projectDir}/tests/test_data/test_references/2697049.fa.sa"
-                    ]
-                ]
-                reads = [
-                    "${projectDir}/tests/test_data/test_taxon_reads/FluH1N1_SARSCoV2_hPIV1_33K_ea_P1/FluH1N1_SARSCoV2_hPIV1_33K_ea_P1.2697049.extracted_1.fq", 
-                    "${projectDir}/tests/test_data/test_taxon_reads/FluH1N1_SARSCoV2_hPIV1_33K_ea_P1/FluH1N1_SARSCoV2_hPIV1_33K_ea_P1.2697049.extracted_2.fq"
+                    id: "FluH1N1_SARSCoV2_hPIV1_33K_ea_P1.2697049"
                 ]
             }
             workflow {
                 """
-                // define inputs of the workflow here. Example:
-                input[0] = Channel.of(tuple(params.meta, params.reads))
+                input[0] = Channel.of(
+                    tuple(  params.meta,
+                            [
+                                "${projectDir}/tests/test_data/test_taxon_reads/FluH1N1_SARSCoV2_hPIV1_33K_ea_P1/FluH1N1_SARSCoV2_hPIV1_33K_ea_P1.2697049.extracted_1.fq",
+                                "${projectDir}/tests/test_data/test_taxon_reads/FluH1N1_SARSCoV2_hPIV1_33K_ea_P1/FluH1N1_SARSCoV2_hPIV1_33K_ea_P1.2697049.extracted_2.fq"
+                            ],
+                            "${projectDir}/tests/test_data/test_references/2697049.fa"
+                        )
+                )
                 """
             }
 

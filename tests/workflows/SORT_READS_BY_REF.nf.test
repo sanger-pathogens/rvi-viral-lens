@@ -15,6 +15,7 @@ nextflow_workflow {
 
                 meta_1 = [
                     id: "FluH1N1_SARSCoV2_hPIV1_33K_ea_P1",
+                    sample_id: "FluH1N1_SARSCoV2_hPIV1_33K_ea_P1"
                 ]
                 reads_1 = [
                     "${projectDir}/tests/test_data/downsampled_10000reads_fastqs/FluH1N1_SARSCoV2_hPIV1_33K_ea_P1_10000reads_1.fastq.gz", 
@@ -23,6 +24,7 @@ nextflow_workflow {
             
                 meta_2 = [
                     id: "SARSCoV2_FluH1N1_50K_each_P1",
+                    sample_id: "SARSCoV2_FluH1N1_50K_each_P1"
                 ]
                 reads_2 = [
                     "${projectDir}/tests/test_data/downsampled_10000reads_fastqs/SARSCoV2_FluH1N1_50K_each_P1_10000reads_1.fastq.gz", 
@@ -31,6 +33,7 @@ nextflow_workflow {
             
                 meta_3 = [
                     id: "Zeptometrix_Panel_2_1_Control1_P1",
+                    sample_id: "Zeptometrix_Panel_2_1_Control1_P1",
                 ]
                 reads_3 = [
                     "${projectDir}/tests/test_data/downsampled_10000reads_fastqs/Zeptometrix_Panel_2.1_Control1_P1_10000reads_1.fastq.gz", 
@@ -38,7 +41,8 @@ nextflow_workflow {
                 ]
 
                 meta_4 = [
-                    id: "empty",
+                    id: "no_id",
+                    sample_id: "no_id"
                 ]
                 reads_4 = [
                     "${projectDir}/tests/test_data/downsampled_10000reads_fastqs/empty_1.fastq.gz", 

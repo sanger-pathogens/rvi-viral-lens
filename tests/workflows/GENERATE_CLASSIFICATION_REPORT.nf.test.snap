@@ -3,14 +3,67 @@
         "content": [
             {
                 "0": [
-                    "classification_report.csv:md5,907b464a7279256aae2767495a2a069a"
+                    [
+                        {
+                            "longest_non_n_subsequence": "2335",
+                            "ref_selected": "A/Taiwan/1/1986(H1N1) segment 1",
+                            "sample_id": "49759_2_96",
+                            "reference_header": ">kraken:taxid|8076432|A/Taiwan/1/1986-H1N1 segment 1",
+                            "virus": "2955291",
+                            "num_reads": "38188",
+                            "taxid": "8076432",
+                            "flu_segment": "1",
+                            "sample_subtype": "",
+                            "selected_taxid": "8076432",
+                            "id": "49759_2_96.8076432",
+                            "virus_name": "Alphainfluenzavirus influenzae",
+                            "report_name": "Influenza A Virus",
+                            "virus_subtype": "H1N1",
+                            "parent_selected": null
+                        },
+                        "49759_2_96.8076432.properties.json:md5,1558f49bb833b67178c2e275531843ef"
+                    ]
+                ],
+                "1": [
+                    [
+                        "consensus_sequence_properties.json:md5,f3488e473f6b81ec8c333b94798c71a3",
+                        "summary_report.csv:md5,239db296bc4341978826a704688f5cca"
+                    ]
+                ],
+                "publish_run_level_summaries_ch": [
+                    [
+                        "consensus_sequence_properties.json:md5,f3488e473f6b81ec8c333b94798c71a3",
+                        "summary_report.csv:md5,239db296bc4341978826a704688f5cca"
+                    ]
+                ],
+                "publish_seq_level_ch": [
+                    [
+                        {
+                            "longest_non_n_subsequence": "2335",
+                            "ref_selected": "A/Taiwan/1/1986(H1N1) segment 1",
+                            "sample_id": "49759_2_96",
+                            "reference_header": ">kraken:taxid|8076432|A/Taiwan/1/1986-H1N1 segment 1",
+                            "virus": "2955291",
+                            "num_reads": "38188",
+                            "taxid": "8076432",
+                            "flu_segment": "1",
+                            "sample_subtype": "",
+                            "selected_taxid": "8076432",
+                            "id": "49759_2_96.8076432",
+                            "virus_name": "Alphainfluenzavirus influenzae",
+                            "report_name": "Influenza A Virus",
+                            "virus_subtype": "H1N1",
+                            "parent_selected": null
+                        },
+                        "49759_2_96.8076432.properties.json:md5,1558f49bb833b67178c2e275531843ef"
+                    ]
                 ]
             }
         ],
         "meta": {
             "nf-test": "0.9.2",
-            "nextflow": "25.04.2"
+            "nextflow": "24.10.4"
         },
-        "timestamp": "2025-05-21T15:29:11.575504164"
+        "timestamp": "2025-12-09T14:29:49.313709"
     }
 }
