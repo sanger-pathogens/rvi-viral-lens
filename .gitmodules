@@ -1,3 +1,3 @@
 [submodule "rvi_toolbox"]
 	path = rvi_toolbox
-	url = https://github.com/genomic-surveillance/rvi_toolbox.git
+	url = ../rvi_toolbox.git
