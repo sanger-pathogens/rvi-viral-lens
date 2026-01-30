@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.1]
+
+-- **[changed]**: updated to version 2.2.1 of Kraken2ref, fixing an edge-case in the polling algorithm that led to valid reference candidates being discarded
+
 ## [1.5.0]
 
 - **[added]**: add Nextclade to compute QC metrics (optional)
