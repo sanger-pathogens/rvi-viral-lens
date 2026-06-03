@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.2]
+
+-- **[changed]**: configuration changes to use current queues supported on Sanger HPC when running with `sanger_standard` profile.
+
 ## [1.5.1]
 
 -- **[changed]**: updated to version 2.2.1 of Kraken2ref, fixing an edge-case in the polling algorithm that led to valid reference candidates being discarded
