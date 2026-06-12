@@ -43,6 +43,9 @@ def list_leaf_dirs(start):
         return []
     return leaf_dirs
 
+def has_required_files(dir):
+    return os.path.isfile(os.path.join(dir, "reference.fasta"))
+
 def construct_nc_index(git_nc_db_dir):
     """
     Using nc_dataset_map, enumerate paths to datasets inside the nextclade_data github repo
@@ -75,6 +78,9 @@ def construct_nc_index(git_nc_db_dir):
     ## collect all leaf directories
     leaf_dirs = list_leaf_dirs(git_nc_db_dir)
     for leaf_dir in leaf_dirs:
+        if not has_required_files(leaf_dir):
+            continue
+
         for name, taxid in nc_taxid_name_map.items():
             ## scan for keywords, and if found, add to index dict
             if f"/{name}" in leaf_dir or f"/{name}/" in leaf_dir:
