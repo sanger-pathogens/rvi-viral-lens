@@ -225,7 +225,7 @@
     },
     "vcontact3_db_version": {
       "type": "string",
-      "default": "233"
+      "default": "236"
     },
     "vcontact3_db_domain": {
       "type": "string",
