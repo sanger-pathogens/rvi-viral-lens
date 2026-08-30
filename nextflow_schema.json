@@ -170,6 +170,63 @@
     "nextclade_index_json": {
       "type": "string"
     },
+    "do_assembly": {
+      "type": "boolean",
+      "default": false
+    },
+    "metaspades_base_mem_gb": {
+      "type": "integer",
+      "default": 4
+    },
+    "metaspades_subsample_limit": {
+      "type": "integer",
+      "default": 500000
+    },
+    "genomad_db": {
+      "type": "string"
+    },
+    "vrhyme_min_scaffold_length": {
+      "type": "integer",
+      "default": 2000
+    },
+    "vrhyme_bowtie_threads": {
+      "type": "integer",
+      "default": 4
+    },
+    "vrhyme_pool_min_identity": {
+      "type": "number",
+      "default": 0.95
+    },
+    "vrhyme_pool_min_aligned_length": {
+      "type": "integer",
+      "default": 50
+    },
+    "vrhyme_link_n": {
+      "type": "integer",
+      "default": 1000
+    },
+    "checkv_db": {
+      "type": "string"
+    },
+    "vcontact3_db_path": {
+      "type": "string"
+    },
+    "vcontact3_db_version": {
+      "type": "string",
+      "default": "233"
+    },
+    "vcontact3_db_domain": {
+      "type": "string",
+      "default": "eukaryotes"
+    },
+    "vcontact3_postprocess_min_proteins": {
+      "type": "integer",
+      "default": 5
+    },
+    "vcontact3_postprocess_max_proteins": {
+      "type": "integer",
+      "default": 20
+    },
     "do_consensus_polishing": {
       "type": "boolean",
       "default": true
