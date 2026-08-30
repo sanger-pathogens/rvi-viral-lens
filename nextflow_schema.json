@@ -213,6 +213,10 @@
       "type": "integer",
       "default": 1000
     },
+    "bowtie2_samtools_only_abundance_estimation": {
+      "type": "boolean",
+      "default": false
+    },
     "checkv_db": {
       "type": "string"
     },
