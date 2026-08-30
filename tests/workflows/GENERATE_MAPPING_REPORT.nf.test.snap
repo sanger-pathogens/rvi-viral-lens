@@ -1,0 +1,49 @@
+{
+    "Should run without failures - one sample": {
+        "content": [
+            {
+                "0": [
+                    [
+                        {
+                            "mapping_method": "seqgraph_align",
+                            "id": "sample1",
+                            "mapping_n_species_called": 1,
+                            "sample_id": "sample1",
+                            "mapping_qc_breadth_of_coverage": 0.92
+                        },
+                        "sample1.properties.json:md5,e49584f04d2b8608f198256526d2b81f"
+                    ]
+                ],
+                "1": [
+                    [
+                        "mapping_run_summary.json:md5,740a5a76a74c791084cce952fcbde15d",
+                        "mapping_summary_report.csv:md5,62ef463e82bfd1b0d716d573e30b9529"
+                    ]
+                ],
+                "publish_run_level_summaries_ch": [
+                    [
+                        "mapping_run_summary.json:md5,740a5a76a74c791084cce952fcbde15d",
+                        "mapping_summary_report.csv:md5,62ef463e82bfd1b0d716d573e30b9529"
+                    ]
+                ],
+                "publish_seq_level_ch": [
+                    [
+                        {
+                            "mapping_method": "seqgraph_align",
+                            "id": "sample1",
+                            "mapping_n_species_called": 1,
+                            "sample_id": "sample1",
+                            "mapping_qc_breadth_of_coverage": 0.92
+                        },
+                        "sample1.properties.json:md5,e49584f04d2b8608f198256526d2b81f"
+                    ]
+                ]
+            }
+        ],
+        "timestamp": "2026-08-30T23:43:07.88883036",
+        "meta": {
+            "nf-test": "0.9.5",
+            "nextflow": "24.10.6"
+        }
+    }
+}

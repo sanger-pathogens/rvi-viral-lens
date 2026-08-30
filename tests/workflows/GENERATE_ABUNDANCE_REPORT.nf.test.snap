@@ -1,0 +1,47 @@
+{
+    "Should run without failures - one sample": {
+        "content": [
+            {
+                "0": [
+                    [
+                        {
+                            "bracken_n_species_called": 4,
+                            "id": "sample1",
+                            "scrub_ran": false,
+                            "sample_id": "sample1"
+                        },
+                        "sample1.properties.json:md5,037795434c05caf10fb88ac3223d23a1"
+                    ]
+                ],
+                "1": [
+                    [
+                        "abundance_run_summary.json:md5,1bc9956f9ef8506b78ec09e59eccdae0",
+                        "abundance_summary_report.csv:md5,002a0c9fe0119a37824f37bfa16f2c50"
+                    ]
+                ],
+                "publish_run_level_summaries_ch": [
+                    [
+                        "abundance_run_summary.json:md5,1bc9956f9ef8506b78ec09e59eccdae0",
+                        "abundance_summary_report.csv:md5,002a0c9fe0119a37824f37bfa16f2c50"
+                    ]
+                ],
+                "publish_seq_level_ch": [
+                    [
+                        {
+                            "bracken_n_species_called": 4,
+                            "id": "sample1",
+                            "scrub_ran": false,
+                            "sample_id": "sample1"
+                        },
+                        "sample1.properties.json:md5,037795434c05caf10fb88ac3223d23a1"
+                    ]
+                ]
+            }
+        ],
+        "timestamp": "2026-08-30T23:42:49.308272177",
+        "meta": {
+            "nf-test": "0.9.5",
+            "nextflow": "24.10.6"
+        }
+    }
+}

@@ -1,0 +1,59 @@
+{
+    "Should run without failures - one sample, few scaffolds": {
+        "content": [
+            {
+                "0": [
+                    [
+                        {
+                            "vrhyme_n_bins": 1,
+                            "genomad_n_scaffolds": 3,
+                            "checkv_n_high_quality": 1,
+                            "genomad_n_eligible": 2,
+                            "sample_id": "sample1",
+                            "vrhyme_n_binned_scaffolds": 2,
+                            "checkv_n_medium_quality": 1,
+                            "vcontact3_n_genomes": 2,
+                            "vcontact3_n_clusters": 1,
+                            "id": "sample1"
+                        },
+                        "sample1.properties.json:md5,02998fa0e292a0c8ee85b6a9d094de5d"
+                    ]
+                ],
+                "1": [
+                    [
+                        "assembly_run_summary.json:md5,058b1985940f417c526d3b03d921cfed",
+                        "assembly_summary_report.csv:md5,31bf38dd02bdfadb1b802d6bcc91873c"
+                    ]
+                ],
+                "publish_run_level_summaries_ch": [
+                    [
+                        "assembly_run_summary.json:md5,058b1985940f417c526d3b03d921cfed",
+                        "assembly_summary_report.csv:md5,31bf38dd02bdfadb1b802d6bcc91873c"
+                    ]
+                ],
+                "publish_seq_level_ch": [
+                    [
+                        {
+                            "vrhyme_n_bins": 1,
+                            "genomad_n_scaffolds": 3,
+                            "checkv_n_high_quality": 1,
+                            "genomad_n_eligible": 2,
+                            "sample_id": "sample1",
+                            "vrhyme_n_binned_scaffolds": 2,
+                            "checkv_n_medium_quality": 1,
+                            "vcontact3_n_genomes": 2,
+                            "vcontact3_n_clusters": 1,
+                            "id": "sample1"
+                        },
+                        "sample1.properties.json:md5,02998fa0e292a0c8ee85b6a9d094de5d"
+                    ]
+                ]
+            }
+        ],
+        "timestamp": "2026-08-30T23:42:28.288670311",
+        "meta": {
+            "nf-test": "0.9.5",
+            "nextflow": "24.10.6"
+        }
+    }
+}
