@@ -117,7 +117,9 @@ PYEOF
 // --genome-report points at the same reference database VCONTACT3 itself used
 // (params.vcontact3_db_path/-version), same convention as --db-path/-version
 // above: referenced directly by path, not staged, since it lives in the shared
-// reference database directory.
+// reference database directory. Note the "v" prefix on the version directory:
+// vcontact3 resolves --db-path/--db-version to <db_path>/v<version>/, and the
+// genome report lives in there beside the rest of that version's files.
 // See rvi_toolbox/bin/vcontact3_postprocess.py for the exact semantics.
 process VCONTACT3_POSTPROCESS {
     label 'cpu_1'
@@ -145,7 +147,7 @@ process VCONTACT3_POSTPROCESS {
     /opt/conda/bin/python ${postprocess_script} \\
         --assignments       ${final_assignments} \\
         --vog-support       ${vog_support} \\
-        --genome-report     ${params.vcontact3_db_path}/RefSeq.${params.vcontact3_db_version}.genome_report.parquet \\
+        --genome-report     ${params.vcontact3_db_path}/v${params.vcontact3_db_version}/RefSeq.${params.vcontact3_db_version}.genome_report.parquet \\
         --output            final_assignments_postprocessed.csv \\
         --novel-taxa-output final_assignments_noveltaxa.csv \\
         --report            postprocess_report.txt \\
