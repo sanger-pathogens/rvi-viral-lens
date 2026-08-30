@@ -127,8 +127,13 @@ workflow {
 
     } else {
         sort_reads_in_ch = reads_ch
+        // file() matters: parse_mnf yields the manifest's raw strings, while
+        // PREPROCESSING emits real paths. Consumers that only declare `path`
+        // inputs coerce either, but ASSEMBLE_META calls R1.countFastq() in a
+        // map closure, which needs a Path. Coerce here so both branches really
+        // do emit the same shape, as the comment above claims.
         reads_ch.map{ meta, fastqs ->
-            return [meta, fastqs[0], fastqs[1]]
+            return [meta, file(fastqs[0]), file(fastqs[1])]
         }.set{ preprocessed_3tuple_ch }
     }
 
