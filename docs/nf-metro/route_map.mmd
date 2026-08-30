@@ -1,0 +1,171 @@
+%%metro title: viral-lens (post rvi_integration_1, envisioned)
+%%metro style: dark
+%%metro legend: bl
+%%metro line_order: definition
+%%metro center_ports: true
+%%metro compact_offsets: true
+%%metro file: manifest_in | CSV | Reads manifest
+%%metro file: ena_in | TXT | ENA accessions
+%%metro file: irods_in | CSV | iRODS lane manifest
+%%metro file: plate_map_in | CSV | SCRuB plate map
+%%metro file: taxid_report_out | HTML | Classification report
+%%metro file: assembly_out | FASTA | Contigs / bins
+%%metro file: abundance_out | TSV | Abundance table
+%%metro file: mapping_out | TSV | Mapping QC summary
+%%metro line: core | Every sample | #64748b
+%%metro line: taxid | Map-to-taxid + consensus (existing) | #2db572
+%%metro line: mapping | Map reads to sequence indexes (proposed, decision B) | #e6550d
+%%metro line: assembly | De novo assembly + viral binning (proposed, decision C) | #756bb1
+%%metro line: abundance | Abundance estimation (proposed, decision C) | #0570b0
+%%metro off_track: manifest_in, ena_in, irods_in, plate_map_in, taxid_report_out, assembly_out, abundance_out, mapping_out
+%%metro grid: preprocessing | 0,0,1,4
+%%metro grid: taxid_mapping | 1,0,1,1
+%%metro grid: seq_index_mapping | 1,1,1,1
+%%metro grid: assembly | 1,2,1,1
+%%metro grid: abundance | 1,3,1,1
+%%metro grid: consensus | 2,0,1,1
+%%metro grid: viral_binning | 2,2,1,1
+%%metro grid: reporting | 3,0,1,4
+
+graph LR
+    subgraph preprocessing [Preprocessing]
+        %%metro exit: right | core, taxid, mapping, assembly, abundance
+        %%metro process: mixed_input | MIXED_INPUT
+        %%metro process: verify_fastq | VERIFY_FASTQ
+        %%metro process: subsample_iter | SUBSAMPLE_ITER
+        %%metro process: trim | TRIMMOMATIC
+        %%metro process: human_scrub | SCRUBBER
+        manifest_in[ ]
+        ena_in[ ]
+        irods_in[ ]
+        mixed_input[MIXED_INPUT - decision A]
+        verify_fastq[VERIFY_FASTQ]
+        subsample_iter[SUBSAMPLE_ITER]
+        trim[Trimmomatic]
+        human_scrub[Human-read SCRUBBER]
+        manifest_in -->|core| mixed_input
+        ena_in -->|core| mixed_input
+        irods_in -->|core| mixed_input
+        mixed_input -->|core| verify_fastq
+        verify_fastq -->|core| subsample_iter
+        subsample_iter -->|core| trim
+        trim -->|core| human_scrub
+    end
+
+    subgraph taxid_mapping [Map reads to taxid]
+        %%metro entry: left | taxid
+        %%metro exit: right | taxid
+        %%metro process: kraken2 | KRAKEN2
+        %%metro process: k2r | KRAKENTOOLS|EXTRACT_KRAKEN_READS
+        kraken2[Kraken2]
+        k2r[extract-kraken-reads]
+        human_scrub -->|taxid| kraken2
+        kraken2 -->|taxid| k2r
+    end
+
+    subgraph seq_index_mapping [Map reads to sequence indexes]
+        %%metro entry: left | mapping
+        %%metro exit: right | core
+        %%metro process: pseudoalign_themisto | THEMISTO_PSEUDOALIGN
+        %%metro process: pseudoalign_metagraph | METAGRAPH_QUERY
+        %%metro process: seqgraph_align | METAGRAPH$
+        %%metro process: qc_mapping | .*_MAP_QC
+        pseudoalign_themisto[Pseudoalign - Themisto2]
+        pseudoalign_metagraph[Pseudoalign - Metagraph]
+        seqgraph_align[Seq-to-graph align - Metagraph]
+        qc_mapping[QC Mapping]
+        human_scrub -->|mapping| pseudoalign_themisto
+        human_scrub -->|mapping| pseudoalign_metagraph
+        human_scrub -->|mapping| seqgraph_align
+        pseudoalign_themisto -->|mapping| qc_mapping
+        pseudoalign_metagraph -->|mapping| qc_mapping
+        seqgraph_align -->|mapping| qc_mapping
+    end
+
+    subgraph assembly [De novo assembly]
+        %%metro entry: left | assembly
+        %%metro exit: right | assembly
+        %%metro process: metaspades | METASPADES
+        %%metro process: genomad | GENOMAD
+        metaspades[metaSPAdes]
+        genomad[geNomad classify]
+        human_scrub -->|assembly| metaspades
+        metaspades -->|assembly| genomad
+    end
+
+    subgraph viral_binning [Viral binning]
+        %%metro entry: left | assembly
+        %%metro exit: right | core
+        %%metro process: vrhyme | VRHYME
+        %%metro process: checkv | CHECKV
+        %%metro process: vcontact3 | VCONTACT3
+        vrhyme[vRhyme bin]
+        checkv[CheckV QC]
+        binned_scaffolds[Binned scaffolds]
+        unbinned_scaffolds[Unbinned scaffolds]
+        vcontact3[vContact3]
+        genomad -->|assembly| vrhyme
+        genomad -->|assembly| checkv
+        vrhyme -->|assembly| checkv
+        vrhyme -->|assembly| binned_scaffolds
+        vrhyme -->|assembly| unbinned_scaffolds
+        binned_scaffolds -->|assembly| vcontact3
+        unbinned_scaffolds -->|assembly| vcontact3
+        checkv -->|assembly| vcontact3
+    end
+
+    subgraph abundance [Abundance estimation]
+        %%metro entry: left | abundance
+        %%metro exit: right | core
+        %%metro process: k2bracken | KRAKEN2BRACKEN
+        %%metro process: abund_est | ABUNDANCE_ESTIMATION
+        %%metro process: scrub_decontam | SCRUB_DECONTAM
+        plate_map_in[ ]
+        k2bracken[Kraken2 + Bracken]
+        abund_est[ABUNDANCE_ESTIMATION]
+        scrub_decontam[SCRuB cross-contam - optional, decision D]
+        human_scrub -->|abundance| k2bracken
+        human_scrub -->|abundance| abund_est
+        k2bracken -->|abundance| scrub_decontam
+        plate_map_in -->|abundance| scrub_decontam
+    end
+
+    subgraph consensus [Consensus + lineage]
+        %%metro entry: left | taxid
+        %%metro exit: right | core
+        %%metro process: generate_consensus | GENERATE_CONSENSUS
+        %%metro process: nextclade | RUN_NEXTCLADE
+        %%metro process: scov2 | SCOV2_SUBTYPING
+        generate_consensus[GENERATE_CONSENSUS]
+        nextclade[Nextclade]
+        scov2[SCOV2_SUBTYPING]
+        k2r -->|taxid| generate_consensus
+        generate_consensus -->|taxid| nextclade
+        generate_consensus -->|taxid| scov2
+    end
+
+    subgraph reporting [Reporting]
+        %%metro entry: left | core
+        %%metro process: classification_report | GENERATE_CLASSIFICATION_REPORT
+        %%metro process: mapping_report | MAPPING_REPORT
+        %%metro process: assembly_report | ASSEMBLY_REPORT
+        %%metro process: abundance_report | ABUNDANCE_REPORT
+        taxid_report_out[ ]
+        mapping_out[ ]
+        assembly_out[ ]
+        abundance_out[ ]
+        classification_report[GENERATE_CLASSIFICATION_REPORT]
+        mapping_report[Mapping report]
+        assembly_report[Assembly report]
+        abundance_report[Abundance report]
+        nextclade -->|core| classification_report
+        scov2 -->|core| classification_report
+        classification_report -->|core| taxid_report_out
+        qc_mapping -->|core| mapping_report
+        mapping_report -->|core| mapping_out
+        vcontact3 -->|core| assembly_report
+        assembly_report -->|core| assembly_out
+        scrub_decontam -->|core| abundance_report
+        abund_est -->|core| abundance_report
+        abundance_report -->|core| abundance_out
+    end
