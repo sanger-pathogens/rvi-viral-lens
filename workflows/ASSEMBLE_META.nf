@@ -1,4 +1,4 @@
-include { SUBSAMPLE_ITER } from './subsample.nf'
+include { SUBSAMPLE_ITER } from '../rvi_toolbox/subworkflows/subsample.nf'
 include { METASPADES } from '../modules/metaspades.nf'
 
 workflow ASSEMBLE_META {

@@ -15,7 +15,7 @@ include {SCOV2_SUBTYPING} from './workflows/SCOV2_SUBTYPING.nf'
 include {GENERATE_CLASSIFICATION_REPORT} from './workflows/GENERATE_CLASSIFICATION_REPORT.nf'
 include {RUN_NEXTCLADE} from './workflows/RUN_NEXTCLADE.nf'
 include {publish_consensus_files as publish_aln_files; publish_consensus_files as publish_nc_files; publish_consensus_files as publish_per_sample_json} from './modules/publish_lite.nf'
-include {publish_run_files} from './modules/publish_lite.nf'
+include {publish_run_files; publish_run_files as publish_assembly_run_files} from './modules/publish_lite.nf'
 
 // --- De novo assembly + viral binning (rvi_integration_1) --------------------
 // Ported from rvi-viral-metagenomics-pipeline/main.nf, wiring unchanged (see
@@ -290,7 +290,7 @@ workflow {
 
         // PUBLISH (assembly lane)
         publish_lane_json(GENERATE_ASSEMBLY_REPORT.out.publish_seq_level_ch)
-        publish_run_files(GENERATE_ASSEMBLY_REPORT.out.publish_run_level_summaries_ch)
+        publish_assembly_run_files(GENERATE_ASSEMBLY_REPORT.out.publish_run_level_summaries_ch)
     }
 
     // PUBLISH
