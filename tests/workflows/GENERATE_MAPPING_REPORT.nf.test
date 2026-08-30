@@ -1,0 +1,35 @@
+nextflow_workflow {
+
+    name "Test Workflow GENERATE_MAPPING_REPORT"
+    script "workflows/GENERATE_MAPPING_REPORT.nf"
+    workflow "GENERATE_MAPPING_REPORT"
+
+    test("Should run without failures - one sample") {
+
+        when {
+            params {
+                outdir = "$launchDir/results/"
+
+                meta = [
+                    id: "sample1",
+                    sample_id: "sample1",
+                    mapping_method: "seqgraph_align",
+                    mapping_n_species_called: 1,
+                    mapping_qc_breadth_of_coverage: 0.92
+                ]
+            }
+            workflow {
+                """
+                input[0] = Channel.of([params.meta.id, params.meta])
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}
