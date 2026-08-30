@@ -19,6 +19,7 @@
 - [Outputs](#outputs)
   - [Primary outputs](#primary-outputs)
   - [Secondary outputs](#secondary-outputs)
+  - [De novo assembly + viral binning outputs](#de-novo-assembly--viral-binning-outputs)
 - [Configuration](#configuration)
   - [Parameters](#parameters)
   - [Profiles](#profiles)
@@ -26,6 +27,7 @@
 - [Pipeline components documentation](#pipeline-components-documentation)
   - [Processes](#processes)
   - [Workflows](#workflows)
+- [rvi_integration_1: work in progress](#rvi_integration_1-work-in-progress)
 - [Licence](#licence)
 
 ---
@@ -44,6 +46,12 @@ or minimap2), with the resulting pileup being provided to `ivar` to determine th
 3. **NextClade analysis**: (Optional) NextClade is run on the resulting viral genomes.
 
 4. **Pangolin analysis**: (Optional) For SARS-CoV-2 genomes, Pangolin is run to sub-type the genome. 
+
+5. **De novo assembly + viral binning** (Optional, activated by `--do_assembly true`): the same preprocessed reads are also assembled de novo (`metaSPAdes`), classified for viral content (`geNomad`), binned into putative genomes (`vRhyme`), quality-checked (`CheckV`) and clustered/taxonomically assigned (`vContact3`) — a parallel lane alongside steps 1-4, not a replacement for them. See [rvi_integration_1: work in progress](#rvi_integration_1-work-in-progress).
+
+The diagram below (rendered with [nf-metro](https://github.com/seqeralabs/nf-metro) from [`docs/nf-metro/route_map.mmd`](docs/nf-metro/route_map.mmd)) shows how these lanes relate — the green line is steps 1-4 above; the purple line is step 5:
+
+![viral-lens route map](docs/nf-metro/route_map.svg)
 
 [**(&uarr;)**](#contents)
 ---
@@ -424,6 +432,51 @@ Pair of fastq files containing all reads which were associated to the reference 
 
 [**(&uarr;)**](#contents)
 
+### De novo assembly + viral binning outputs
+
+> Only produced if `--do_assembly true` (see [rvi_integration_1: work in progress](#rvi_integration_1-work-in-progress)).
+
+```bash
+<output_dir>/
+├── assembly_run_summary.json
+├── assembly_summary_report.csv
+├── vcontact3/
+│   ├── final_assignments.csv
+│   ├── final_assignments_postprocessed.csv
+│   ├── final_assignments_noveltaxa.csv
+│   └── postprocess_report.txt
+├── <sample_id>/
+│   ├── <sample_id>.properties.json
+│   ├── metaspades/
+│   │   ├── <sample_id>_contigs.fa
+│   │   └── <sample_id>_scaffolds.fa
+│   ├── genomad/
+│   │   ├── <sample_id>_virus_summary.tsv
+│   │   ├── <sample_id>_virus.fna
+│   │   └── <sample_id>_virus_proteins.faa
+│   ├── vrhyme/
+│   │   ├── vRhyme_best_bins.*.membership.tsv
+│   │   └── vRhyme_best_bins_fasta/
+│   └── checkv/
+│       ├── virus_scaffolds_quality_summary.tsv
+│       └── linked_bins_quality_summary.tsv
+├── [...]
+```
+
+`<sample_id>.properties.json` for this lane carries the same shape as the taxid
+lane's per-consensus properties.json, but with genomad/vrhyme/checkv/vcontact3
+sample-level counts (`genomad_n_scaffolds`, `genomad_n_eligible`,
+`vrhyme_n_bins`, `vrhyme_n_binned_scaffolds`, `checkv_n_high_quality`,
+`checkv_n_medium_quality`, `vcontact3_n_genomes`, `vcontact3_n_clusters`) in
+place of consensus/nextclade fields — see main.nf's `count_genomad_summary()` /
+`count_vrhyme_membership()` / `count_checkv_quality()` /
+`count_vcontact3_for_sample()` for exactly what each counts.
+`assembly_run_summary.json` / `assembly_summary_report.csv` collate all
+samples' properties.json the same way `consensus_sequence_properties.json` /
+`summary_report.tsv` do for the taxid lane.
+
+[**(&uarr;)**](#contents)
+
 ## Configuration
 
 ### Parameters
@@ -476,6 +529,28 @@ The following command-line parameters can be used to modify the behaviour of the
   - Default: `"Severe acute respiratory syndrome coronavirus 2"`.
 - `do_scov2_subtyping`: Boolean flag to enable or disable SARS-CoV-2 subtyping via Pangolin.
   - Default: `true`.
+
+#### De novo assembly + viral binning (`--do_assembly`)
+
+Off by default; ported from `rvi-viral-metagenomics-pipeline` (see
+[rvi_integration_1: work in progress](#rvi_integration_1-work-in-progress)).
+Requires three reference databases with no bundled default — the pipeline will
+fail validation if `--do_assembly true` is set without all three:
+
+- `genomad_db`: path to a [geNomad](https://github.com/apcamargo/genomad) database.
+- `checkv_db`: path to a [CheckV](https://bitbucket.org/berkeleylab/checkv/) reference database.
+- `vcontact3_db_path` (+ `vcontact3_db_version`, `vcontact3_db_domain`): path to a
+  [vContact3](https://bitbucket.org/MAVERICLab/vcontact3) reference database.
+
+Everything else has a default carried over from the source pipeline unchanged:
+`metaspades_base_mem_gb`, `metaspades_subsample_limit`,
+`vrhyme_min_scaffold_length`, `vrhyme_bowtie_threads`,
+`vrhyme_pool_min_identity`, `vrhyme_pool_min_aligned_length`, `vrhyme_link_n`,
+`vcontact3_postprocess_min_proteins`, `vcontact3_postprocess_max_proteins`,
+`subsample_iterations`, `subsample_seed` — see `nextflow.config` and
+`nextflow_schema.json` for their values, or `rvi-viral-metagenomics-pipeline`'s
+`rvi_toolbox/subworkflows/{assemble,genomad,checkv,vrhyme,vcontact3}.json` for
+the per-parameter rationale.
 
 ### Profiles
 
@@ -564,6 +639,48 @@ The `GENERATE_CLASSIFICATION_REPORT` workflow generates a classification report 
 The `RUN_NEXCLADE` workflow generate QC metrics for sequences supported by a dataset (path set by `nextclade_data_dir` parameter) which provides a **reference FASTA**, a **GFF3 annotation** and (optionally) a **tree JSON** following the directory structure bellow:
 
 If `nextclade_index_json` is not provided, this workflow will not run.
+
+#### ASSEMBLE_META
+
+De novo assembles preprocessed reads with `metaSPAdes`, subsampling first (`SUBSAMPLE_ITER`) if a sample is above `metaspades_subsample_limit`. Only runs if `--do_assembly true`.
+
+#### GENOMAD_CLASSIFY
+
+Runs `geNomad` on each sample's metaSPAdes scaffolds to identify viral sequences, emitting per-sample virus summary/FASTA/protein files consumed by every downstream step in this lane.
+
+#### VRHYME_BIN
+
+Bins viral scaffolds into putative genomes with `vRhyme`, using a pooled cross-sample coverage signal (every qualifying sample's scaffolds are pooled into one bowtie2 index so coverage covariance across the whole batch informs each sample's own binning) — the one step in this lane that isn't purely per-sample. Guarantees a real (possibly empty) `membership.tsv` and bins directory for every sample, so downstream steps never need to special-case "no bins".
+
+#### CHECKV_QC
+
+Runs `CheckV` on both geNomad's raw virus scaffolds and vRhyme's linked bins, producing the quality calls `VCONTACT3_RUN` uses to promote high/medium-quality binned scaffolds to standalone genomes alongside their bin.
+
+#### VCONTACT3_RUN
+
+Per-sample, reconciles vRhyme's binned scaffolds and geNomad's unbinned scaffolds (`vcontact3_prep.py`) into one vContact3-shaped input; pipeline-level, runs `vContact3` once across every sample's combined input, then post-processes the taxonomy calls (`vcontact3_postprocess.py`) to flag/correct out-of-range and realm-conflicting novel-genus predictions.
+
+#### GENERATE_ASSEMBLY_REPORT
+
+Writes the per-sample + run-level report for this lane, straight from `meta` — no separate qc/nextclade JSON to merge in, unlike `GENERATE_CLASSIFICATION_REPORT`. See [De novo assembly + viral binning outputs](#de-novo-assembly--viral-binning-outputs).
+
+#### GENERATE_MAPPING_REPORT / GENERATE_ABUNDANCE_REPORT
+
+Same shape as `GENERATE_ASSEMBLY_REPORT`, built and covered by their own nf-test workflow tests, but not yet called from `main.nf` — their upstream lanes (map-to-sequence-indexes, SCRuB + abundance estimation) aren't ported yet. See [rvi_integration_1: work in progress](#rvi_integration_1-work-in-progress).
+
+---
+
+## rvi_integration_1: work in progress
+
+This branch is porting `rvi-viral-metagenomics-pipeline` functionality into viral-lens; the [route map](docs/nf-metro/route_map.svg) tracks the target shape and [`docs/nf-metro/README.md`](docs/nf-metro/README.md) explains how to regenerate/extend it. Landed so far: the de novo assembly + viral binning lane (`--do_assembly`) and its report, fanning into a shared Reporting section alongside the existing classification report.
+
+Not yet landed, in rough dependency order:
+
+- **Map reads to sequence indexes** lane (pseudoalignment via Themisto2/Metagraph, sequence-to-graph alignment via Metagraph, QC Mapping) — `GENERATE_MAPPING_REPORT.nf` exists and is tested standalone, waiting on this lane.
+- **Abundance estimation** lane (Kraken2+Bracken, optionally SCRuB cross-contamination decontamination, `ABUNDANCE_ESTIMATION`) — `GENERATE_ABUNDANCE_REPORT.nf` exists and is tested standalone, waiting on this lane.
+- **Wider input handling** — ENA download and iRODS retrieval (`MIXED_INPUT`), beyond today's single local-manifest `parse_mnf()`.
+- **`rvi_toolbox` fork reconciliation** — viral-lens's submodule tracks `rvi/rvi_toolbox.git`, 51+ commits behind that fork's own master at time of writing (missing vRhyme/vContact3/geNomad work already merged there); the SCRuB and Metagraph subworkflows this plan depends on exist only on a *different* fork (`eu1/rvi_toolbox.git`, merged to its master). This pass avoided the submodule entirely (see "Port de novo assembly + viral binning lane" commit) precisely because that reconciliation hasn't happened yet.
+- **Per-scaffold meta granularity** — today's assembly report counts are sample-level (`genomad_n_scaffolds`, `vrhyme_n_bins`, etc.); one report row per scaffold, carrying that scaffold's own bin/quality/cluster assignment, is a deliberately deferred stretch goal, not a decision made against it.
 
 ---
 
