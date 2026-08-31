@@ -174,10 +174,9 @@
       "type": "boolean",
       "default": false
     },
-    "sequence_index_method": {
-      "type": "string",
-      "default": "themisto2",
-      "enum": ["themisto2"]
+    "run_msweep": {
+      "type": "boolean",
+      "default": false
     },
     "msweep_themisto_index": {
       "type": "string",

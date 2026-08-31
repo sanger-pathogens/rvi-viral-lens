@@ -10,7 +10,10 @@ process THEMISTO_PSEUDOALIGN {
     // The upstream gemsweep module ships without a container (placeholder TODO).
     container 'quay.io/sangerpathogens/themisto2:0.0.1'
 
-    memory { 100.GB * task.attempt }
+    // 25GB on the first attempt, escalating on retry. The upstream module asked for
+    // 100GB up front, which reserves far more than the run needs and makes the job
+    // queue behind large-memory slots for no benefit.
+    memory { 25.GB * task.attempt }
 
     input:
     tuple val(meta), path(reads_1), path(reads_2)

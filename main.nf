@@ -306,7 +306,7 @@ workflow {
     // Themisto2 pseudoalignment + mSWEEP abundance, then breadth-of-coverage
     // validation of the low-abundance calls. Runs off the same preprocessed reads
     // the assembly lane uses, in parallel with it -- not downstream of it.
-    if (params.do_sequence_index) {
+    if (params.do_sequence_index && params.run_msweep) {
         VIRAL_MSWEEP(preprocessed_3tuple_ch)
 
         msweep_counts_ch = VIRAL_MSWEEP.out.abundances
