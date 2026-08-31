@@ -2,11 +2,13 @@
 
 You're picking up mid-flight on branch `rvi_integration_1` of `viral-lens`. This branch is
 integrating functionality from a sibling pipeline, `rvi-viral-metagenomics-pipeline`, into
-`viral-lens/main.nf`. This file has been updated twice now — first written at commit
-`d759968`, updated through `bf71c67` after a farm run (item 1, and Themisto2 half of item
-3), updated again through `d0760aa` (`HEAD` at the time of this edit) after a second,
-farm-less round ported Metagraph's half of item 3 but couldn't run it. `git log` is the
-source of truth if it's since moved further.
+`viral-lens/main.nf`. This file has been updated three times now — first written at
+commit `d759968`, updated through `bf71c67` after a farm run (item 1, and the Themisto2
+method of item 3), updated through `d0760aa` after a farm-less round ported Metagraph
+sequence-to-graph alignment (item 3's second method), updated again through `05d6c4c`
+(`HEAD` at the time of this edit) after a third, also farm-less round added Metagraph
+pseudoalignment (item 3's third and last method). `git log` is the source of truth if
+it's since moved further.
 
 Read this whole file before touching anything. It front-loads facts (repo layout, remotes,
 commit hashes, file conventions) discovered the hard way in the prior session, specifically
@@ -177,58 +179,91 @@ Per-sample outputs are grouped by lane; see README's "Output layout". `sequencei
 and `abundance/` are reserved for items 3 and 4 below. All publishing now goes through
 `params.outdir`; the ported `params.results_dir` is gone from viral-lens-owned files.
 
-## Item 3's Metagraph half is ported and wired, but only DSL-checked — no farm access this round
+## Item 3's Metagraph methods are BOTH ported and wired, but only DSL-checked — no farm access this or the last round
 
-The agent that did item 1 and the Themisto2 half of item 3 ran on the farm with real
-containers, reference DBs, and LSF. **This round had none of that** (sandboxed, no
-`singularity`, no reference data) — same constraint as the very first handoff. So:
-`VIRAL_METAGRAPH_ALIGN` + `METAGRAPH_MAP_QC` are ported (from `eu1/rvi_toolbox.git`'s
+Two rounds now with no farm access (sandboxed, no `singularity`, no reference data — same
+constraint as the very first handoff). Between them, all three route-map mapping methods
+now exist: Themisto2/mSWEEP (**farm-verified**, see the section above) and both Metagraph
+methods (**DSL-checked only**, this round added the second one). Treat the Metagraph half
+exactly like item 1 was treated before its farm run: believed correct, not proven.
+
+**`metagraph align` (sequence-to-graph alignment)** — `workflows/VIRAL_METAGRAPH_ALIGN.nf`
++ `modules/metagraph_align.nf` (renamed this round from `metagraph.nf`, process `METAGRAPH`
+→ `METAGRAPH_ALIGN`, for symmetry with the sibling below). Ported from `eu1/rvi_toolbox.git`'s
 `feature_metagraph_align`, merge commit `f23d592` — the fork problem in item 2 still
-applies, landed as viral-lens-owned files same as everything else) and wired into
-`main.nf` behind `--run_metagraph_align`, and `nextflow run main.nf -preview` resolves
-clean for every combination tried (metagraph alone, both mapping methods together, the
-lane on with neither method flag set, everything including the assembly lane at once).
-**None of it has executed a single real task.** Treat it exactly like item 1 was treated
-before the farm run: believed correct, not proven.
+applies. Gated by `--run_metagraph_align`.
 
-What you're inheriting, concretely:
+**`metagraph query` (pseudoalignment) — the third method, previously flagged as "not a
+real module anywhere," now built.** Read this carefully before touching it further — it
+was built deliberately differently from what you'd get by reviving old history:
 
-- `GENERATE_MAPPING_REPORT` is now called **once**, fed by both mapping methods (see
-  `main.nf`'s `if (params.do_sequence_index) { ... }` block) — `sequence_index_sample_ch`
-  (built from `preprocessed_3tuple_ch`) is the join backbone, and each method's counts are
-  left-joined onto it with `remainder: true`, defaulted via a named `EMPTY_*_COUNTS`
-  constant when that method didn't run or produced no optional output for a sample. If you
-  add a third method (or SCRuB/abundance later needs the same shape), follow this pattern
-  rather than inventing a second one.
-- Metagraph's own map-QC counts are named `metagraph_mapqc_*`, not `mapqc_*` — deliberately
-  distinct from mSWEEP's `mapqc_n_species`/`mapqc_max_breadth_pct`, which merge into the
-  same per-sample `meta` and would otherwise silently overwrite each other (Groovy's `Map +
-  Map` on matching keys keeps the later value).
-- **Reference-data paths are `null` by default and genuinely unverified** — unlike every
-  other path param in this file, these were not confirmed against real files this round.
-  `metagraph_align_graph`/`metagraph_align_annotation`/`metagraph_align_annotation_seqs`:
-  `rvi_toolbox`'s own `metagraph_align.config` (comments, not necessarily current) suggests
-  starting from eu1's personal scratch —
-  `/lustre/scratch126/pam/projects/rvidata/personal/eu1/metagraph/bigviralindex-rvdbc/{viromeindex_clustered_graph.dbg,column_annotation_coordinates.column_coord.annodbg,column_annotation_coordinates.seqs}`
-  — check it still exists before assuming it does; the equivalent mSWEEP paths in
-  `rvi_toolbox`'s config turned out to be stale (see item 3's Themisto2 section above) so
-  don't assume this one is current either. `metagraph_map_reference_fasta` has no
-  candidate path suggested anywhere — you'll need to work out what reference FASTA
-  actually corresponds to whichever graph/annotation you end up using.
-- Naive TSV parsing in the new `count_metagraph_species_hits()`/`count_metagraph_map_qc()`
-  helpers (bottom of `main.nf`) is written against the exact column names in
-  `bin/call_metagraph_species.py`/`bin/aggregate_metagraph_coverage.py`'s own output
-  headers, but — like `count_vcontact3_for_sample()` before it — never run against real
-  output. Specifically check `provisional_call`'s value: Python's `str(bool)` writes
-  `"True"`/`"False"` (capitalized), and the helper's `== 'True'` check depends on that
-  exactly.
+- The user gave the exact spec: a **new, simpler** module using `metagraph query
+  --query-mode labels`, not a revival of the old approach.
+- The old approach (recovered from commit `ccae756`'s parent, `eu1/rvi_toolbox.git`) was a
+  **two-stage pipeline**: `metagraph align --query-presence --filter-present` (cheap,
+  unannotated presence filter) piping into `metagraph query` (annotated, on the filtered
+  reads only). Its own commit message says manual testing found it discarded almost every
+  real hit — any read with a single sequencing error or SNP never survives the exact-match
+  presence filter — and it "found zero" real hits on a real test sample that the
+  align-based replacement later found plenty of. **Do not resurrect that two-stage design.**
+  If you're ever tempted to "improve" `metagraph_query.nf` by adding a presence-filter
+  pre-stage back in, re-read this paragraph first.
+- What's actually built (`workflows/VIRAL_METAGRAPH_QUERY.nf` + `modules/metagraph_query.nf`):
+  a single `metagraph query --query-mode labels -i <graph> -a <annotation>
+  --min-kmers-fraction-label <threshold>` call per mate, directly against the full
+  (subsampled) reads — no presence-filter stage. Mirrors `VIRAL_METAGRAPH_ALIGN.nf`'s
+  shape otherwise (subsample → run → `CALL_METAGRAPH_SPECIES` → optional
+  `METAGRAPH_MAP_QC`), and shares the same graph/annotation/threshold params — same
+  reference data, alternative method against it.
+- **The exact output shape of `metagraph query --query-mode labels` is unverified** — no
+  `metagraph` binary available where this was written, so it couldn't be checked against a
+  real invocation. `bin/call_metagraph_species.py` (already proven against `metagraph
+  align`'s output) is reused unchanged on the assumption that it scans every
+  tab-separated field for a recognizable label shape rather than depending on a fixed
+  column count — check this holds for query's actual output on your first real run; if
+  `--query-mode labels` output doesn't parse cleanly, that script's `parse_label()`/
+  `iter_read_labels()` (see their docstrings) is where to fix it, not
+  `metagraph_query.nf` itself.
+- A real collision this surfaced, now fixed: `CALL_METAGRAPH_SPECIES` and the map-QC
+  processes (`metagraph_species_call.nf`, `metagraph_coverage.nf`) are shared by both
+  methods and publish to fixed per-sample paths. If both methods run for the same sample
+  they'd have silently overwritten each other's output. Both now take an
+  `output_subdir`/`summary_name` value, threaded from each caller (`'metagraph_hits'`/
+  `'metagraph_map'` vs `'metagraph_query_hits'`/`'metagraph_query_map'`) — if you add a
+  fourth thing that shares these processes, thread a new distinct name the same way rather
+  than hardcoding one.
+- `GENERATE_MAPPING_REPORT` is now fed by all three methods through one join chain in
+  `main.nf`'s `if (params.do_sequence_index) { ... }` block —
+  `sequence_index_sample_ch` (built from `preprocessed_3tuple_ch`) is the join backbone,
+  each method's counts left-joined with `remainder: true`, defaulted via a named
+  `EMPTY_*_COUNTS` constant when that method didn't run or produced no optional output for
+  a sample. `count_metagraph_species_hits()`/`count_metagraph_map_qc()` now take a
+  `prefix` arg (`'metagraph_align'`/`'metagraph_query'`) so both methods' fields
+  (`metagraph_align_n_species_called` vs `metagraph_query_n_species_called`, etc.) can
+  merge into one meta without colliding. If a fourth method lands, extend this same chain.
+
+**Reference-data paths are still `null` by default and genuinely unverified** — unlike
+every other path param in this file, none of `metagraph_align_graph`/
+`metagraph_align_annotation`/`metagraph_align_annotation_seqs`/`metagraph_map_reference_fasta`
+were confirmed against real files, across either round. `rvi_toolbox`'s own
+`metagraph_align.config` (comments, not necessarily current) suggests starting from eu1's
+personal scratch —
+`/lustre/scratch126/pam/projects/rvidata/personal/eu1/metagraph/bigviralindex-rvdbc/{viromeindex_clustered_graph.dbg,column_annotation_coordinates.column_coord.annodbg,column_annotation_coordinates.seqs}`
+— check it still exists before assuming it does; the equivalent mSWEEP paths in
+`rvi_toolbox`'s config turned out to be stale (see item 3's Themisto2 section above), so
+don't assume this one is current either. `metagraph_map_reference_fasta` has no candidate
+path suggested anywhere — you'll need to work out what reference FASTA actually
+corresponds to whichever graph/annotation you end up using. Both methods share these same
+four params (one index, two query strategies), so fixing them once fixes both methods.
 
 Your first move on the farm should be exactly what item 1's writeup already describes:
 one sample, real containers, `-profile sanger_standard` (or your farm's equivalent) under
 `bsub`, confirm the reference-data paths above (correct them in `nextflow.config` once you
 know the real ones — don't leave `null` defaults that happen to work only because you
-passed the right value on the CLI once), and fix whatever real execution surfaces. Update
-this file and the README's "Output layout" bullet the same way item 1's run did.
+passed the right value on the CLI once), and fix whatever real execution surfaces. Test
+`--run_metagraph_align` and `--run_metagraph_query` separately before together — if only
+one works, you want to know which. Update this file and the README's "Output layout"
+bullet the same way item 1's run did.
 
 ---
 
@@ -311,13 +346,13 @@ a human if the call isn't obvious): does `viral-lens/rvi_toolbox` start tracking
 viral-lens-owned files (as commit `c545c24` did) until the forks are reconciled someday
 separately? Whichever way, be consistent with whatever the assembly lane already did.
 
-### 3. Build the "map reads to sequence indexes" lane — Themisto2 farm-verified, Metagraph DSL-verified only, pseudoalign-via-Metagraph still unbuilt
+### 3. Build the "map reads to sequence indexes" lane — all three methods now exist; both Metagraph ones need a farm run
 
 Per the route map (`docs/nf-metro/route_map.mmd`, section `seq_index_mapping`): three
 methods converging on one QC Mapping step, feeding `GENERATE_MAPPING_REPORT.nf` — which
 is now actually wired and running, no longer an orphan. **Your next action here is to run
-the Metagraph half on the farm** — see "Item 3's Metagraph half..." above for exactly
-what that involves and what's unverified.
+both Metagraph methods on the farm** — see "Item 3's Metagraph methods..." above for
+exactly what that involves and what's unverified.
 
 - **Pseudoalign via Themisto2 — DONE.** `VIRAL_MSWEEP` + `MSWEEP_MAP_QC` are ported as
   viral-lens-owned files (`workflows/VIRAL_MSWEEP.nf`, `workflows/MSWEEP_MAP_QC.nf`,
@@ -350,36 +385,38 @@ what that involves and what's unverified.
   `25.GB * task.attempt` at the user's request. Metagraph's own `METAGRAPH` process
   already requests `25.GB * task.attempt` upstream — checked when porting it, no change
   needed. A broader request-vs-actual audit across every module is still wanted later.
-- **Sequence-to-graph alignment via Metagraph — ported and wired, not farm-run.**
-  `VIRAL_METAGRAPH_ALIGN` + `METAGRAPH_MAP_QC` are in as viral-lens-owned files
-  (`workflows/VIRAL_METAGRAPH_ALIGN.nf`, `workflows/METAGRAPH_MAP_QC.nf`,
-  `modules/metagraph{,_coverage,_reference_subset,_species_call}.nf`,
+- **Sequence-to-graph alignment via Metagraph (`metagraph align`) — ported and wired, not
+  farm-run.** `VIRAL_METAGRAPH_ALIGN` + `METAGRAPH_MAP_QC` are in as viral-lens-owned
+  files (`workflows/VIRAL_METAGRAPH_ALIGN.nf`, `workflows/METAGRAPH_MAP_QC.nf`,
+  `modules/metagraph_align.nf` — renamed from `metagraph.nf` this round —,
+  `modules/metagraph{_coverage,_reference_subset,_species_call}.nf`,
   `bin/{call_metagraph_species,aggregate_metagraph_coverage}.py`), gated by
-  `--run_metagraph_align`, feeding the same `GENERATE_MAPPING_REPORT` call mSWEEP does.
-  `nextflow run main.nf -preview` resolves clean; nothing has executed for real — no
-  singularity or reference data available to the agent that ported it. See "Item 3's
-  Metagraph half..." above for the specific gaps (reference-data paths above all,
-  `provisional_call`'s exact string value) before treating this as done.
-- **Pseudoalign via Metagraph**: flagged in the route map as *not currently a real,
-  maintained module* — `modules/metagraph.nf`'s `METAGRAPH` process used to do a plain
-  k-mer query (pseudoalign) before commit `ccae756` on `eu1/rvi_toolbox.git` ("Switch
-  METAGRAPH to true alignment instead of plain k-mer query") replaced it with true
-  alignment. Building this as a genuine third option means reviving that mode as its own
-  module (e.g. a `metagraph query` invocation), not just re-exposing something already
-  there. Confirm this is still wanted before building it — it's the one piece of the route
-  map that was never actually implemented anywhere.
-- **QC Mapping**: reuse `MSWEEP_MAP_QC` (msweep path) / `METAGRAPH_MAP_QC` (metagraph
-  paths) as-is; don't invent a new unified QC step unless there's a concrete reason to.
+  `--run_metagraph_align`.
+- **Pseudoalignment via Metagraph (`metagraph query --query-mode labels`) — ported and
+  wired, not farm-run.** The route map used to flag this as *not currently a real,
+  maintained module*; it's now built as `workflows/VIRAL_METAGRAPH_QUERY.nf` +
+  `modules/metagraph_query.nf`, gated by `--run_metagraph_query`. **Read "Item 3's
+  Metagraph methods..." above in full before changing this one** — it's a deliberately
+  new, simpler design, specifically NOT a revival of an old two-stage approach that was
+  already tried and found to produce ~zero real hits.
+- **QC Mapping**: both Metagraph methods reuse the same `METAGRAPH_MAP_QC` subworkflow
+  (mSWEEP has its own, `MSWEEP_MAP_QC`) — don't invent a new unified QC step unless
+  there's a concrete reason to. `CALL_METAGRAPH_SPECIES` and `METAGRAPH_MAP_QC`'s
+  downstream processes now take an `output_subdir`/`summary_name` value precisely so this
+  sharing doesn't make align and query overwrite each other's published output — see
+  "Item 3's Metagraph methods..." above.
 
-`GENERATE_MAPPING_REPORT` is called once, fed by whichever method(s) are enabled (see
-`main.nf`'s `if (params.do_sequence_index) { ... }` block, `sequence_index_sample_ch` as
-the join backbone). If a third method lands, extend that same chain rather than building
-a second report path — that was the whole point of restructuring it this round. The four
-helpers that populate the meta (`count_msweep_abundances()`, `count_msweep_map_qc()`,
-`count_metagraph_species_hits()`, `count_metagraph_map_qc()`) are at the bottom of
-`main.nf` beside the assembly ones, each paired with a named `EMPTY_*_COUNTS` constant
-for the "this method didn't run, or ran but produced no optional output for this sample"
-case — every `.join(..., remainder: true)` in that block depends on one of those.
+`GENERATE_MAPPING_REPORT` is called once, fed by whichever of the three methods are
+enabled (see `main.nf`'s `if (params.do_sequence_index) { ... }` block,
+`sequence_index_sample_ch` as the join backbone). If a fourth method ever lands, extend
+that same chain rather than building a second report path — that was the whole point of
+restructuring it earlier this round. The helpers that populate the meta
+(`count_msweep_abundances()`, `count_msweep_map_qc()`, `count_metagraph_species_hits()`,
+`count_metagraph_map_qc()` — the last two now take a `prefix` arg so align's and query's
+counts don't collide) are at the bottom of `main.nf` beside the assembly ones, each
+paired with a named `EMPTY_*_COUNTS` constant for the "this method didn't run, or ran but
+produced no optional output for this sample" case — every `.join(..., remainder: true)`
+in that block depends on one of those.
 
 ### 4. Build the abundance estimation lane
 
