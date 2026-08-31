@@ -200,8 +200,12 @@ those were written before any of it had executed, and this supersedes them.
 | Kraken2+Bracken | `--do_abundance --run_kraken2bracken` | **PASS** |
 | SCRuB | `+ --run_scrub --scrub_plate_map` | **PASS** |
 | ABUNDANCE_ESTIMATION | `--do_abundance --run_abundance_estimation` | **PASS** |
-| Metagraph **align** | `--do_sequence_index --run_metagraph_align` | **still running at hand-off** |
-| MIXED_INPUT | `--do_mixed_input` | **NOT run** — needs ENA/iRODS input, DSL-checked only |
+| Metagraph **align** | `--do_sequence_index --run_metagraph_align` | **PASS** |
+| MIXED_INPUT (local reads manifest) | `--do_mixed_input --manifest_of_reads` | **PASS** |
+| MIXED_INPUT (ENA / iRODS sources) | `--manifest_ena` / `--studyid` etc. | **NOT run** — needs ENA/iRODS access |
+
+**Every lane now has a passing farm run.** The only untested paths left are
+MIXED_INPUT's ENA and iRODS *sources*; its local-reads-manifest source is proven.
 
 ### What the farm runs fixed
 
@@ -267,16 +271,71 @@ Two traps that cost time, both mine, both avoidable:
 - **Do not edit a launcher while a job is running it** — bash re-reads the file
   mid-execution and the job dies with exit 127.
 
+### The metagraph species-calling parser was broken in two separate ways
+
+Both were invisible until the numbers were actually read. `metagraph align` reported
+**155,181 "species" considered and 0 called** on a sample that is unambiguously
+SARS-CoV-2 + influenza A. It was neither a depth problem nor a crash — the counts were
+being split across the wrong keys.
+
+1. **Coordinate windows became part of the species key.** In a coordinate index
+   metagraph appends the matched window to the label, and a reference record whose own
+   name already carries one ends up with two:
+
+       AB847956.1 | Alphainfluenzavirus influenzae:16-166
+       KM368312.1 | Alphainfluenzavirus influenzae:1612-1762:2314-2464
+
+   `parse_label` took everything after `" | "` as the species, so every window was its
+   own species. Stripped by `COORD_SUFFIX_RE`.
+
+2. **`metagraph query` joins a read's labels with `:` , not `;`.** This is the output
+   shape `modules/metagraph_query.nf` had flagged UNVERIFIED. 6364 of 6367 rows were
+   multi-label fields being treated as one label. Split by `LABEL_JOIN_RE`, which only
+   splits a `:` followed by `<accession> | ` so coordinate windows are left alone.
+
+Effect, same reads each time:
+
+| | before | after |
+|---|---|---|
+| align: considered / called | 155181 / **0** | 4 / **2** |
+| query: considered / called | 6367 / 1 | 22 / **10** |
+
+and the calls are now the right organisms, agreeing with Themisto2/mSWEEP on the same
+reads (*Betacoronavirus pandemicum* + *Alphainfluenzavirus influenzae*), each validated
+by mapping at 99.4% / 99.96% breadth.
+
+**`min_hits` context:** `metagraph_align_min_hits = 100`. Before the fix the best
+evidence for any single key was 60 hits, which is why nothing was called. After
+aggregation the same sample gives *Betacoronavirus pandemicum* 572,162. If you ever see
+0 called again, check the *number of keys* first — a huge `n_species_considered` is the
+signature of a key-fragmentation bug, not of a threshold that needs lowering.
+
+Fixing this exposed a latent one: two species can pick the same best-hit reference
+record, which puts a duplicate in the extracted subset FASTA and makes `samtools sort`
+die on the header (`Duplicate entry ... in sam header`). Now de-duplicated.
+
+### Real-depth verification
+
+`nf_runs/two_sample_fixed.csv` is a 2-sample, real-depth (19-27MB/mate) MIXED_INPUT
+manifest. Run via `launch_mixed.sh`. Results are per-sample distinct and biologically
+coherent — influenza for `50376_2_16`, seasonal coronaviruses for `50376_2_78` — with
+all called species validated by mapping (96.9% / 100% breadth).
+
+> The manifest originally supplied for this,
+> `rvi-viral-metagenomics/minimal_test/two_sample.csv`, cannot be used as-is: all four
+> of its FASTQs live under a nextflow work directory that has since been cleaned
+> (`.../rvi-viral-metagenomics/50376_2/` no longer exists). `#78` was recovered from
+> `10-run-comparative-space/50376_themisto_run/`; `#76` was not found, and `#16`
+> substitutes for it. Note also that its `id,R1,R2` header is MIXED_INPUT's format, not
+> `parse_mnf`'s `sample_id,reads_1,reads_2` — and `parse_mnf` would reject these sample
+> ids anyway, since it forbids the `#` in `50376_2#78`.
+
 ### Still open
 
-- **MIXED_INPUT has never been executed** (needs ENA/iRODS credentials + input).
-- **Metagraph align** was still running at hand-off; confirm it completed.
-- `metagraph query`'s output shape is marked UNVERIFIED in `modules/metagraph_query.nf`.
-  The lane runs and reports, but on this control-heavy test data it called 0 species,
-  so the parser has not really been exercised — check it against data with known hits.
-- The single-sample `mapping_summary_report.csv` shows 0 across every metagraph
-  column. Expected here (10k-read downsamples), but it means the metagraph counting
-  helpers are only proven to not crash, not to count correctly.
+- **MIXED_INPUT's ENA and iRODS sources** have never been executed (needs credentials
+  and real accessions). Its local-reads-manifest source is proven.
+- The **`metagraph query` module comment is now confirmed**, but note both metagraph
+  methods share `bin/call_metagraph_species.py`; a change there affects both.
 
 ---
 
