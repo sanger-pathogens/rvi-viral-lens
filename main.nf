@@ -32,12 +32,12 @@ include {publish_lane_json; publish_lane_json as publish_mapping_lane_json} from
 
 // -- map reads to sequence indexes (rvi_integration_1)
 include {VIRAL_MSWEEP} from './workflows/VIRAL_MSWEEP.nf'
+include {VIRAL_METAGRAPH_ALIGN} from './workflows/VIRAL_METAGRAPH_ALIGN.nf'
 include {GENERATE_MAPPING_REPORT} from './workflows/GENERATE_MAPPING_REPORT.nf'
-// GENERATE_MAPPING_REPORT / GENERATE_ABUNDANCE_REPORT already exist
-// (workflows/GENERATE_MAPPING_REPORT.nf, GENERATE_ABUNDANCE_REPORT.nf) and are
-// covered by their own nf-test workflow tests, but aren't wired in below yet:
-// their upstream lanes (map-reads-to-sequence-indexes, abundance estimation +
-// SCRuB) aren't ported yet -- decisions A/B/D on the route map are still open.
+// GENERATE_ABUNDANCE_REPORT already exists (workflows/GENERATE_ABUNDANCE_REPORT.nf) and is
+// covered by its own nf-test workflow test, but isn't wired in below yet: its upstream
+// lane (abundance estimation + SCRuB) isn't ported yet -- decisions A/D on the route map
+// are still open.
 
 // Main entry-point workflow
 workflow {
@@ -303,27 +303,59 @@ workflow {
     }
 
     // === 8 - Map reads to sequence indexes (rvi_integration_1, opt-in) ===
-    // Themisto2 pseudoalignment + mSWEEP abundance, then breadth-of-coverage
-    // validation of the low-abundance calls. Runs off the same preprocessed reads
-    // the assembly lane uses, in parallel with it -- not downstream of it.
-    if (params.do_sequence_index && params.run_msweep) {
-        VIRAL_MSWEEP(preprocessed_3tuple_ch)
+    // Up to two methods run in parallel off the same preprocessed reads the assembly
+    // lane uses (not downstream of it), each independently gated, both feeding ONE
+    // GENERATE_MAPPING_REPORT call -- see INSTRUCT.md item 3: "feed its per-sample
+    // counts into the same mapping_report_prep_ch rather than building a second report
+    // path." sequence_index_sample_ch is the join backbone (every sample that reaches
+    // this lane) so a sample report row exists even if only one method ran for it, or
+    // (with both flags on) one row carries both methods' counts.
+    if (params.do_sequence_index) {
+        sequence_index_sample_ch = preprocessed_3tuple_ch
+            .map { meta, _r1, _r2 -> [meta.id, meta] }
 
-        msweep_counts_ch = VIRAL_MSWEEP.out.abundances
-            .map { meta, abundances, _probs ->
-                [meta.id, meta, count_msweep_abundances(abundances)]
-            }
+        // -- Themisto2 pseudoalignment + mSWEEP abundance, then breadth-of-coverage
+        // validation of the low-abundance calls.
+        if (params.run_msweep) {
+            VIRAL_MSWEEP(preprocessed_3tuple_ch)
 
-        // map_qc drops samples with nothing above msweep_map_min_abundance (the
-        // MSWEEP_MAP_QC processes emit optional outputs), so join on the remainder
-        // rather than losing those samples from the report entirely.
-        mapqc_counts_ch = VIRAL_MSWEEP.out.map_qc
-            .map { meta, qc_tsv -> [meta.id, count_msweep_map_qc(qc_tsv)] }
+            msweep_counts_ch = VIRAL_MSWEEP.out.abundances
+                .map { meta, abundances, _probs -> [meta.id, count_msweep_abundances(abundances)] }
 
-        msweep_counts_ch
+            // map_qc drops samples with nothing above msweep_map_min_abundance (the
+            // MSWEEP_MAP_QC processes emit optional outputs); joined with remainder
+            // below rather than losing those samples from the report entirely.
+            mapqc_counts_ch = VIRAL_MSWEEP.out.map_qc
+                .map { meta, qc_tsv -> [meta.id, count_msweep_map_qc(qc_tsv)] }
+        } else {
+            msweep_counts_ch = Channel.empty()
+            mapqc_counts_ch = Channel.empty()
+        }
+
+        // -- Sequence-to-graph alignment via Metagraph, then its own map-QC validation.
+        if (params.run_metagraph_align) {
+            VIRAL_METAGRAPH_ALIGN(preprocessed_3tuple_ch)
+
+            metagraph_counts_ch = VIRAL_METAGRAPH_ALIGN.out.species_hits
+                .map { meta, tsv -> [meta.id, count_metagraph_species_hits(tsv)] }
+
+            // map_qc drops samples with nothing above metagraph_align_min_hits, same
+            // reasoning as mSWEEP's map_qc above.
+            metagraph_mapqc_counts_ch = VIRAL_METAGRAPH_ALIGN.out.map_qc
+                .map { meta, tsv -> [meta.id, count_metagraph_map_qc(tsv)] }
+        } else {
+            metagraph_counts_ch = Channel.empty()
+            metagraph_mapqc_counts_ch = Channel.empty()
+        }
+
+        sequence_index_sample_ch
+            .join(msweep_counts_ch, remainder: true)
             .join(mapqc_counts_ch, remainder: true)
-            .map { id, meta, m_counts, qc_counts ->
-                def new_meta = meta + m_counts + (qc_counts ?: EMPTY_MAP_QC_COUNTS)
+            .join(metagraph_counts_ch, remainder: true)
+            .join(metagraph_mapqc_counts_ch, remainder: true)
+            .map { id, meta, m_counts, qc_counts, mg_counts, mg_qc_counts ->
+                def new_meta = meta + (m_counts ?: EMPTY_MSWEEP_COUNTS) + (qc_counts ?: EMPTY_MAP_QC_COUNTS) +
+                    (mg_counts ?: EMPTY_METAGRAPH_COUNTS) + (mg_qc_counts ?: EMPTY_METAGRAPH_MAPQC_COUNTS)
                 [id, new_meta]
             }
             .set { mapping_report_prep_ch }
@@ -501,18 +533,22 @@ def count_genomad_summary(tsv) {
     return [genomad_n_scaffolds: n_total, genomad_n_eligible: n_eligible]
 }
 
-// Default map-QC counts for a sample MSWEEP_MAP_QC produced no table for (nothing
-// above msweep_map_min_abundance), so every sample still gets a report row.
+// Default counts for a sample a given optional step produced no output for -- either
+// because that method didn't run at all (join remainder is null) or because the method
+// ran but the step's own output is itself optional per-sample (e.g. nothing above a
+// min-abundance/min-hits threshold). Named constants (not inline [:]) so every sample
+// still gets the same report columns regardless of which method(s) actually ran for it.
+EMPTY_MSWEEP_COUNTS = [msweep_n_groups: 0, msweep_top_group: '', msweep_top_abundance: 0.0]
 EMPTY_MAP_QC_COUNTS = [mapqc_n_species: 0, mapqc_max_breadth_pct: 0.0]
+EMPTY_METAGRAPH_COUNTS = [metagraph_n_species_considered: 0, metagraph_n_species_called: 0]
+EMPTY_METAGRAPH_MAPQC_COUNTS = [metagraph_mapqc_n_species: 0, metagraph_mapqc_max_breadth_pct: 0.0]
 
 def count_msweep_abundances(txt) {
     // <sample>_mSWEEP_abundances.txt: "<label>\t<relative_abundance>", '#'-prefixed and
     // non-numeric-second-column lines skipped -- same rule bin/select_reference_records.py
     // applies in parse_abundances(), so these counts describe the same set of groups the
     // downstream map-QC step actually considered.
-    if (txt == null || !txt.exists()) {
-        return [msweep_n_groups: 0, msweep_top_group: '', msweep_top_abundance: 0.0]
-    }
+    if (txt == null || !txt.exists()) return EMPTY_MSWEEP_COUNTS
     def rows = []
     txt.readLines().each { line ->
         def trimmed = line.trim()
@@ -525,15 +561,55 @@ def count_msweep_abundances(txt) {
             // header or malformed row -- skipped, as parse_abundances does
         }
     }
+    if (!rows) return EMPTY_MSWEEP_COUNTS
     def above = rows.findAll { row -> row[1] >= params.msweep_map_min_abundance }
-    if (!rows) {
-        return [msweep_n_groups: 0, msweep_top_group: '', msweep_top_abundance: 0.0]
-    }
     def top = rows.max { row -> row[1] }
     return [
         msweep_n_groups:      above.size(),
         msweep_top_group:     top[0],
         msweep_top_abundance: top[1]
+    ]
+}
+
+def count_metagraph_species_hits(tsv) {
+    // <sample>_species_hits.tsv (bin/call_metagraph_species.py): sample_id, species,
+    // hit_count, provisional_call -- the last written by Python's str(bool), so "True"/
+    // "False", not lowercase.
+    if (tsv == null || !tsv.exists()) return EMPTY_METAGRAPH_COUNTS
+    def lines = tsv.readLines()
+    if (lines.size() < 2) return EMPTY_METAGRAPH_COUNTS
+    def header = lines[0].split('\t')
+    def called_idx = header.findIndexOf { String col -> col == 'provisional_call' }
+    def n_considered = lines.size() - 1
+    def n_called = 0
+    if (called_idx >= 0) {
+        n_called = lines[1..-1].count { String line ->
+            def cols = line.split('\t')
+            called_idx < cols.size() && cols[called_idx] == 'True'
+        }
+    }
+    return [metagraph_n_species_considered: n_considered, metagraph_n_species_called: n_called]
+}
+
+def count_metagraph_map_qc(tsv) {
+    // <sample>_metagraph_map_qc.tsv (bin/aggregate_metagraph_coverage.py): sample_id,
+    // species, hit_count, reference_accession, reference_length, query_length,
+    // covered_bases, breadth_pct, mean_depth, meanbaseq, meanmapq, reads_mapped.
+    // Field names are prefixed metagraph_mapqc_* (distinct from mSWEEP's mapqc_* above)
+    // since both merge into the same per-sample meta and would otherwise collide.
+    if (tsv == null || !tsv.exists()) return EMPTY_METAGRAPH_MAPQC_COUNTS
+    def lines = tsv.readLines()
+    if (lines.size() < 2) return EMPTY_METAGRAPH_MAPQC_COUNTS
+    def header = lines[0].split('\t')
+    def breadth_idx = header.findIndexOf { String col -> col == 'breadth_pct' }
+    def breadths = lines[1..-1].collect { String line ->
+        def cols = line.split('\t')
+        if (breadth_idx < 0 || breadth_idx >= cols.size()) return 0.0
+        try { return cols[breadth_idx] as Double } catch (NumberFormatException ignored) { return 0.0 }
+    }
+    return [
+        metagraph_mapqc_n_species:       lines.size() - 1,
+        metagraph_mapqc_max_breadth_pct: breadths ? breadths.max() : 0.0
     ]
 }
 

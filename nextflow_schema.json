@@ -210,6 +210,50 @@
       "type": "integer",
       "default": 12345
     },
+    "run_metagraph_align": {
+      "type": "boolean",
+      "default": false
+    },
+    "metagraph_align_graph": {
+      "type": "string"
+    },
+    "metagraph_align_annotation": {
+      "type": "string"
+    },
+    "metagraph_align_annotation_seqs": {
+      "type": "string"
+    },
+    "metagraph_align_names_dmp": {
+      "type": "string",
+      "default": "${projectDir}/assets/NO_NAMES_DMP"
+    },
+    "metagraph_align_min_kmers_fraction_label": {
+      "type": "number",
+      "default": 0.9
+    },
+    "metagraph_align_min_exact_match": {
+      "type": "number",
+      "default": 0.9
+    },
+    "metagraph_align_min_hits": {
+      "type": "integer",
+      "default": 100
+    },
+    "metagraph_align_subsample_limit": {
+      "type": "integer",
+      "default": 500000
+    },
+    "metagraph_align_run_map_qc": {
+      "type": "boolean",
+      "default": true
+    },
+    "metagraph_map_reference_fasta": {
+      "type": "string"
+    },
+    "metagraph_map_bowtie_threads": {
+      "type": "integer",
+      "default": 4
+    },
     "do_assembly": {
       "type": "boolean",
       "default": false
