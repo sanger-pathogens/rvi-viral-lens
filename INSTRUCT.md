@@ -2,16 +2,18 @@
 
 You're picking up mid-flight on branch `rvi_integration_1` of `viral-lens`. This branch is
 integrating functionality from a sibling pipeline, `rvi-viral-metagenomics-pipeline`, into
-`viral-lens/main.nf`. This file has been updated four times now — first written at
+`viral-lens/main.nf`. This file has been updated five times now — first written at
 commit `d759968`, updated through `bf71c67` after a farm run (item 1, and the Themisto2
 method of item 3), updated through `d0760aa` after a farm-less round ported Metagraph
 sequence-to-graph alignment (item 3's second method), updated through `0241641` after a
 third, also farm-less round added Metagraph pseudoalignment (item 3's third and last
-method), updated again through `1536267` (`HEAD` at the time of this edit) after a
-fourth, still farm-less round built the entire abundance estimation lane (item 4).
-**Every round since the first has had no `singularity`/reference-data access at all** —
-items 3 and 4 are both fully ported and DSL-wired, but only item 1 and Themisto2/mSWEEP
-have actually executed. `git log` is the source of truth if it's since moved further.
+method), updated through `1536267` after a fourth, still farm-less round built the
+entire abundance estimation lane (item 4), updated again through `71c15cb` (`HEAD` at
+the time of this edit) after a fifth round wired up wider input handling (item 5).
+**Every round since the first has had no `singularity`/reference-data/network access at
+all** — items 3, 4, and 5 are all fully wired and DSL-checked, but only item 1 and
+Themisto2/mSWEEP have actually executed. `git log` is the source of truth if it's since
+moved further.
 
 Read this whole file before touching anything. It front-loads facts (repo layout, remotes,
 commit hashes, file conventions) discovered the hard way in the prior session, specifically
@@ -342,6 +344,67 @@ single real task.**
 
 ---
 
+## Item 5 (wider input handling) is wired, but only DSL-checked — same round as items 3/4, still no farm access
+
+Good news first: **this one needed no porting or forking at all.** Unlike items 2-4,
+`MIXED_INPUT`, `ENA_DOWNLOAD`, and `DOWNLOAD_FROM_IRODS` already live in viral-lens's own
+`rvi_toolbox` submodule (`rvi/rvi_toolbox.git`) — check `ls rvi_toolbox/subworkflows/ |
+grep -iE 'mixed|ena|irods'` if you want to confirm this still holds. So the fork problem
+(item 2) genuinely doesn't apply here; only wiring was needed.
+
+`--do_mixed_input` (default `false`) gates the whole thing. When off, `main.nf` behaves
+exactly as before — `parse_mnf()`, `--manifest`, `sample_id`/`reads_1`/`reads_2` columns,
+byte-for-byte unchanged. When on, `MIXED_INPUT()` (no `take:` — it reads `params.*`
+directly) replaces it entirely, and its own internal `validate_parameters()`
+(`rvi_toolbox/modules/validate_parameters.nf`) decides which of up to three sources
+activate, purely from which params are set:
+
+- a local reads manifest via `--manifest_of_reads` (or bare `--manifest`, treated as an
+  alias) — **but in `MIXED_INPUT`'s own `id`/`R1`/`R2` column format, not
+  `parse_mnf()`'s** `sample_id`/`reads_1`/`reads_2`. These are NOT interchangeable
+  manifests; a user switching `--do_mixed_input` on has to reformat their manifest.
+- ENA download via `--manifest_ena` (a TSV of run accessions)
+- iRODS retrieval via `--studyid`/`--runid`/`--laneid`/`--plexid` (CLI) or
+  `--manifest_of_lanes` (a manifest of the same)
+
+Two real gaps found and fixed, both in `main.nf`'s wiring / viral-lens's own code, not the
+shared subworkflows themselves:
+
+- **`meta.sample_id` was never set.** All three of `MIXED_INPUT`'s sources
+  (`rvi_toolbox/subworkflows/{input_check,ena_input,irods}.nf`) only ever populate
+  `meta.id` — none of them know about viral-lens's own `meta.sample_id` convention, which
+  every `publishDir` path and report column downstream keys off. Fixed with a `.map{}`
+  right after `MIXED_INPUT.out.all_reads_ready_ch` that adds
+  `sample_id: meta.id`. If you extend any of the three source subworkflows, remember
+  this mapping happens *after* them, not inside — don't duplicate it there.
+- **`check_sort_reads_params()` (`workflows/SORT_READS_BY_REF.nf`) unconditionally
+  required `--manifest`.** This would have thrown "No manifest provided" on any
+  ENA-only or iRODS-only run that never sets `--manifest` at all — even though
+  `MIXED_INPUT`'s own `validate_parameters()` already enforces "at least one input
+  source" on its own terms. Now skipped entirely when `do_mixed_input` is set. If you
+  touch this function again, keep that guard — it's a genuine, easy-to-reintroduce
+  regression.
+
+One `includeConfig "./rvi_toolbox/subworkflows/mixed_input.config"` line in
+`nextflow.config` pulls in everything this needs (`studyid`/`runid`/`laneid`/`plexid`/
+`manifest_ena`/`manifest_of_lanes`/`manifest_of_reads`, plus its own nested
+`includeConfig`s of `irods.config` — Sanger-specific `REF_PATH` env var and LSF
+`clusterOptions` for `RETRIEVE_CRAM` already baked in, since this config is already
+tailored for this exact farm, unlike every path param flagged unverified elsewhere in
+this file — and `ena_downloader.config`). All corresponding params were still added to
+`nextflow_schema.json` individually (that file has no `includeConfig` equivalent).
+
+Verified via `-preview`: local `--manifest_of_reads`, ENA-only, iRODS-only (via
+`--studyid`), the "nothing specified" case (confirms `validate_parameters()`'s own clear
+error fires correctly, not a confusing one), and everything across all four lanes at
+once. **None of it has executed for real** — ENA needs live network access, iRODS needs
+`iinit` auth (interactive login, so check whether your farm session already has a valid
+one — it's not something a pipeline run can establish itself) plus the `baton` binary.
+Test the local-manifest path first (cheapest to verify), then ENA (network only, no
+farm-specific auth), then iRODS last (the most infrastructure-dependent of the three).
+
+---
+
 ## Your remaining work, roughly in priority/dependency order
 
 ### 1. Prove the assembly lane actually runs -- DONE, see above
@@ -505,19 +568,14 @@ actual purpose), `run_abundance_estimation` second (heavier GTDB/sourmash/inStra
 dependency chain, less proven relevant) — and fix the reference-data paths, none of which
 are verified yet.
 
-### 5. Widen input handling
+### 5. Widen input handling — DONE (wired), needs a farm run
 
-Today's `main.nf` still only has `parse_mnf()` (single local reads manifest). The route
-map's `Preprocessing` section already models three sources feeding one `MIXED_INPUT`
-merge: local reads manifest, ENA download (`ENA_DOWNLOAD`), and iRODS retrieval
-(`PARSE_IRODS_INPUT` → `DOWNLOAD_FROM_IRODS`, by CLI params or a lane manifest) — all in
-`rvi-viral-metagenomics-pipeline/rvi_toolbox/subworkflows/mixed_input.nf` (+
-`combined_input.nf`, `ena_input.nf`, `irods.nf`, `irods_manifest_parse.nf`,
-`input_check.nf`). Read `mixed_input_README.md` alongside it first — it documents which
-params (`--manifest_ena`, `--manifest_of_lanes`, `--studyid`/`--runid`/etc.) activate which
-source. `main.nf`'s preprocessing block already has a `preprocessed_3tuple_ch` designed to
-be the single downstream shape regardless of how reads arrived — feed `MIXED_INPUT`'s
-output into that same shape rather than restructuring what's downstream of it.
+See "Item 5 (wider input handling) is wired..." above for the full picture. **Your next
+action here is to run all three sources on the farm**, cheapest/most-independent first:
+local manifest (via `--do_mixed_input --manifest_of_reads`) to prove the wiring itself,
+then ENA (network access only), then iRODS last (needs `iinit` auth + `baton`).
+`rvi_toolbox/subworkflows/mixed_input_README.md` documents the exact activation rules if
+anything about which param triggers which source is unclear.
 
 ### 6. (Deferred, lower priority) Per-scaffold meta granularity
 
@@ -536,6 +594,14 @@ don't build it speculatively.
 
 ## Working conventions established so far — follow these, don't reinvent
 
+- **Before assuming something needs porting or forking from `rvi-viral-metagenomics-pipeline`,
+  check whether it already exists in viral-lens's own `rvi_toolbox`** (`ls
+  rvi_toolbox/subworkflows/`, `rvi_toolbox/modules/`). Items 2-4 all needed real ports
+  because their pieces genuinely only existed on the other fork; item 5 needed none at
+  all — `MIXED_INPUT`/`ENA_DOWNLOAD`/`DOWNLOAD_FROM_IRODS` were sitting in viral-lens's
+  own submodule the whole time, just never wired up. Don't repeat item 5's initial
+  assumption (from the very first version of this file) that it needed the same
+  fork-and-port treatment as everything else.
 - **New subworkflows/modules land in `viral-lens/workflows/`, `modules/`, `bin/` directly**,
   not inside the `rvi_toolbox` submodule, until the fork situation (item 2) is resolved.
   Module `include` paths stay relative (`../modules/x.nf` from `workflows/`) since both
@@ -606,3 +672,8 @@ don't build it speculatively.
   "good enough forever" without checking — same "don't build ahead of need" reasoning as
   item 6, but also don't let it become permanent by default; revisit once the lane's
   actually been run.
+- Don't mix up `--manifest` (parse_mnf()'s `sample_id`/`reads_1`/`reads_2` columns) with
+  `--manifest_of_reads` (`MIXED_INPUT`'s `id`/`R1`/`R2` columns, only active when
+  `--do_mixed_input true`) — they're different formats for a similarly-named param, not
+  aliases of each other, despite `validate_parameters()` treating bare `--manifest` as a
+  fallback for `--manifest_of_reads` when `do_mixed_input` is on.
