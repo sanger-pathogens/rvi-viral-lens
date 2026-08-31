@@ -2,13 +2,16 @@
 
 You're picking up mid-flight on branch `rvi_integration_1` of `viral-lens`. This branch is
 integrating functionality from a sibling pipeline, `rvi-viral-metagenomics-pipeline`, into
-`viral-lens/main.nf`. This file has been updated three times now — first written at
+`viral-lens/main.nf`. This file has been updated four times now — first written at
 commit `d759968`, updated through `bf71c67` after a farm run (item 1, and the Themisto2
 method of item 3), updated through `d0760aa` after a farm-less round ported Metagraph
-sequence-to-graph alignment (item 3's second method), updated again through `05d6c4c`
-(`HEAD` at the time of this edit) after a third, also farm-less round added Metagraph
-pseudoalignment (item 3's third and last method). `git log` is the source of truth if
-it's since moved further.
+sequence-to-graph alignment (item 3's second method), updated through `0241641` after a
+third, also farm-less round added Metagraph pseudoalignment (item 3's third and last
+method), updated again through `1536267` (`HEAD` at the time of this edit) after a
+fourth, still farm-less round built the entire abundance estimation lane (item 4).
+**Every round since the first has had no `singularity`/reference-data access at all** —
+items 3 and 4 are both fully ported and DSL-wired, but only item 1 and Themisto2/mSWEEP
+have actually executed. `git log` is the source of truth if it's since moved further.
 
 Read this whole file before touching anything. It front-loads facts (repo layout, remotes,
 commit hashes, file conventions) discovered the hard way in the prior session, specifically
@@ -267,6 +270,78 @@ bullet the same way item 1's run did.
 
 ---
 
+## Item 4 (abundance estimation lane) is ported and wired, but only DSL-checked — same round as Metagraph pseudoalign, still no farm access
+
+`--do_abundance` (master switch) gates three independently-flagged pieces, all feeding
+one `GENERATE_ABUNDANCE_REPORT` call the same join-backbone way the mapping lane's three
+methods do:
+
+- **`run_kraken2bracken`** → `workflows/KRAKEN2BRACKEN.nf`, a **viral-lens-owned fork**
+  of `rvi_toolbox`'s own `kraken2bracken.nf` (same shared modules, unmodified, included
+  directly — `rvi_toolbox/modules/{kraken2,bracken,krakentools}.nf`). The fork exists
+  purely because the upstream subworkflow has no `emit:` block at all — nothing it
+  produces was reachable from outside it, and both the report and SCRuB need something
+  out of it. If `rvi_toolbox`'s `kraken2bracken.nf` ever changes upstream, this file needs
+  the same change applied by hand — it's not a re-export, it's a parallel copy.
+- **`run_scrub`** → `workflows/SCRUB_DECONTAM.nf` + modules, ported from
+  `eu1/rvi_toolbox.git`'s `feature_scrub_decontam` (merge commit `7111c02`) — exists only
+  on that fork, same situation as Metagraph (item 2). Runs once per pipeline run against
+  `KRAKEN2BRACKEN`'s whole-run `abundance_summary`, requires `--scrub_plate_map` (no
+  default, a real user-supplied CSV).
+- **`run_abundance_estimation`** → `rvi_toolbox`'s `ABUNDANCE_ESTIMATION`, included
+  **unmodified** (not forked) — sourmash/inStrain genome-level profiling against a
+  GTDB-style reference set, heavier and less viral-specific than the rest of this lane.
+  It also has no `emit:` block, but unlike `KRAKEN2BRACKEN` this one was **not** forked to
+  add one — it's wired as a pass-through call (runs, publishes its own files under
+  `outdir`, but only contributes an `abundance_estimation_ran: true/false` flag to the
+  report, not real per-sample metrics). Deepen this into a real wrapper (same pattern as
+  `KRAKEN2BRACKEN.nf`) only once the flag alone is proven insufficient — don't build it
+  speculatively.
+
+**A real, previously-latent bug found and worked around, not fixed at the source:**
+`rvi_toolbox/subworkflows/abundance_estimation.nf`'s cleanup branch references an
+undefined `INSTRAIN` (only `INSTRAIN_PROFILE`/`INSTRAIN_QUICKPROFILE` are ever included)
+whenever `cleanup_intermediate_files_abundance_estimation=true` **and**
+`bowtie2_samtools_only_abundance_estimation=false` — both the upstream defaults, so this
+bug hits every default-configured run of that subworkflow, in both pipelines, and
+apparently always has (nothing exercised it before this). `nextflow.config` now defaults
+`cleanup_intermediate_files_abundance_estimation` to `false` (not upstream's `true`)
+specifically to avoid the branch. If you ever need that cleanup step for real, either
+fix it in a viral-lens-owned fork (same pattern as `KRAKEN2BRACKEN.nf`) or fix it upstream
+and re-point once the fork situation (item 2) is resolved — don't just flip the flag back
+to `true` without one of those, it will crash.
+
+**`results_dir` is now aliased, not left undeclared:** every shared-submodule module this
+lane touches (`kraken2.nf`, `bracken.nf`, `krakentools.nf`, `instrain.nf`, `bowtie.nf`,
+`sourmash.nf`, `subset_fasta.nf`, `merge_fastq.nf`, `cleanup.nf`) publishes under
+`params.results_dir`, an `rvi_toolbox` default viral-lens never declared because nothing
+called them before now. `nextflow.config` sets `results_dir = params.outdir` rather than
+editing any of those files — everything viral-lens-owned in this lane
+(`KRAKEN2BRACKEN.nf`, `SCRUB_DECONTAM.nf` and their modules) uses `outdir` directly and
+ignores this alias.
+
+**Also fixed, a gap from the Metagraph round before this one:** `METAGRAPH_ALIGN`/
+`METAGRAPH_QUERY` and their downstream processes had no explicit LSF executor override
+under `sanger_standard` (which defaults to `executor='local'`) — they'd have silently run
+on the submit host. Added alongside this lane's own new overrides.
+
+**Reference-data paths are `null`/unverified, same pattern as every other lane this
+round:** `kraken2bracken_kraken2_db` (needs a matching pre-built Bracken kmer-distribution
+file alongside it), `genome_file_abundance_estimation`/
+`precomputed_index_abundance_estimation`/`stb_file_abundance_estimation` (all three
+required together if `run_abundance_estimation` is enabled — none had a working upstream
+default either, both pipelines' configs used `""` as their own "must be supplied"
+placeholder), `genome_dir_abundance_estimation`/`sourmash_db_abundance_estimation`
+(only matter if `sourmash_subset_abundance_estimation=true`, not the default),
+`bmtagger_db_abundance_estimation`.
+
+Verified via `-preview`: each of the three abundance sub-flags alone, `run_kraken2bracken`
++ `run_scrub` together, and everything across all four lanes (taxid + assembly + all
+three mapping methods + full abundance lane) enabled at once. **None of it has executed a
+single real task.**
+
+---
+
 ## Your remaining work, roughly in priority/dependency order
 
 ### 1. Prove the assembly lane actually runs -- DONE, see above
@@ -418,17 +493,17 @@ paired with a named `EMPTY_*_COUNTS` constant for the "this method didn't run, o
 produced no optional output for this sample" case — every `.join(..., remainder: true)`
 in that block depends on one of those.
 
-### 4. Build the abundance estimation lane
+### 4. Build the abundance estimation lane — DONE (ported + wired), needs a farm run
 
-Per the route map, section `abundance`: `Kraken2 + Bracken` (`KRAKEN2BRACKEN` subworkflow
-— already confirmed to emit `abundance_summary`, see its subworkflow file) and
-`ABUNDANCE_ESTIMATION` run in parallel; `SCRuB` sits as `KRAKEN2BRACKEN`'s downstream final
-step, **not** a trunk-level preprocessing step — it consumes the whole-run Bracken summary
-plus a user-supplied plate map (`params.scrub_plate_map`, mandatory when `params.run_scrub`
-is true) and re-estimates relative abundance. `ABUNDANCE_ESTIMATION` doesn't go through
-SCRuB. Depends on item 2 (SCRuB lives only on `eu1/rvi_toolbox.git`).
-
-Wire `GENERATE_ABUNDANCE_REPORT` in the same pattern once this lane exists.
+See "Item 4 (abundance estimation lane) is ported and wired..." above for the full
+picture: `KRAKEN2BRACKEN` (viral-lens fork, adds emits), `SCRUB_DECONTAM` (ported from
+`eu1/rvi_toolbox.git`), and `ABUNDANCE_ESTIMATION` (included unmodified, pass-through
+report contribution only) all run behind `--do_abundance` + their own sub-flag, feeding
+`GENERATE_ABUNDANCE_REPORT`. **Your next action here is to run all three on the farm** —
+`run_kraken2bracken` and `run_scrub` first (lighter, more central to this pipeline's
+actual purpose), `run_abundance_estimation` second (heavier GTDB/sourmash/inStrain
+dependency chain, less proven relevant) — and fix the reference-data paths, none of which
+are verified yet.
 
 ### 5. Widen input handling
 
@@ -465,6 +540,20 @@ don't build it speculatively.
   not inside the `rvi_toolbox` submodule, until the fork situation (item 2) is resolved.
   Module `include` paths stay relative (`../modules/x.nf` from `workflows/`) since both
   repos use the same `workflows/` + `modules/` sibling layout.
+- **A shared `rvi_toolbox` subworkflow that already exists but has no `emit:` you need**
+  gets forked as a viral-lens-owned file with the same name, same orchestration, same
+  shared modules included unmodified — just with an added `emit:` block (see
+  `workflows/KRAKEN2BRACKEN.nf`'s header comment for the exact reasoning). This is a
+  parallel copy, not a re-export: if the upstream subworkflow changes, apply the same
+  change here by hand. Don't fork one just to fix a bug or add a param, though (see
+  `ABUNDANCE_ESTIMATION`'s `INSTRAIN` bug, worked around via a `nextflow.config` default
+  instead) — forking is specifically for widening the `take`/`emit` contract.
+- **After adding any new heavy process** (label `cpu_8`+ or similar), add a matching
+  `withName:<PROCESS> { executor = "lsf" }` under the `sanger_standard` profile in
+  `nextflow.config` — it defaults to `executor='local'`, so a process without an explicit
+  entry runs on the submit host. This was missed once already for Metagraph and had to be
+  fixed retroactively (see item 4's writeup above) — check this before considering any
+  new lane done, not just when the farm run fails.
 - **Report subworkflows** (`GENERATE_*_REPORT.nf`) all reuse
   `modules/write_lane_report.nf` (`write_lane_sequence_summary` + `write_lane_run_summary`)
   and `bin/write_lane_summary.py` — don't write a fourth near-duplicate script; extend the
@@ -508,5 +597,12 @@ don't build it speculatively.
   that repo.
 - Don't build the per-scaffold meta explosion (item 6) before the sample-level version has
   actually been used and found wanting.
-- Don't mark the mapping lane "done" without either resolving or explicitly flagging the
-  pseudoalign-via-Metagraph gap (it doesn't exist as a real module anywhere yet, see item 3).
+- Don't mark the mapping lane "done" without farm-running both Metagraph methods (item 3)
+  — all three exist now, but only Themisto2/mSWEEP has actually executed.
+- Don't flip `cleanup_intermediate_files_abundance_estimation` back to `true` without
+  either forking `abundance_estimation.nf` to fix the undefined-`INSTRAIN` bug or fixing
+  it upstream first (item 4) — it will crash with the upstream default.
+- Don't treat `ABUNDANCE_ESTIMATION`'s `abundance_estimation_ran` pass-through flag as
+  "good enough forever" without checking — same "don't build ahead of need" reasoning as
+  item 6, but also don't let it become permanent by default; revisit once the lane's
+  actually been run.
