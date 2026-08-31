@@ -73,9 +73,93 @@ In order:
 standalone tests but are **not called from `main.nf` yet** — their upstream lanes don't
 exist yet. That's most of what's left.
 
+## Item 1 is DONE (see commits after `bf71c67`)
+
+The assembly lane has been run for real on the farm and completes end to end
+(`Success: true`). Everything in this section is now established fact, not belief.
+
+### Environment that actually works
+
+```bash
+module load ISG/experimental/irods/4.2.7
+module load ISG/singularity/3.11.4
+module load nextflow/24.10.6      # NOT 23.10.1: nextflow.config requires >=24.10.3
+module load bsub.py
+module load cellgen/nf-test/0.9.5 # nf-test is not in the pam module namespace
+
+# The shared library is read-only and lacks several images; keep a personal cache.
+export NXF_SINGULARITY_LIBRARYDIR=/data/pam/installs/custom_installs/nextflow_singularity_library/
+export NXF_SINGULARITY_CACHEDIR=/lustre/scratch126/pam/projects/rvidata/personal/eu1/pipeline-integration/.singularity_cache
+# singularity's own blob cache defaults to $HOME/.singularity, whose quota is tiny.
+export SINGULARITY_CACHEDIR=/lustre/scratch126/pam/projects/rvidata/personal/eu1/pipeline-integration/.singularity_blobcache
+export SINGULARITY_TMPDIR=$SINGULARITY_CACHEDIR/tmp
+export LSB_DEFAULTGROUP=rvidata
+```
+
+Reference data, all verified present:
+
+| param | path |
+|---|---|
+| `--db_path` | `/lustre/scratch126/pam/projects/rvidata/pipeline_resources/kraken_databases/production/viral_lens_kdb_v1.5.2` |
+| `--genomad_db` | `/data/pam/software/genomad/genomad_db/genomad_db` |
+| `--checkv_db` | `/data/pam/software/ViWrap/CheckV_db/` |
+| `--vcontact3_db_path` | `/data/pam/software/vcontact3/` (holds `v232`, `v236`; default version is now 236) |
+
+Traps that cost real time, so you don't repeat them:
+
+- **Run from lustre, not the agent scratchpad.** `/tmp/claude-*` is local to the submit
+  host; an LSF job cannot see it and dies with no output at all.
+- **Primary unix group is `team230f`, quota ~1 MB.** Setgid dirs make normal writes
+  inherit `rvidata`, but singularity's unprivileged image build runs in a user namespace
+  that uses the primary gid and fails with "disk quota exceeded". Pull under
+  `sg rvidata -c '...'`, or better, reuse an existing image (below).
+- **`$HOME` was full** (51146M of 51200M, 12G of it `~/.singularity`). Worth clearing.
+- **A partial pull leaves a corrupt SIF** that fails later with "bad superblock for
+  squashfs image". Compare byte sizes against a known-good copy.
+- Prebuilt images live in
+  `/data/pam/installs/custom_installs/nextflow_singularity_library/` (assembly-lane
+  tools) and
+  `/lustre/scratch126/pam/projects/rvidata/personal/eu1/rvi-viral-lens/provisional_v1.5.3_49643_1/work/singularity`
+  (taxid-lane `rvi-vp-*` images). Symlinking these into `NXF_SINGULARITY_CACHEDIR`
+  avoids every pull.
+
+### What the real run proved and fixed
+
+The `count_*` helpers parse real files correctly -- column names confirmed against real
+output (`seq_name`/`n_genes`, `scaffold`/`bin`, `contig_id`/`checkv_quality`,
+`Genome`/`genus_prediction`). One was still wrong for a different reason:
+`count_vrhyme_membership()` reported the bin count for both of its fields, because
+Groovy's `List.unique()` de-duplicates **in place**. Fixed.
+
+Also fixed: strings-not-Paths into `ASSEMBLE_META`, the whole lane running on the submit
+host under `sanger_standard`, an undeclared param, a nonexistent default vContact3 DB
+version, and the vContact3 genome report resolving outside the versioned DB directory.
+See the git log for each.
+
+Still open from this section:
+
+- `count_vcontact3_for_sample()` still does naive `.split(',')` CSV parsing. The real
+  `final_assignments.csv` did not trip it, but nothing guarantees that for other inputs.
+- `checkv_n_high_quality`/`checkv_n_medium_quality` count only
+  `virus_scaffolds_quality_summary.tsv`. The first real sample had 8 Low-quality
+  scaffolds there but 1 High-quality *bin* in `linked_bins_quality_summary.tsv`, which
+  no report field currently reflects. Decide whether bin quality belongs in the report.
+- `sanger_standard` caps `max_time` at 6h, clamping the lane's `time_12` labels.
+- Only single-sample has been run. **`VRHYME_BIN` pools scaffolds across samples**
+  (`POOL_VIRAL_SCAFFOLDS` -> one bowtie2 index -> `COVERM_DEPTH` -> per-sample subset),
+  so a multi-sample run is still needed to exercise that machinery.
+
+### Output layout (agreed with the user, implemented)
+
+Per-sample outputs are grouped by lane; see README's "Output layout". `sequenceindex/`
+and `abundance/` are reserved for items 3 and 4 below. All publishing now goes through
+`params.outdir`; the ported `params.results_dir` is gone from viral-lens-owned files.
+
+---
+
 ## Your remaining work, roughly in priority/dependency order
 
-### 1. Prove the assembly lane actually runs
+### 1. Prove the assembly lane actually runs -- DONE, see above
 
 Nothing in commits 3-6 has executed for real. On HPC, with real containers and (if
 available) real `genomad_db`/`checkv_db`/`vcontact3_db_path` reference data:
