@@ -282,7 +282,8 @@
       "default": 500000
     },
     "genomad_db": {
-      "type": "string"
+      "type": "string",
+      "default": "/data/pam/software/genomad/genomad_db/genomad_db"
     },
     "vrhyme_min_scaffold_length": {
       "type": "integer",
@@ -309,10 +310,12 @@
       "default": false
     },
     "checkv_db": {
-      "type": "string"
+      "type": "string",
+      "default": "/data/pam/software/ViWrap/CheckV_db/"
     },
     "vcontact3_db_path": {
-      "type": "string"
+      "type": "string",
+      "default": "/data/pam/software/vcontact3/"
     },
     "vcontact3_db_version": {
       "type": "string",
@@ -437,7 +440,7 @@
     },
     "instrain_profile_options": {
       "type": "string",
-      "default": "--database-mode"
+      "default": "--database_mode"
     },
     "scrub_plate_map": {
       "type": "string"
