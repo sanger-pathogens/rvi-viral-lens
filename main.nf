@@ -469,7 +469,11 @@ def count_vrhyme_membership(tsv) {
     def lines = tsv.readLines()
     if (lines.size() < 2) return [vrhyme_n_bins: 0, vrhyme_n_binned_scaffolds: 0]
     def bins = lines[1..-1].collect { line -> line.split('\t')[1] }
-    return [vrhyme_n_bins: bins.unique().size(), vrhyme_n_binned_scaffolds: bins.size()]
+    // Groovy's List.unique() mutates in place and returns the same list, so
+    // reading bins.size() after bins.unique().size() yields the DISTINCT count,
+    // not the row count. Take the row count first.
+    def n_binned_scaffolds = bins.size()
+    return [vrhyme_n_bins: bins.unique().size(), vrhyme_n_binned_scaffolds: n_binned_scaffolds]
 }
 
 def count_checkv_quality(tsv) {
