@@ -456,6 +456,99 @@
       "type": "string",
       "default": ""
     },
+    "do_mixed_input": {
+      "type": "boolean",
+      "default": false
+    },
+    "studyid": {
+      "type": "integer",
+      "default": -1
+    },
+    "runid": {
+      "type": "integer",
+      "default": -1
+    },
+    "laneid": {
+      "type": "integer",
+      "default": -1
+    },
+    "plexid": {
+      "type": "integer",
+      "default": -1
+    },
+    "target": {
+      "type": "string",
+      "default": "1"
+    },
+    "type": {
+      "type": "string",
+      "default": "cram"
+    },
+    "manifest_ena": {
+      "type": "string"
+    },
+    "manifest_of_lanes": {
+      "type": "string"
+    },
+    "manifest_of_reads": {
+      "type": "string"
+    },
+    "save_metadata": {
+      "type": "boolean",
+      "default": true
+    },
+    "combine_same_id_crams": {
+      "type": "boolean",
+      "default": false
+    },
+    "cleanup_intermediate_files_irods_extractor": {
+      "type": "boolean",
+      "default": false
+    },
+    "save_fastqs": {
+      "type": "boolean",
+      "default": false
+    },
+    "save_method": {
+      "type": "string",
+      "default": "nested"
+    },
+    "raw_reads_prefix": {
+      "type": "string",
+      "default": ""
+    },
+    "preexisting_fastq_tag": {
+      "type": "string",
+      "default": "raw_fastq"
+    },
+    "split_sep_for_ID_from_fastq": {
+      "type": "string",
+      "default": "_1.fastq"
+    },
+    "lane_plex_sep": {
+      "type": "string",
+      "default": "#"
+    },
+    "start_queue": {
+      "type": "string",
+      "default": "normal"
+    },
+    "irods_subset_to_skip": {
+      "type": "string",
+      "default": "phix"
+    },
+    "short_metacsv_name": {
+      "type": "boolean",
+      "default": false
+    },
+    "publish_metadata": {
+      "type": "boolean",
+      "default": true
+    },
+    "accession_type": {
+      "type": "string",
+      "default": "run"
+    },
     "do_consensus_polishing": {
       "type": "boolean",
       "default": true

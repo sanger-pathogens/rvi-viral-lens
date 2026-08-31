@@ -194,19 +194,26 @@ def check_sort_reads_params(){
 
     // TODO: if provided, check if it is a valid path
 
-    // was the manifest provided?
-    if (params.manifest == null){
-        log.error("No manifest provided")
-        errors +=1
-    }
-    // if yes, is it a file which exists?
-    if (params.manifest){
-        def manifest_file = file(params.manifest)
-        if (!manifest_file.exists()){
-            log.error("The manifest provided (${params.manifest}) does not exist.")
-            errors += 1
+    // Widened input handling (rvi_integration_1): when do_mixed_input is set,
+    // MIXED_INPUT's own validate_parameters() (rvi_toolbox/modules/validate_parameters.nf)
+    // enforces that at least one input source (manifest/ENA/iRODS) is given -- this
+    // manifest-specific check would otherwise wrongly block ENA/iRODS-only runs that
+    // never set --manifest at all.
+    if (!params.do_mixed_input) {
+        // was the manifest provided?
+        if (params.manifest == null){
+            log.error("No manifest provided")
+            errors +=1
         }
-        //TODO: validate manifest
+        // if yes, is it a file which exists?
+        if (params.manifest){
+            def manifest_file = file(params.manifest)
+            if (!manifest_file.exists()){
+                log.error("The manifest provided (${params.manifest}) does not exist.")
+                errors += 1
+            }
+            //TODO: validate manifest
+        }
     }
 
     return errors

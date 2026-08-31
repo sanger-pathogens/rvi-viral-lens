@@ -9,6 +9,10 @@ include {check_sort_reads_params} from './workflows/SORT_READS_BY_REF.nf'
 include {validateParameters; paramsSummaryLog} from 'plugin/nf-schema'
 
 include {PREPROCESSING} from "./rvi_toolbox/subworkflows/preprocessing.nf"
+// Widened input handling (rvi_integration_1) -- already lives in viral-lens's own
+// rvi_toolbox (rvi/rvi_toolbox.git), unlike every other new lane this integration; no
+// fork/port needed.
+include {MIXED_INPUT} from "./rvi_toolbox/subworkflows/mixed_input.nf"
 include {SORT_READS_BY_REF} from './workflows/SORT_READS_BY_REF.nf'
 include {GENERATE_CONSENSUS} from './workflows/GENERATE_CONSENSUS.nf'
 include {SCOV2_SUBTYPING} from './workflows/SCOV2_SUBTYPING.nf'
@@ -121,7 +125,26 @@ workflow {
     // === 1 - Process input ===
     check_main_params()
     // ==========================
-    reads_ch = parse_mnf(params.manifest) // tuple(meta, [fastq_1, fastq_2])
+    // Widened input handling (rvi_integration_1, opt-in via --do_mixed_input): existing
+    // --manifest usage (parse_mnf()) is completely unchanged when this is off (the
+    // default). When on, MIXED_INPUT merges a local reads manifest (its OWN id/R1/R2
+    // columns -- not parse_mnf()'s sample_id/reads_1/reads_2), ENA download, and/or iRODS
+    // retrieval into the same downstream shape.
+    if (params.do_mixed_input) {
+        MIXED_INPUT()
+
+        reads_ch = MIXED_INPUT.out.all_reads_ready_ch
+            .map { meta, r1, r2 ->
+                // MIXED_INPUT's sources (INPUT_CHECK/ENA_DOWNLOAD/DOWNLOAD_FROM_IRODS,
+                // rvi_toolbox/subworkflows/{input_check,ena_input,irods}.nf) only ever set
+                // meta.id; everything downstream (publishDir paths, report columns) keys
+                // off meta.sample_id.
+                def new_meta = meta + [sample_id: meta.id]
+                [new_meta, [r1, r2]]
+            }
+    } else {
+        reads_ch = parse_mnf(params.manifest) // tuple(meta, [fastq_1, fastq_2])
+    }
 
     // === Preprocessing ===
     // preprocessed_3tuple_ch (meta, read1, read2) mirrors PREPROCESSING's own
