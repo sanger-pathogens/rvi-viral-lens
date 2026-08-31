@@ -1,4 +1,5 @@
 .nextflow*
 .nf-test*
 test_input_manifest_located.csv
-sandbox/
+sandbox/__pycache__/
+results/

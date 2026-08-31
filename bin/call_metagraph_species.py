@@ -164,10 +164,21 @@ def main():
         # sample rather than run on nothing.
         return
 
+    # One reference record per called species -- but two species can legitimately pick the
+    # same best-hit record (closely related organisms sharing an accession's best label),
+    # and emitting it twice puts a duplicate record in the extracted subset FASTA. bowtie2
+    # indexes that happily, then samtools sort dies on the resulting header:
+    #   [E::sam_hrecs_update_hashes] Duplicate entry "OZ031634.1" in sam header
+    # so de-duplicate here. The index-label map keeps the first species to claim a record,
+    # matching EXTRACT_METAGRAPH_REFERENCE_SUBSET's own "first match wins" behaviour.
+    seen_record_ids = set()
     with open(args.out_record_ids, "w") as out_ids, open(args.out_index_label_map, "w") as out_map:
         for species_key in called_species:
             most_common_label, _ = label_hits_by_species[species_key].most_common(1)[0]
             record_id = record_id_by_label[most_common_label]
+            if record_id in seen_record_ids:
+                continue
+            seen_record_ids.add(record_id)
             out_ids.write(f"{build_record_id_pattern(record_id)}\n")
             out_map.write(f"{record_id}\t{display_name(species_key)}\n")
 
