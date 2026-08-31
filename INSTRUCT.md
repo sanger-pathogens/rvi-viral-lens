@@ -184,6 +184,102 @@ Per-sample outputs are grouped by lane; see README's "Output layout". `sequencei
 and `abundance/` are reserved for items 3 and 4 below. All publishing now goes through
 `params.outdir`; the ported `params.results_dir` is gone from viral-lens-owned files.
 
+## FARM-RUN ROUND: items 3, 4 and 5 have now been executed for real
+
+The three lanes below were merged "pending a farm run". They have now been run on
+LSF with real reference data. Read this section before the three that follow it —
+those were written before any of it had executed, and this supersedes them.
+
+### Status after this round
+
+| lane | flags | farm status |
+|---|---|---|
+| assembly (single + **multi-sample**) | `--do_assembly` | **PASS** |
+| Themisto2/mSWEEP | `--do_sequence_index --run_msweep` | **PASS** |
+| pseudoalign via Metagraph | `--do_sequence_index --run_metagraph_query` | **PASS** |
+| Kraken2+Bracken | `--do_abundance --run_kraken2bracken` | **PASS** |
+| SCRuB | `+ --run_scrub --scrub_plate_map` | **PASS** |
+| ABUNDANCE_ESTIMATION | `--do_abundance --run_abundance_estimation` | **PASS** |
+| Metagraph **align** | `--do_sequence_index --run_metagraph_align` | **still running at hand-off** |
+| MIXED_INPUT | `--do_mixed_input` | **NOT run** — needs ENA/iRODS input, DSL-checked only |
+
+### What the farm runs fixed
+
+Every one of these was invisible to `-preview`:
+
+- **All three lanes shipped with `null`/`""` reference-data params**, so none could
+  start: `Channel.fromPath(null)` fails with an opaque "Missing `fromPath`
+  parameter". Real values are now defaulted (see `nextflow.config`), taken from the
+  source pipeline's configs and confirmed to exist. Note `kraken2bracken_kraken2_db`:
+  rvi_toolbox names `viral_kraken/`, which does not exist here.
+- **`instrain_profile_options = "--database-mode"`** — inStrain 1.9.0 spells it
+  `--database_mode`; the hyphenated form exits 2. Straight from rvi_toolbox's config,
+  so this lane cannot ever have completed upstream against this container.
+- **`genomad_db`/`checkv_db`/`vcontact3_db_path` were still null**, so the assembly
+  lane failed deep into a run with a literal `null` as geNomad's database argument.
+- **Repeated `withName:` selectors clobber each other.** `sanger_standard` selects
+  KRAKEN2/BRACKEN/INSTRAIN_PROFILE by bare name for `executor = 'lsf'`, and that
+  block *replaced* the top-level one wholesale rather than merging. This silently
+  discarded the `shell = ['/bin/bash','-u']` settings those processes need, and
+  swallowed a first attempt at the output-layout fix. Both now use qualified regex
+  selectors (`'.*:KRAKEN2'`). **Check `nextflow config -profile sanger_standard`
+  after touching any `withName:` block** — the resolved output is the only reliable
+  way to see what survived.
+- **Abundance outputs were not lane-grouped**: kraken2/bracken/instrain published to
+  `<sample>/<tool>/`. Re-homed under `<sample>/abundance/<tool>/` via config
+  overrides rather than editing the shared submodule modules.
+- **SCRuB row order** (multi-sample only): the abundance matrix was natural-sorted
+  while the metadata kept plate-map order; SCRuB compares them positionally and
+  refused to run.
+- **vRhyme aborted the whole run** on a sparse sample (a negative control) that its
+  own internal screen rejected. The `VRHYME_BIN.nf` gate counts scaffolds in the
+  fasta, which is necessarily an over-estimate of what vRhyme keeps, so the gate
+  cannot prevent this; that one message is now treated as "no bins".
+
+### Memory, measured rather than guessed
+
+`bjobs -l <id>` gives `TERM_MEMLIMIT` and `MAXMEM` — use it instead of guessing.
+
+| process | peak | setting |
+|---|---|---|
+| THEMISTO_PSEUDOALIGN | 6.6GB | `25.GB * task.attempt` — ample |
+| METAGRAPH_QUERY | 15.6GB | `25.GB * task.attempt` — ample |
+| METAGRAPH_ALIGN | **52.7GB** | `32.GB * task.attempt * 2` (64GB first) |
+
+METAGRAPH_ALIGN is driven by the 15GB coordinate annotation; it was OOM-killed at
+both 25GB and 50GB. Note its `time`/`memory` directives are raw (not `time_*`/`mem_*`
+labels), so they **bypass `check_max`** and `sanger_standard`'s `max_time = 6.h` /
+`max_memory = 128.GB` do not clamp them — that is why it asks for 12:00.
+
+### Reproducing
+
+`nf_runs/` holds one directory per configuration (`regress`, `mg_align`, `mg_query`,
+`abund_k2b`, `abund_est`, `scrub_multi`, `assembly_multi`), plus `env.sh`,
+`launch_generic.sh` (single sample) and `launch_multi.sh` (3 samples, with a control),
+`one_sample_manifest.csv`, `multi_sample_manifest.csv` and `scrub_plate_map.csv`.
+Submit with `RUN_NAME=<x> EXTRA_ARGS="<flags>" bsub ... bash launch_generic.sh`.
+
+Two traps that cost time, both mine, both avoidable:
+
+- **Give each concurrent run its own launchDir.** Nextflow keeps `.nextflow/` history
+  in the launch directory; runs sharing one die with "Unable to acquire lock on
+  session". Both launchers `cd $RUN` first.
+- **Do not edit a launcher while a job is running it** — bash re-reads the file
+  mid-execution and the job dies with exit 127.
+
+### Still open
+
+- **MIXED_INPUT has never been executed** (needs ENA/iRODS credentials + input).
+- **Metagraph align** was still running at hand-off; confirm it completed.
+- `metagraph query`'s output shape is marked UNVERIFIED in `modules/metagraph_query.nf`.
+  The lane runs and reports, but on this control-heavy test data it called 0 species,
+  so the parser has not really been exercised — check it against data with known hits.
+- The single-sample `mapping_summary_report.csv` shows 0 across every metagraph
+  column. Expected here (10k-read downsamples), but it means the metagraph counting
+  helpers are only proven to not crash, not to count correctly.
+
+---
+
 ## Item 3's Metagraph methods are BOTH ported and wired, but only DSL-checked — no farm access this or the last round
 
 Two rounds now with no farm access (sandboxed, no `singularity`, no reference data — same
