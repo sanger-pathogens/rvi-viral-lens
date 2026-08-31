@@ -27,7 +27,7 @@
     IMPORT MODULES
 ========================================================================================
 */
-include { METAGRAPH              } from '../modules/metagraph.nf'
+include { METAGRAPH_ALIGN        } from '../modules/metagraph_align.nf'
 include { CALL_METAGRAPH_SPECIES } from '../modules/metagraph_species_call.nf'
 include { METAGRAPH_MAP_QC       } from './METAGRAPH_MAP_QC.nf'
 include { SUBSAMPLE_ITER         } from '../rvi_toolbox/subworkflows/subsample.nf'
@@ -50,7 +50,7 @@ workflow VIRAL_METAGRAPH_ALIGN {
     annotation_seqs_ch  = Channel.fromPath(params.metagraph_align_annotation_seqs).first()
     names_dmp_ch        = Channel.fromPath(params.metagraph_align_names_dmp).first()
 
-    // Cap METAGRAPH input at metagraph_align_subsample_limit reads per mate (mirrors
+    // Cap METAGRAPH_ALIGN input at metagraph_align_subsample_limit reads per mate (mirrors
     // VIRAL_MSWEEP's SUBSAMPLE_ITER step).
     metagraph_align_subsample_limit_ch = Channel.value( params.metagraph_align_subsample_limit )
 
@@ -62,9 +62,12 @@ workflow VIRAL_METAGRAPH_ALIGN {
     SUBSAMPLE_ITER(ready_for_subsampling, metagraph_align_subsample_limit_ch)
     capped_reads_ch = SUBSAMPLE_ITER.out.final_read_channel
 
-    METAGRAPH(capped_reads_ch, graph_ch, annotation_ch, annotation_seqs_ch)
+    METAGRAPH_ALIGN(capped_reads_ch, graph_ch, annotation_ch, annotation_seqs_ch)
 
-    CALL_METAGRAPH_SPECIES(METAGRAPH.out.alignments, names_dmp_ch)
+    // 'metagraph_hits'/'metagraph_map_summary': distinct from VIRAL_METAGRAPH_QUERY.nf's
+    // subdir/summary names, so the two methods don't overwrite each other's output when
+    // both run for the same sample (see CALL_METAGRAPH_SPECIES's output_subdir).
+    CALL_METAGRAPH_SPECIES(METAGRAPH_ALIGN.out.alignments, names_dmp_ch, 'metagraph_hits')
 
     // metagraph_align_run_map_qc lets species-hit calling be validated on its own first.
     if (params.metagraph_align_run_map_qc) {
@@ -78,7 +81,9 @@ workflow VIRAL_METAGRAPH_ALIGN {
             CALL_METAGRAPH_SPECIES.out.record_ids,
             CALL_METAGRAPH_SPECIES.out.index_label_map,
             CALL_METAGRAPH_SPECIES.out.species_hits,
-            reference_fasta_ch
+            reference_fasta_ch,
+            'metagraph_map',
+            'metagraph_map_summary'
         )
         map_qc_ch = METAGRAPH_MAP_QC.out.qc_table
     } else {

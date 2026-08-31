@@ -11,8 +11,11 @@
     indirection needed (unlike mSWEEP's mapping validation, see msweep_map_qc.nf) — and
     record genome breadth of coverage, mean depth, mapping/base quality, and reads mapped:
     one mapping per species. This is a sanity check on metagraph align's read-hit calls.
-    Per-sample results are published under <outdir>/<sample>/sequenceindex/metagraph_map; a
-    run-wide summary is published under <outdir>/metagraph_map_summary.
+    Per-sample results are published under <outdir>/<sample>/sequenceindex/<output_subdir>;
+    a run-wide summary is published under <outdir>/<summary_name>. Shared by
+    VIRAL_METAGRAPH_ALIGN.nf and VIRAL_METAGRAPH_QUERY.nf, so those two names are passed
+    in rather than hardcoded, to keep the two methods' outputs from overwriting each
+    other when both run for the same sample.
 ========================================================================================
 */
 
@@ -39,6 +42,8 @@ workflow METAGRAPH_MAP_QC {
     index_label_map_ch  // CALL_METAGRAPH_SPECIES.out.index_label_map: tuple( meta, index_label_map.tsv ), optional per sample
     species_hits_ch     // CALL_METAGRAPH_SPECIES.out.species_hits: tuple( meta, species_hits.tsv )
     reference_fasta_ch  // value channel: reference multi-FASTA whose headers match metagraph's alignment accessions
+    output_subdir       // val: per-sample publish subdir, e.g. 'metagraph_map' or 'metagraph_query_map'
+    summary_name         // val: run-level summary publish dir + filename stem, e.g. 'metagraph_map_summary'
 
     main:
     // Samples with nothing above metagraph_align_min_hits emit nothing here (optional
@@ -63,10 +68,11 @@ workflow METAGRAPH_MAP_QC {
         .join(index_label_map_ch)
         .join(species_hits_ch)
 
-    AGGREGATE_METAGRAPH_COVERAGE(qc_input_ch)
+    AGGREGATE_METAGRAPH_COVERAGE(qc_input_ch, output_subdir)
 
     GENERATE_METAGRAPH_MAP_SUMMARY(
-        AGGREGATE_METAGRAPH_COVERAGE.out.qc_table.map { _meta, qc_table -> qc_table }.collect()
+        AGGREGATE_METAGRAPH_COVERAGE.out.qc_table.map { _meta, qc_table -> qc_table }.collect(),
+        summary_name
     )
 
     emit:

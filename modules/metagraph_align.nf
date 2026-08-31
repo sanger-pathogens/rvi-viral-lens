@@ -11,7 +11,7 @@
 // labels) for reads that aligned, or a single '*' placeholder group (no labels field at
 // all) for reads that didn't — see call_metagraph_species.py, which parses this exact shape.
 
-process METAGRAPH {
+process METAGRAPH_ALIGN {
     tag "${meta.id}"
     label 'cpu_16'
     time { task.attempt > 1 ? ( task.previousTrace?.exit == 140 ? task.previousTrace.time * 2 : (task.previousTrace?.time ?: 12.h)) : (12.h) }

@@ -33,6 +33,7 @@ include {publish_lane_json; publish_lane_json as publish_mapping_lane_json} from
 // -- map reads to sequence indexes (rvi_integration_1)
 include {VIRAL_MSWEEP} from './workflows/VIRAL_MSWEEP.nf'
 include {VIRAL_METAGRAPH_ALIGN} from './workflows/VIRAL_METAGRAPH_ALIGN.nf'
+include {VIRAL_METAGRAPH_QUERY} from './workflows/VIRAL_METAGRAPH_QUERY.nf'
 include {GENERATE_MAPPING_REPORT} from './workflows/GENERATE_MAPPING_REPORT.nf'
 // GENERATE_ABUNDANCE_REPORT already exists (workflows/GENERATE_ABUNDANCE_REPORT.nf) and is
 // covered by its own nf-test workflow test, but isn't wired in below yet: its upstream
@@ -303,13 +304,13 @@ workflow {
     }
 
     // === 8 - Map reads to sequence indexes (rvi_integration_1, opt-in) ===
-    // Up to two methods run in parallel off the same preprocessed reads the assembly
-    // lane uses (not downstream of it), each independently gated, both feeding ONE
+    // Up to three methods run in parallel off the same preprocessed reads the assembly
+    // lane uses (not downstream of it), each independently gated, all feeding ONE
     // GENERATE_MAPPING_REPORT call -- see INSTRUCT.md item 3: "feed its per-sample
     // counts into the same mapping_report_prep_ch rather than building a second report
     // path." sequence_index_sample_ch is the join backbone (every sample that reaches
     // this lane) so a sample report row exists even if only one method ran for it, or
-    // (with both flags on) one row carries both methods' counts.
+    // (with more than one flag on) one row carries every enabled method's counts.
     if (params.do_sequence_index) {
         sequence_index_sample_ch = preprocessed_3tuple_ch
             .map { meta, _r1, _r2 -> [meta.id, meta] }
@@ -332,30 +333,52 @@ workflow {
             mapqc_counts_ch = Channel.empty()
         }
 
-        // -- Sequence-to-graph alignment via Metagraph, then its own map-QC validation.
+        // -- Sequence-to-graph alignment via Metagraph (metagraph align), then its own
+        // map-QC validation.
         if (params.run_metagraph_align) {
             VIRAL_METAGRAPH_ALIGN(preprocessed_3tuple_ch)
 
-            metagraph_counts_ch = VIRAL_METAGRAPH_ALIGN.out.species_hits
-                .map { meta, tsv -> [meta.id, count_metagraph_species_hits(tsv)] }
+            metagraph_align_counts_ch = VIRAL_METAGRAPH_ALIGN.out.species_hits
+                .map { meta, tsv -> [meta.id, count_metagraph_species_hits(tsv, 'metagraph_align')] }
 
             // map_qc drops samples with nothing above metagraph_align_min_hits, same
             // reasoning as mSWEEP's map_qc above.
-            metagraph_mapqc_counts_ch = VIRAL_METAGRAPH_ALIGN.out.map_qc
-                .map { meta, tsv -> [meta.id, count_metagraph_map_qc(tsv)] }
+            metagraph_align_mapqc_counts_ch = VIRAL_METAGRAPH_ALIGN.out.map_qc
+                .map { meta, tsv -> [meta.id, count_metagraph_map_qc(tsv, 'metagraph_align')] }
         } else {
-            metagraph_counts_ch = Channel.empty()
-            metagraph_mapqc_counts_ch = Channel.empty()
+            metagraph_align_counts_ch = Channel.empty()
+            metagraph_align_mapqc_counts_ch = Channel.empty()
+        }
+
+        // -- Pseudoalignment via Metagraph (metagraph query --query-mode labels), same
+        // shared index, alternative method to the alignment above -- see
+        // workflows/VIRAL_METAGRAPH_QUERY.nf and modules/metagraph_query.nf for why this
+        // exists as its own module rather than the old filter+query pipeline that
+        // metagraph_align.nf itself replaced (found ~zero real hits, see git history).
+        if (params.run_metagraph_query) {
+            VIRAL_METAGRAPH_QUERY(preprocessed_3tuple_ch)
+
+            metagraph_query_counts_ch = VIRAL_METAGRAPH_QUERY.out.species_hits
+                .map { meta, tsv -> [meta.id, count_metagraph_species_hits(tsv, 'metagraph_query')] }
+
+            metagraph_query_mapqc_counts_ch = VIRAL_METAGRAPH_QUERY.out.map_qc
+                .map { meta, tsv -> [meta.id, count_metagraph_map_qc(tsv, 'metagraph_query')] }
+        } else {
+            metagraph_query_counts_ch = Channel.empty()
+            metagraph_query_mapqc_counts_ch = Channel.empty()
         }
 
         sequence_index_sample_ch
             .join(msweep_counts_ch, remainder: true)
             .join(mapqc_counts_ch, remainder: true)
-            .join(metagraph_counts_ch, remainder: true)
-            .join(metagraph_mapqc_counts_ch, remainder: true)
-            .map { id, meta, m_counts, qc_counts, mg_counts, mg_qc_counts ->
+            .join(metagraph_align_counts_ch, remainder: true)
+            .join(metagraph_align_mapqc_counts_ch, remainder: true)
+            .join(metagraph_query_counts_ch, remainder: true)
+            .join(metagraph_query_mapqc_counts_ch, remainder: true)
+            .map { id, meta, m_counts, qc_counts, mga_counts, mga_qc_counts, mgq_counts, mgq_qc_counts ->
                 def new_meta = meta + (m_counts ?: EMPTY_MSWEEP_COUNTS) + (qc_counts ?: EMPTY_MAP_QC_COUNTS) +
-                    (mg_counts ?: EMPTY_METAGRAPH_COUNTS) + (mg_qc_counts ?: EMPTY_METAGRAPH_MAPQC_COUNTS)
+                    (mga_counts ?: EMPTY_METAGRAPH_ALIGN_COUNTS) + (mga_qc_counts ?: EMPTY_METAGRAPH_ALIGN_MAPQC_COUNTS) +
+                    (mgq_counts ?: EMPTY_METAGRAPH_QUERY_COUNTS) + (mgq_qc_counts ?: EMPTY_METAGRAPH_QUERY_MAPQC_COUNTS)
                 [id, new_meta]
             }
             .set { mapping_report_prep_ch }
@@ -540,8 +563,21 @@ def count_genomad_summary(tsv) {
 // still gets the same report columns regardless of which method(s) actually ran for it.
 EMPTY_MSWEEP_COUNTS = [msweep_n_groups: 0, msweep_top_group: '', msweep_top_abundance: 0.0]
 EMPTY_MAP_QC_COUNTS = [mapqc_n_species: 0, mapqc_max_breadth_pct: 0.0]
-EMPTY_METAGRAPH_COUNTS = [metagraph_n_species_considered: 0, metagraph_n_species_called: 0]
-EMPTY_METAGRAPH_MAPQC_COUNTS = [metagraph_mapqc_n_species: 0, metagraph_mapqc_max_breadth_pct: 0.0]
+// One pair per Metagraph method (align, query) -- both call count_metagraph_species_hits()/
+// count_metagraph_map_qc() with a distinct prefix, since both methods' counts can merge
+// into the same per-sample meta and would otherwise collide on field name.
+EMPTY_METAGRAPH_ALIGN_COUNTS = [metagraph_align_n_species_considered: 0, metagraph_align_n_species_called: 0]
+EMPTY_METAGRAPH_ALIGN_MAPQC_COUNTS = [metagraph_align_mapqc_n_species: 0, metagraph_align_mapqc_max_breadth_pct: 0.0]
+EMPTY_METAGRAPH_QUERY_COUNTS = [metagraph_query_n_species_considered: 0, metagraph_query_n_species_called: 0]
+EMPTY_METAGRAPH_QUERY_MAPQC_COUNTS = [metagraph_query_mapqc_n_species: 0, metagraph_query_mapqc_max_breadth_pct: 0.0]
+
+def empty_metagraph_counts(prefix) {
+    return prefix == 'metagraph_align' ? EMPTY_METAGRAPH_ALIGN_COUNTS : EMPTY_METAGRAPH_QUERY_COUNTS
+}
+
+def empty_metagraph_mapqc_counts(prefix) {
+    return prefix == 'metagraph_align' ? EMPTY_METAGRAPH_ALIGN_MAPQC_COUNTS : EMPTY_METAGRAPH_QUERY_MAPQC_COUNTS
+}
 
 def count_msweep_abundances(txt) {
     // <sample>_mSWEEP_abundances.txt: "<label>\t<relative_abundance>", '#'-prefixed and
@@ -571,13 +607,16 @@ def count_msweep_abundances(txt) {
     ]
 }
 
-def count_metagraph_species_hits(tsv) {
+def count_metagraph_species_hits(tsv, prefix) {
     // <sample>_species_hits.tsv (bin/call_metagraph_species.py): sample_id, species,
     // hit_count, provisional_call -- the last written by Python's str(bool), so "True"/
-    // "False", not lowercase.
-    if (tsv == null || !tsv.exists()) return EMPTY_METAGRAPH_COUNTS
+    // "False", not lowercase. Shared by both Metagraph methods (see
+    // VIRAL_METAGRAPH_ALIGN.nf / VIRAL_METAGRAPH_QUERY.nf, both call
+    // CALL_METAGRAPH_SPECIES) -- prefix ('metagraph_align' or 'metagraph_query') keeps
+    // their counts from colliding when both merge into the same per-sample meta.
+    if (tsv == null || !tsv.exists()) return empty_metagraph_counts(prefix)
     def lines = tsv.readLines()
-    if (lines.size() < 2) return EMPTY_METAGRAPH_COUNTS
+    if (lines.size() < 2) return empty_metagraph_counts(prefix)
     def header = lines[0].split('\t')
     def called_idx = header.findIndexOf { String col -> col == 'provisional_call' }
     def n_considered = lines.size() - 1
@@ -588,18 +627,17 @@ def count_metagraph_species_hits(tsv) {
             called_idx < cols.size() && cols[called_idx] == 'True'
         }
     }
-    return [metagraph_n_species_considered: n_considered, metagraph_n_species_called: n_called]
+    return ["${prefix}_n_species_considered": n_considered, "${prefix}_n_species_called": n_called]
 }
 
-def count_metagraph_map_qc(tsv) {
+def count_metagraph_map_qc(tsv, prefix) {
     // <sample>_metagraph_map_qc.tsv (bin/aggregate_metagraph_coverage.py): sample_id,
     // species, hit_count, reference_accession, reference_length, query_length,
-    // covered_bases, breadth_pct, mean_depth, meanbaseq, meanmapq, reads_mapped.
-    // Field names are prefixed metagraph_mapqc_* (distinct from mSWEEP's mapqc_* above)
-    // since both merge into the same per-sample meta and would otherwise collide.
-    if (tsv == null || !tsv.exists()) return EMPTY_METAGRAPH_MAPQC_COUNTS
+    // covered_bases, breadth_pct, mean_depth, meanbaseq, meanmapq, reads_mapped. Same
+    // prefix reasoning as count_metagraph_species_hits() above.
+    if (tsv == null || !tsv.exists()) return empty_metagraph_mapqc_counts(prefix)
     def lines = tsv.readLines()
-    if (lines.size() < 2) return EMPTY_METAGRAPH_MAPQC_COUNTS
+    if (lines.size() < 2) return empty_metagraph_mapqc_counts(prefix)
     def header = lines[0].split('\t')
     def breadth_idx = header.findIndexOf { String col -> col == 'breadth_pct' }
     def breadths = lines[1..-1].collect { String line ->
@@ -608,8 +646,8 @@ def count_metagraph_map_qc(tsv) {
         try { return cols[breadth_idx] as Double } catch (NumberFormatException ignored) { return 0.0 }
     }
     return [
-        metagraph_mapqc_n_species:       lines.size() - 1,
-        metagraph_mapqc_max_breadth_pct: breadths ? breadths.max() : 0.0
+        "${prefix}_mapqc_n_species":       lines.size() - 1,
+        "${prefix}_mapqc_max_breadth_pct": breadths ? breadths.max() : 0.0
     ]
 }
 

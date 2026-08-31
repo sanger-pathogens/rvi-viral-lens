@@ -19,11 +19,15 @@ process CALL_METAGRAPH_SPECIES {
 
     container "quay.io/gsu-pipelines/rvi-vp-basecontainer"
 
-    publishDir "${params.outdir}/${meta.id}/sequenceindex/metagraph_hits", mode: 'copy', overwrite: true, pattern: "*_species_hits.tsv"
+    // output_subdir lets VIRAL_METAGRAPH_ALIGN.nf ('metagraph_hits') and
+    // VIRAL_METAGRAPH_QUERY.nf ('metagraph_query_hits') share this process without
+    // overwriting each other's output when both methods run for the same sample.
+    publishDir "${params.outdir}/${meta.id}/sequenceindex/${output_subdir}", mode: 'copy', overwrite: true, pattern: "*_species_hits.tsv"
 
     input:
     tuple val(meta), path(align_1), path(align_2)
     path(names_dmp)
+    val(output_subdir)
 
     output:
     tuple val(meta), path("${meta.id}_species_hits.tsv"), emit: species_hits

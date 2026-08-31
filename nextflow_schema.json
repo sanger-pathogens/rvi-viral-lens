@@ -214,6 +214,10 @@
       "type": "boolean",
       "default": false
     },
+    "run_metagraph_query": {
+      "type": "boolean",
+      "default": false
+    },
     "metagraph_align_graph": {
       "type": "string"
     },
