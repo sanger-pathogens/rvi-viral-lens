@@ -6,10 +6,10 @@ process CHECKV {
 
     container 'quay.io/biocontainers/checkv:1.1.1--pyh106432d_0'
 
-    publishDir "${params.results_dir}/${meta.id}/checkv", mode: 'copy', overwrite: true, pattern: "${source}/quality_summary.tsv",  saveAs: { f -> "${source}_quality_summary.tsv" }
-    publishDir "${params.results_dir}/${meta.id}/checkv", mode: 'copy', overwrite: true, pattern: "${source}/completeness.tsv",     saveAs: { f -> "${source}_completeness.tsv" }
-    publishDir "${params.results_dir}/${meta.id}/checkv", mode: 'copy', overwrite: true, pattern: "${source}/contamination.tsv",    saveAs: { f -> "${source}_contamination.tsv" }
-    publishDir "${params.results_dir}/${meta.id}/checkv", mode: 'copy', overwrite: true, pattern: "${source}/complete_genomes.tsv", saveAs: { f -> "${source}_complete_genomes.tsv" }
+    publishDir "${params.outdir}/${meta.id}/assembly/binning/checkv", mode: 'copy', overwrite: true, pattern: "${source}/quality_summary.tsv",  saveAs: { f -> "${source}_quality_summary.tsv" }
+    publishDir "${params.outdir}/${meta.id}/assembly/binning/checkv", mode: 'copy', overwrite: true, pattern: "${source}/completeness.tsv",     saveAs: { f -> "${source}_completeness.tsv" }
+    publishDir "${params.outdir}/${meta.id}/assembly/binning/checkv", mode: 'copy', overwrite: true, pattern: "${source}/contamination.tsv",    saveAs: { f -> "${source}_contamination.tsv" }
+    publishDir "${params.outdir}/${meta.id}/assembly/binning/checkv", mode: 'copy', overwrite: true, pattern: "${source}/complete_genomes.tsv", saveAs: { f -> "${source}_complete_genomes.tsv" }
 
     input:
     tuple val(meta), val(source), path(fasta)

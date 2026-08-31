@@ -26,7 +26,7 @@ process BOWTIE2SAMTOOLS {
 
     container 'quay.io/sangerpathogens/bowtie2-samtools:1.1-c1'
 
-    if (params.bowtie2_samtools_only_abundance_estimation) { publishDir path: "${params.results_dir}", mode: 'copy', overwrite: true, pattern: "*.sorted.bam" }
+    if (params.bowtie2_samtools_only_abundance_estimation) { publishDir path: "${params.outdir}", mode: 'copy', overwrite: true, pattern: "*.sorted.bam" }
     input:
     tuple val(meta), path(first_read), path(second_read), path(bt2_files), val(btidx)
     val threads
@@ -46,7 +46,7 @@ process BOWTIE2SAMTOOLS {
 
 process GET_OVERALL_MAPPING_RATE {
     
-    publishDir "${params.results_dir}/mapping_rates/", mode: 'copy', overwrite: true, pattern: 'mapping_rates.csv', saveAs: { filename -> "${workflow.start}_mapping_rates.csv" }
+    publishDir "${params.outdir}/mapping_rates/", mode: 'copy', overwrite: true, pattern: 'mapping_rates.csv', saveAs: { filename -> "${workflow.start}_mapping_rates.csv" }
     
     input:
     path(mapping_rate)

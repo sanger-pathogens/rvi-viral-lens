@@ -8,10 +8,10 @@ process VRHYME_WITH_COVERAGE {
     label 'mem_16'
     label 'time_12'
 
-    publishDir "${params.results_dir}/${meta.id}/vrhyme", mode: 'copy', overwrite: true, pattern: "vrhyme_out/log_vRhyme_*.log",                  saveAs: { f -> file(f).getName() }
-    publishDir "${params.results_dir}/${meta.id}/vrhyme", mode: 'copy', overwrite: true, pattern: "vrhyme_out/vRhyme_best_bins.*.membership.tsv", saveAs: { f -> file(f).getName() }
-    publishDir "${params.results_dir}/${meta.id}/vrhyme", mode: 'copy', overwrite: true, pattern: "vrhyme_out/vRhyme_best_bins.*.summary.tsv",    saveAs: { f -> file(f).getName() }
-    publishDir "${params.results_dir}/${meta.id}/vrhyme", mode: 'copy', overwrite: true, pattern: "vrhyme_out/vRhyme_best_bins_fasta",            saveAs: { f -> file(f).getName() }
+    publishDir "${params.outdir}/${meta.id}/assembly/binning/vrhyme", mode: 'copy', overwrite: true, pattern: "vrhyme_out/log_vRhyme_*.log",                  saveAs: { f -> file(f).getName() }
+    publishDir "${params.outdir}/${meta.id}/assembly/binning/vrhyme", mode: 'copy', overwrite: true, pattern: "vrhyme_out/vRhyme_best_bins.*.membership.tsv", saveAs: { f -> file(f).getName() }
+    publishDir "${params.outdir}/${meta.id}/assembly/binning/vrhyme", mode: 'copy', overwrite: true, pattern: "vrhyme_out/vRhyme_best_bins.*.summary.tsv",    saveAs: { f -> file(f).getName() }
+    publishDir "${params.outdir}/${meta.id}/assembly/binning/vrhyme", mode: 'copy', overwrite: true, pattern: "vrhyme_out/vRhyme_best_bins_fasta",            saveAs: { f -> file(f).getName() }
 
     container 'quay.io/biocontainers/vrhyme:1.1.0--pyhdfd78af_1'
 

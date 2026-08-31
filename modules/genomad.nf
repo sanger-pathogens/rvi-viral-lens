@@ -4,11 +4,11 @@ process GENOMAD {
     label 'mem_32'
     label 'time_12'
 
-    publishDir "${params.results_dir}/${meta.id}/genomad", mode: 'copy', overwrite: true, pattern: "*_virus_summary.tsv"
-    publishDir "${params.results_dir}/${meta.id}/genomad", mode: 'copy', overwrite: true, pattern: "*_virus.fna"
-    publishDir "${params.results_dir}/${meta.id}/genomad", mode: 'copy', overwrite: true, pattern: "*_summary.json"
-    publishDir "${params.results_dir}/${meta.id}/genomad", mode: 'copy', overwrite: true, pattern: "*_virus_genes.tsv"
-    publishDir "${params.results_dir}/${meta.id}/genomad", mode: 'copy', overwrite: true, pattern: "*_virus_proteins.faa"
+    publishDir "${params.outdir}/${meta.id}/assembly/genomad", mode: 'copy', overwrite: true, pattern: "*_virus_summary.tsv"
+    publishDir "${params.outdir}/${meta.id}/assembly/genomad", mode: 'copy', overwrite: true, pattern: "*_virus.fna"
+    publishDir "${params.outdir}/${meta.id}/assembly/genomad", mode: 'copy', overwrite: true, pattern: "*_summary.json"
+    publishDir "${params.outdir}/${meta.id}/assembly/genomad", mode: 'copy', overwrite: true, pattern: "*_virus_genes.tsv"
+    publishDir "${params.outdir}/${meta.id}/assembly/genomad", mode: 'copy', overwrite: true, pattern: "*_virus_proteins.faa"
 
     container 'quay.io/biocontainers/genomad:1.12.0--pyhdfd78af_0'
 

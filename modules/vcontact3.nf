@@ -54,8 +54,8 @@ process VCONTACT3 {
 
     container 'quay.io/sangerpathogens/vcontact3:3.2.0'
 
-    publishDir "${params.results_dir}/vcontact3", mode: 'copy', overwrite: true, pattern: "vcontact3_out/exports/final_assignments.csv",   saveAs: { f -> file(f).getName() }
-    publishDir "${params.results_dir}/vcontact3", mode: 'copy', overwrite: true, pattern: "vcontact3_out/exports/performance_metrics.csv", saveAs: { f -> file(f).getName() }
+    publishDir "${params.outdir}/vcontact3", mode: 'copy', overwrite: true, pattern: "vcontact3_out/exports/final_assignments.csv",   saveAs: { f -> file(f).getName() }
+    publishDir "${params.outdir}/vcontact3", mode: 'copy', overwrite: true, pattern: "vcontact3_out/exports/performance_metrics.csv", saveAs: { f -> file(f).getName() }
 
     input:
     path(all_proteins_faa)
@@ -128,9 +128,9 @@ process VCONTACT3_POSTPROCESS {
 
     container 'quay.io/sangerpathogens/vcontact3:3.2.0'
 
-    publishDir "${params.results_dir}/vcontact3", mode: 'copy', overwrite: true, pattern: "final_assignments_postprocessed.csv"
-    publishDir "${params.results_dir}/vcontact3", mode: 'copy', overwrite: true, pattern: "final_assignments_noveltaxa.csv"
-    publishDir "${params.results_dir}/vcontact3", mode: 'copy', overwrite: true, pattern: "postprocess_report.txt"
+    publishDir "${params.outdir}/vcontact3", mode: 'copy', overwrite: true, pattern: "final_assignments_postprocessed.csv"
+    publishDir "${params.outdir}/vcontact3", mode: 'copy', overwrite: true, pattern: "final_assignments_noveltaxa.csv"
+    publishDir "${params.outdir}/vcontact3", mode: 'copy', overwrite: true, pattern: "postprocess_report.txt"
 
     input:
     path(final_assignments)

@@ -38,7 +38,7 @@ process AGGREGATE_SPECIES_COVERAGE {
 
     container "quay.io/gsu-pipelines/rvi-vp-basecontainer"
 
-    publishDir "${params.results_dir}/${meta.id}/msweep_map", mode: 'copy', overwrite: true
+    publishDir "${params.outdir}/${meta.id}/sequenceindex/msweep_map", mode: 'copy', overwrite: true
 
     input:
     tuple val(meta), path(coverage), path(query_lengths), path(index_label_map), path(groups)
@@ -63,7 +63,7 @@ process GENERATE_MSWEEP_MAP_SUMMARY {
     label 'mem_1'
     label 'time_30m'
 
-    publishDir "${params.results_dir}/msweep_map_summary", mode: 'copy', overwrite: true
+    publishDir "${params.outdir}/msweep_map_summary", mode: 'copy', overwrite: true
 
     input:
     path(qc_tables)

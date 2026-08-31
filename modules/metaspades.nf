@@ -6,8 +6,8 @@ process METASPADES {
 
     container 'quay.io/biocontainers/spades:3.15.5--h95f258a_1'
 
-    publishDir "${params.results_dir}/${basemetaID}/metaspades/", mode: 'copy', overwrite: true, pattern: 'contigs.fasta', saveAs: { filename -> "${meta.id}_contigs.fa" }
-    publishDir "${params.results_dir}/${basemetaID}/metaspades/", mode: 'copy', overwrite: true, pattern: 'scaffolds.fasta', saveAs: { filename -> "${meta.id}_scaffolds.fa" }
+    publishDir "${params.outdir}/${basemetaID}/assembly/metaspades/", mode: 'copy', overwrite: true, pattern: 'contigs.fasta', saveAs: { filename -> "${meta.id}_contigs.fa" }
+    publishDir "${params.outdir}/${basemetaID}/assembly/metaspades/", mode: 'copy', overwrite: true, pattern: 'scaffolds.fasta', saveAs: { filename -> "${meta.id}_scaffolds.fa" }
 
     input:
     tuple val(meta), path(R1), path(R2)
