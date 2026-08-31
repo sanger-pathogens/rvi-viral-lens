@@ -552,6 +552,27 @@ Everything else has a default carried over from the source pipeline unchanged:
 `rvi_toolbox/subworkflows/{assemble,genomad,checkv,vrhyme,vcontact3}.json` for
 the per-parameter rationale.
 
+#### Abundance estimation (`--do_abundance`)
+
+Off by default, three independent sub-flags (`run_kraken2bracken`,
+`run_abundance_estimation`, `run_scrub`) so any combination can run:
+
+- `kraken2bracken_kraken2_db`: path to a Kraken2 database with a matching pre-built
+  Bracken kmer-distribution file (`database<kraken2bracken_read_len>mers.kmer_distrib`)
+  in the same directory. No bundled default.
+- `run_scrub` requires `scrub_plate_map`: a user-supplied metadata CSV
+  (`is_control`, `sample_type`, optionally `sample_well`) — mandatory if set, no default.
+- `run_abundance_estimation` requires `genome_file_abundance_estimation`,
+  `precomputed_index_abundance_estimation`, and `stb_file_abundance_estimation` — none
+  have a working default upstream either (same "must be supplied" situation as
+  `genomad_db`).
+
+Everything else carries an upstream default unchanged, except
+`cleanup_intermediate_files_abundance_estimation` (see the note above) — see
+`nextflow.config`/`nextflow_schema.json`, or `rvi-viral-metagenomics-pipeline`'s
+`rvi_toolbox/subworkflows/kraken2bracken.json`/`abundance_estimation.json` and
+`eu1/rvi_toolbox.git`'s `subworkflows/scrub.json` for the per-parameter rationale.
+
 ### Profiles
 
 The pipeline is bundled with a pre-defined computation profile, `sanger_standard`. This has been crafted for use on the Wellcome Sanger Institute's HPC infrastructure. A `standard` profile for use with Singularity has also been provided, but has not been tested.  User should consider writing a profile that is compatible with their own compute infrastructure (see [profiles Nextflow documentation](https://www.nextflow.io/docs/latest/config.html#config-profiles) for more details),
@@ -666,7 +687,15 @@ Writes the per-sample + run-level report for this lane, straight from `meta` —
 
 #### GENERATE_MAPPING_REPORT / GENERATE_ABUNDANCE_REPORT
 
-Same shape as `GENERATE_ASSEMBLY_REPORT`, built and covered by their own nf-test workflow tests, but not yet called from `main.nf` — their upstream lanes (map-to-sequence-indexes, SCRuB + abundance estimation) aren't ported yet. See [rvi_integration_1: work in progress](#rvi_integration_1-work-in-progress).
+Same shape as `GENERATE_ASSEMBLY_REPORT`. Both are now wired into `main.nf` — see [rvi_integration_1: work in progress](#rvi_integration_1-work-in-progress) for what's landed vs. farm-verified in each of their upstream lanes.
+
+#### KRAKEN2BRACKEN
+
+A viral-lens-owned fork of `rvi_toolbox`'s own subworkflow of the same name — identical orchestration and shared modules, only difference is an added `emit:` block (that subworkflow has none upstream, so nothing it produces was otherwise reachable). Feeds both `GENERATE_ABUNDANCE_REPORT` and `SCRUB_DECONTAM`.
+
+#### SCRUB_DECONTAM
+
+Runs SCRuB (Austin et al., *Nat Biotechnol* 2023) cross-contamination decontamination once per pipeline run against the whole-run Bracken species-abundance summary and a user-supplied plate map — not per-sample, since decontamination inherently needs the whole batch together. Renders a before/after/change relative-abundance heatmap for visual QC.
 
 ---
 
@@ -711,17 +740,21 @@ Per-sample outputs are grouped by lane, not by tool:
       metagraph_map/          # metagraph align: breadth-of-coverage validation table
       metagraph_query_hits/   # metagraph query: per-species read-hit counts + provisional calls
       metagraph_query_map/    # metagraph query: breadth-of-coverage validation table
-    abundance/                # reserved: abundance estimation lane
+    abundance/                # --do_abundance (--run_kraken2bracken / --run_abundance_estimation / --run_scrub)
+      kraken2/, bracken/      # per-sample Kraken2 classification + Bracken re-estimation
+      instrain/               # --run_abundance_estimation only (inStrain genome profiling)
+      scrub/                  # --run_scrub only; RUN-LEVEL, not per-sample (see below)
     reports/                  # per-sample lane report json
   vcontact3/                  # run-level: vContact3 runs once per batch
-  summary_report.csv, assembly_summary_report.csv, ...
+  abundance_summary/          # run-level: whole-run Bracken species-abundance summary
+  summary_report.csv, assembly_summary_report.csv, mapping_summary_report.csv, abundance_summary_report.csv, ...
 ```
 
-Everything publishes under `--outdir`. The ported modules originally used
-`params.results_dir` (an `rvi_toolbox` default viral-lens does not declare), which split
-outputs across two trees; they now all use `params.outdir`.
-
-`abundance/` is a placeholder for the lane below and is not created until it lands.
+Everything viral-lens-owned publishes under `--outdir`. Two exceptions, both in the
+shared `rvi_toolbox` submodule and left as-is rather than edited at the source (see
+"`rvi_toolbox` fork reconciliation" below): `kraken2bracken.nf`/`abundance_estimation.nf`'s
+modules publish under `params.results_dir`, which viral-lens now aliases to `outdir`
+(`results_dir = params.outdir` in `nextflow.config`) rather than leaving undeclared.
 
 The Themisto2 lane's reference-data defaults point at
 `/data/pam/software/themisto2/viromeindex/1.0/`, confirmed against real files on the farm.
@@ -736,7 +769,7 @@ data has no default and is unverified — see the bullet above.
 Not yet landed, in rough dependency order:
 
 - **Map reads to sequence indexes** lane — all three route-map methods now exist. Themisto2/mSWEEP (`--run_msweep true`) has **landed and been verified on the farm**. Sequence-to-graph alignment via Metagraph (`--run_metagraph_align true`, `metagraph align`) and pseudoalignment via Metagraph (`--run_metagraph_query true`, `metagraph query --query-mode labels`) have **landed but are only DSL-dry-run-checked, not run for real** — no `metagraph` binary or reference index available where they were written. Pseudoalignment is a deliberately *new, simpler* module, not a revival of an earlier two-stage filter+query pipeline that `metagraph align`'s own module once replaced after finding ~zero real hits on real test data (see `modules/metagraph_query.nf`'s header comment and the `ccae756` commit it cites). All three share `metagraph_align_graph`/`metagraph_align_annotation`/`metagraph_align_annotation_seqs`/`metagraph_map_reference_fasta` — `null` by default and unverified on real HPC paths (`rvi_toolbox`'s own `metagraph_align.config` suggests starting from eu1's personal scratch under `/lustre/scratch126/pam/projects/rvidata/personal/eu1/metagraph/bigviralindex-rvdbc/`, unconfirmed whether that still exists). All three methods feed one `GENERATE_MAPPING_REPORT.nf` call — see `main.nf`'s `if (params.do_sequence_index)` block — and each has its own boolean flag so any combination can run together.
-- **Abundance estimation** lane (Kraken2+Bracken, optionally SCRuB cross-contamination decontamination, `ABUNDANCE_ESTIMATION`) — `GENERATE_ABUNDANCE_REPORT.nf` exists and is tested standalone, waiting on this lane.
+- **Abundance estimation** lane — **landed but only DSL-dry-run-checked, not run for real**, no kraken2/bracken/scrub/inStrain reference data or containers available where it was written. Kraken2+Bracken (`--run_kraken2bracken true`) and `ABUNDANCE_ESTIMATION` (`--run_abundance_estimation true`, sourmash/inStrain genome-level profiling — heavier and more speculative, not viral-specific) run in parallel; SCRuB (`--run_scrub true`) is a final step on Kraken2+Bracken's output only. All three gated by `--do_abundance` (master switch) plus their own flag. Found and worked around one real bug in the process: `rvi_toolbox`'s `abundance_estimation.nf` references an undefined `INSTRAIN` in its cleanup branch under the *upstream default* flag combination — `cleanup_intermediate_files_abundance_estimation` now defaults `false` here (not `true`) specifically to avoid it. `ABUNDANCE_ESTIMATION`'s own reference-data params (`genome_file_abundance_estimation`, `precomputed_index_abundance_estimation`, `stb_file_abundance_estimation`, etc.) have no working default upstream either — same "must be supplied" situation as `genomad_db` etc.
 - **Wider input handling** — ENA download and iRODS retrieval (`MIXED_INPUT`), beyond today's single local-manifest `parse_mnf()`.
 - **`rvi_toolbox` fork reconciliation** — viral-lens's submodule tracks `rvi/rvi_toolbox.git`, 51+ commits behind that fork's own master at time of writing (missing vRhyme/vContact3/geNomad work already merged there); the SCRuB and Metagraph subworkflows this plan depends on exist only on a *different* fork (`eu1/rvi_toolbox.git`, merged to its master). This pass avoided the submodule entirely (see "Port de novo assembly + viral binning lane" commit) precisely because that reconciliation hasn't happened yet.
 - **Per-scaffold meta granularity** — today's assembly report counts are sample-level (`genomad_n_scaffolds`, `vrhyme_n_bins`, etc.); one report row per scaffold, carrying that scaffold's own bin/quality/cluster assignment, is a deliberately deferred stretch goal, not a decision made against it.
