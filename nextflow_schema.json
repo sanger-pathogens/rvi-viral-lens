@@ -140,8 +140,7 @@
       "type": "string"
     },
     "results_dir": {
-      "type": "string",
-      "default": "./results"
+      "type": "string"
     },
     "developer_publish": {
       "type": "boolean"
@@ -326,6 +325,136 @@
     "vcontact3_postprocess_max_proteins": {
       "type": "integer",
       "default": 20
+    },
+    "do_abundance": {
+      "type": "boolean",
+      "default": false
+    },
+    "run_kraken2bracken": {
+      "type": "boolean",
+      "default": false
+    },
+    "run_abundance_estimation": {
+      "type": "boolean",
+      "default": false
+    },
+    "run_scrub": {
+      "type": "boolean",
+      "default": false
+    },
+    "kraken2bracken_kraken2_db": {
+      "type": "string"
+    },
+    "kraken2bracken_kraken2_threads": {
+      "type": "integer",
+      "default": 4
+    },
+    "kraken2bracken_bracken_threads": {
+      "type": "integer",
+      "default": 10
+    },
+    "kraken2bracken_kmer_len": {
+      "type": "integer",
+      "default": 35
+    },
+    "kraken2bracken_read_len": {
+      "type": "integer",
+      "default": 150
+    },
+    "kraken2bracken_classification_level": {
+      "type": "string",
+      "default": "S"
+    },
+    "kraken2bracken_threshold": {
+      "type": "integer",
+      "default": 1
+    },
+    "kraken2bracken_get_classified_reads": {
+      "type": "boolean",
+      "default": false
+    },
+    "sourmash_subset_abundance_estimation": {
+      "type": "boolean",
+      "default": false
+    },
+    "instrain_quick_profile_abundance_estimation": {
+      "type": "boolean",
+      "default": false
+    },
+    "cleanup_intermediate_files_abundance_estimation": {
+      "type": "boolean",
+      "default": false
+    },
+    "instrain_full_output_abundance_estimation": {
+      "type": "boolean",
+      "default": false
+    },
+    "publish_host_reads_abundance_estimation": {
+      "type": "boolean",
+      "default": false
+    },
+    "genome_dir_abundance_estimation": {
+      "type": "string"
+    },
+    "sourmash_db_abundance_estimation": {
+      "type": "string"
+    },
+    "genome_file_abundance_estimation": {
+      "type": "string",
+      "default": ""
+    },
+    "precomputed_index_abundance_estimation": {
+      "type": "string",
+      "default": ""
+    },
+    "stb_file_abundance_estimation": {
+      "type": "string"
+    },
+    "custom_taxon_names_abundance_estimation": {
+      "type": "string",
+      "default": ""
+    },
+    "bmtagger_db_abundance_estimation": {
+      "type": "string"
+    },
+    "bmtagger_host_abundance_estimation": {
+      "type": "string",
+      "default": "T2T-CHM13v2.0"
+    },
+    "bowtie2_samtools_threads_abundance_estimation": {
+      "type": "integer",
+      "default": 4
+    },
+    "instrain_threads_abundance_estimation": {
+      "type": "integer",
+      "default": 4
+    },
+    "instrain_profile_options": {
+      "type": "string",
+      "default": "--database-mode"
+    },
+    "scrub_plate_map": {
+      "type": "string"
+    },
+    "scrub_control_order": {
+      "type": "string",
+      "default": "control_blank"
+    },
+    "scrub_dist_threshold": {
+      "type": "number",
+      "default": 1.5
+    },
+    "scrub_sample_suffix": {
+      "type": "string",
+      "default": "_report_bracken_species"
+    },
+    "scrub_heatmap_top_n": {
+      "type": "integer",
+      "default": 40
+    },
+    "scrub_zero_species_in_controls": {
+      "type": "string",
+      "default": ""
     },
     "do_consensus_polishing": {
       "type": "boolean",
