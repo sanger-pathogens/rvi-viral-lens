@@ -9,6 +9,13 @@ from collections import Counter, defaultdict
 # Every window has to come off the species key, or each one becomes its own species.
 COORD_SUFFIX_RE = re.compile(r"(?::\d+-\d+)+$")
 
+# `metagraph query --query-mode labels` joins a read's matched labels with ':' rather
+# than the ';' used elsewhere, e.g.
+#   'OV040211.1 | Betacoronavirus pandemicum:OY127609.1 | Betacoronavirus pandemicum'
+# Split on a ':' only when what follows looks like '<accession> | ', so the ':' that
+# introduces a coordinate window (':16-166') is left alone.
+LABEL_JOIN_RE = re.compile(r":(?=[A-Za-z0-9_.]+ \| )")
+
 
 def parse_label(label):
     """Split one metagraph annotation label into (species_key, full_label, record_id).
@@ -62,10 +69,11 @@ def iter_read_labels(line):
     if len(fields) < 2:
         return
     for field in fields[2:]:
-        for candidate in field.split(";"):
-            parsed = parse_label(candidate)
-            if parsed is not None:
-                yield parsed
+        for chunk in field.split(";"):
+            for candidate in LABEL_JOIN_RE.split(chunk):
+                parsed = parse_label(candidate)
+                if parsed is not None:
+                    yield parsed
 
 
 def parse_alignments(path, species_hits, label_hits_by_species, record_id_by_label):

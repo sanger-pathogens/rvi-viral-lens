@@ -8,13 +8,15 @@
 // presence-filter pre-stage discarded almost every real hit on real test data, and this
 // module skips that stage entirely, querying the annotated index directly.
 //
-// UNVERIFIED: exact `metagraph query --query-mode labels` output shape has not been
-// confirmed against a real run (no metagraph binary available where this was written).
-// Assumed tab-separated, column 1 a per-query index, column 2 a query descriptor, and
-// every column after that a bare label (or ';'-joined labels) matching one of the three
-// shapes bin/call_metagraph_species.py's parse_label() already recognizes -- reused
-// unchanged below on that assumption, since it scans every field for a recognizable
-// label rather than depending on a fixed column count. Check this on the first real run.
+// Output shape, CONFIRMED against a real run: tab-separated, column 1 a per-query index,
+// column 2 a query descriptor, and every column after that carrying the matched labels.
+// The one thing the original assumption got wrong is the separator -- query mode joins a
+// read's labels with ':' , not the ';' used elsewhere, e.g.
+//   'OV040211.1 | Betacoronavirus pandemicum:OY127609.1 | Betacoronavirus pandemicum'
+// On the first real run 6364 of 6367 rows were such multi-label fields, and treating each
+// as a single label made every one its own "species". bin/call_metagraph_species.py splits
+// on that separator (LABEL_JOIN_RE); it is careful not to split the ':' that introduces a
+// coordinate window, so align-mode labels are unaffected.
 
 process METAGRAPH_QUERY {
     tag "${meta.id}"
