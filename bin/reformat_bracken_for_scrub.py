@@ -5,14 +5,6 @@ import re
 import sys
 
 SUBSAMPLE_SUFFIX_RE = re.compile(r"_subsampled\d+[A-Za-z]*-\d+$")
-NATURAL_SORT_CHUNK_RE = re.compile(r"(\d+)")
-
-
-def natural_sort_key(sample_id):
-    """Split into text/number chunks so e.g. 50376_2#10 sorts after 50376_2#9,
-    not between 50376_2#1 and 50376_2#2."""
-    chunks = NATURAL_SORT_CHUNK_RE.split(sample_id)
-    return [int(chunk) if chunk.isdigit() else chunk for chunk in chunks]
 
 
 def parse_bracken_summary(path, sample_suffix):
@@ -131,7 +123,14 @@ def main():
             file=sys.stderr,
         )
     sample_ids = [s for s in sample_ids if s in plate_map]
-    sample_ids = sorted(sample_ids, key=natural_sort_key)
+    # Emit rows in the plate map's own order, not sorted order. SCRuB requires the
+    # abundance matrix and the metadata to have equivalent row names and compares
+    # them positionally -- with the rows sorted independently it fails outright with
+    # "The row names of the `data` and `metadata` inputs must be equivalent!" for any
+    # plate map that is not already in sorted order. read_plate_map returns a dict, so
+    # (Python 3.7+) it preserves the file's row order.
+    plate_map_order = {sample_id: i for i, sample_id in enumerate(plate_map)}
+    sample_ids = sorted(sample_ids, key=lambda s: plate_map_order[s])
 
     species_to_zero = [s for s in args.zero_species_in_controls.split(",") if s]
     if species_to_zero:

@@ -34,11 +34,32 @@ process VRHYME_WITH_COVERAGE {
 
     script:
     """
+    # vRhyme exits non-zero when it decides there is nothing to bin. The most
+    # common case is a sample whose scaffolds do not clear vRhyme's own internal
+    # minimum-length/coverage screen, leaving it fewer than the 2 scaffolds it
+    # needs -- "N scaffolds at least X bp were found. Requires at least 2."
+    # That is a normal outcome for a sparse sample (a negative control, say), not
+    # a pipeline error, and it must not abort the whole run: the upstream gate in
+    # VRHYME_BIN.nf counts scaffolds in the fasta, which is necessarily an
+    # over-estimate of what vRhyme itself will keep. Catch that one message and
+    # fall through to the empty-output handling below, which every downstream
+    # consumer already copes with. Anything else is a real failure and re-exits.
+    set +e
     vRhyme \\
         -i ${virus_fna} \\
         -c ${coverage_tsv} \\
         -t ${task.cpus} \\
-        -o vrhyme_out
+        -o vrhyme_out 2> vrhyme.err
+    status=\$?
+    set -e
+    cat vrhyme.err 1>&2
+    if [ \$status -ne 0 ]; then
+        if grep -q "Requires at least 2" vrhyme.err; then
+            echo "vRhyme found too few usable scaffolds to bin; continuing with no bins." 1>&2
+        else
+            exit \$status
+        fi
+    fi
 
     # vRhyme writes neither the membership table nor the bins directory when
     # it finds no bins. Guarantee both exist (empty) so downstream consumers
