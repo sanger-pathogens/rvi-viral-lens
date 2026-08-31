@@ -704,7 +704,9 @@ Per-sample outputs are grouped by lane, not by tool:
       binning/
         vrhyme/
         checkv/
-    sequenceindex/            # reserved: map-to-sequence-indexes lane
+    sequenceindex/            # --do_sequence_index --run_msweep
+      msweep/                 # mSWEEP abundances + probs
+      msweep_map/             # breadth-of-coverage validation table
     abundance/                # reserved: abundance estimation lane
     reports/                  # per-sample lane report json
   vcontact3/                  # run-level: vContact3 runs once per batch
@@ -715,8 +717,12 @@ Everything publishes under `--outdir`. The ported modules originally used
 `params.results_dir` (an `rvi_toolbox` default viral-lens does not declare), which split
 outputs across two trees; they now all use `params.outdir`.
 
-`sequenceindex/` and `abundance/` are placeholders for the lanes below and are not
-created until those lanes land.
+`abundance/` is a placeholder for the lane below and is not created until it lands.
+
+The Themisto2 lane's reference-data defaults point at
+`/data/pam/software/themisto2/viromeindex/1.0/`. Its `msweep_map_reference_fasta` must
+stay positionally aligned with `msweep_ref_groups` (record N == line N); both currently
+hold 1321608 entries.
 
 > **Note on resources:** `sanger_standard` caps `max_time` at 6h, so the lane's `time_12`
 > labels are clamped by `check_max`. That is fine at test scale; geNomad and vContact3 on
@@ -724,7 +730,7 @@ created until those lanes land.
 
 Not yet landed, in rough dependency order:
 
-- **Map reads to sequence indexes** lane (pseudoalignment via Themisto2/Metagraph, sequence-to-graph alignment via Metagraph, QC Mapping) — `GENERATE_MAPPING_REPORT.nf` exists and is tested standalone, waiting on this lane.
+- **Map reads to sequence indexes** lane — the Themisto2/mSWEEP method has **landed and been verified on the farm** (`--do_sequence_index true --run_msweep true`, both flags default `false`); it feeds `GENERATE_MAPPING_REPORT.nf`, which is no longer an orphan. Still outstanding: the two Metagraph methods (sequence-to-graph alignment, and pseudoalignment — the latter is not a real module anywhere yet). Each method gets its own boolean flag rather than sharing a method string, so they can be enabled independently.
 - **Abundance estimation** lane (Kraken2+Bracken, optionally SCRuB cross-contamination decontamination, `ABUNDANCE_ESTIMATION`) — `GENERATE_ABUNDANCE_REPORT.nf` exists and is tested standalone, waiting on this lane.
 - **Wider input handling** — ENA download and iRODS retrieval (`MIXED_INPUT`), beyond today's single local-manifest `parse_mnf()`.
 - **`rvi_toolbox` fork reconciliation** — viral-lens's submodule tracks `rvi/rvi_toolbox.git`, 51+ commits behind that fork's own master at time of writing (missing vRhyme/vContact3/geNomad work already merged there); the SCRuB and Metagraph subworkflows this plan depends on exist only on a *different* fork (`eu1/rvi_toolbox.git`, merged to its master). This pass avoided the submodule entirely (see "Port de novo assembly + viral binning lane" commit) precisely because that reconciliation hasn't happened yet.
