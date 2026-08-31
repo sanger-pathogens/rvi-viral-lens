@@ -18,7 +18,11 @@ process METAGRAPH_ALIGN {
 
     container 'quay.io/biocontainers/metagraph:0.5.2--h5c1d0b5_0'
 
-    memory { 25.GB * task.attempt }
+    // Measured on the farm: this process peaks at ~52.7GB, driven by the 15GB
+    // coordinate annotation. LSF killed it (TERM_MEMLIMIT) at both a 25GB and a
+    // 50GB cap, so the first attempt has to clear ~53GB to be useful.
+    // 64GB, then 128GB, then 192GB.
+    memory { 32.GB * task.attempt * 2 }
 
     input:
     tuple val(meta), path(reads_1), path(reads_2)
