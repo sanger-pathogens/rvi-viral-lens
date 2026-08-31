@@ -1,0 +1,64 @@
+NC_001357.1 Human papillomavirus - 18, complete genome	Human papillomavirus
+NC_001417.2 phage MS2 genome	Phage MS2
+NC_001782.1 Saccharomyces cerevisiae killer virus M1, complete genome	Saccharomyces cerevisiae killer virus
+NC_002016.1 Influenza A virus (A/Puerto Rico/8/1934(H1N1)) segment 7, complete sequence	Flu A (Puerto Rico(H1N1)) segment 7
+NC_002020.1 Influenza A virus (A/Puerto Rico/8/1934(H1N1)) segment 8, complete sequence	Flu A (Puerto Rico(H1N1)) segment 8
+NC_002023.1 Influenza A virus (A/Puerto Rico/8/1934(H1N1)) segment 1, complete sequence	Flu A (Puerto Rico(H1N1)) segment 9
+NC_002645.1 Human coronavirus 229E, complete genome	Human CoV 229E
+NC_003045.1 Bovine coronavirus isolate BCoV-ENT, complete genome	Bovine coronavirus isolate BCoV-ENT
+NC_003461.1 Human parainfluenza virus 1, complete genome	Human parainfluenza virus 1
+NC_004718.3 SARS coronavirus Tor2, complete genome	SARS-CoV2 Tor2
+NC_004905.2 Influenza A virus (A/Hong Kong/1073/99(H9N2)) segment 5, complete sequence	Flu A (Hong Kong(H9N2)) segment 5
+NC_004906.1 Influenza A virus (A/Hong Kong/1073/99(H9N2)) segment 8, complete sequence	Flu A (Hong Kong(H9N2)) segment 8
+NC_004907.1 Influenza A virus (A/Hong Kong/1073/99(H9N2)) segment 7, complete sequence	Flu A (Hong Kong(H9N2)) segment 7
+NC_004909.1 Influenza A virus na gene for neuraminidase, genomic RNA, strain A/Hong Kong/1073/99(H9N2)	Flu A (Hong Kong(H9N2)) na gene
+NC_004910.1 Influenza A virus pb2 gene for polymerase Pb2, genomic RNA, strain A/Hong Kong/1073/99(H9N2)	Flu A (Hong Kong(H9N2)) pb2 gene
+NC_004912.1 Influenza A virus pa gene for polymerase PA, genomic RNA, strain A/Hong Kong/1073/99(H9N2)	Flu A (Hong Kong(H9N2)) pa gene
+NC_005831.2 Human Coronavirus NL63, complete genome	Human CoV NL63
+NC_006213.1 Human coronavirus OC43 strain ATCC VR-759, complete genome	Human CoV OC43
+NC_007358.1 Influenza A virus (A/goose/Guangdong/1/1996(H5N1)) polymerase (PB1) and PB1-F2 protein (PB1-F2) genes, complete cds	Flu A (H5N1) polymerase and PB1-F2 protein
+NC_007359.1 Influenza A virus (A/goose/Guangdong/1/1996(H5N1)) polymerase (PA) and PA-X protein (PA-X) genes, complete cds	Flu A (H5N1) polymerase  and PA-X protein
+NC_007360.1 Influenza A virus (A/Goose/Guangdong/1/96(H5N1)) nucleocapsid protein (NP) gene, complete cds	Flu A (H5N1) nucleocapsid protein gene
+NC_007363.1 Influenza A virus (A/goose/Guangdong/1/1996(H5N1)) segment 7, complete sequence	Flu A (H5N1) segement 7
+NC_007366.1 Influenza A virus (A/New York/392/2004(H3N2)) segment 4, complete sequence	Flu A (New York(H3N2)) segment 4
+NC_007367.1 Influenza A virus (A/New York/392/2004(H3N2)) segment 7, complete sequence	Flu A (New York(H3N2)) segment 7
+NC_007368.1 Influenza A virus (A/New York/392/2004(H3N2)) segment 6, complete sequence	Flu A (New York(H3N2)) segment 6
+NC_007369.1 Influenza A virus (A/New York/392/2004(H3N2)) segment 5, complete sequence	Flu A (New York(H3N2)) segment 5
+NC_007370.1 Influenza A virus (A/New York/392/2004(H3N2)) segment 8, complete sequence	Flu A (New York(H3N2)) segment 8
+NC_007371.1 Influenza A virus (A/New York/392/2004(H3N2)) segment 3, complete sequence	Flu A (New York(H3N2)) segment 3
+NC_007372.1 Influenza A virus (A/New York/392/2004(H3N2)) segment 2, complete sequence	Flu A (New York(H3N2)) segment 2
+NC_007373.1 Influenza A virus (A/New York/392/2004(H3N2)) segment 1, complete sequence	Flu A (New York(H3N2)) segment 1
+NC_007375.1 Influenza A virus (A/Korea/426/1968(H2N2)) segment 2, complete sequence	Flu A (Korea(H2N2)) segment 2
+NC_007376.1 Influenza A virus (A/Korea/426/1968(H2N2)) segment 3, complete sequence	Flu A (Korea(H2N2)) segment 3
+NC_007377.1 Influenza A virus (A/Korea/426/1968(H2N2)) segment 7, complete sequence	Flu A (Korea(H2N2)) segment 7
+NC_007378.1 Influenza A virus (A/Korea/426/1968(H2N2)) segment 1, complete sequence	Flu A (Korea(H2N2)) segment 1
+NC_007380.1 Influenza A virus (A/Korea/426/1968(H2N2)) segment 8, complete sequence	Flu A (Korea(H2N2)) segment 8
+NC_007381.1 Influenza A virus (A/Korea/426/1968(H2N2)) segment 5, complete sequence	Flu A (Korea(H2N2)) segment 5
+NC_007382.1 Influenza A virus (A/Korea/426/1968(H2N2)) segment 6, complete sequence	Flu A (Korea(H2N2)) segment 6
+NC_009823.1 Hepatitis C virus genotype 2, complete genome	Hepatitis C virus genotype 2
+NC_013221.1 Phytophthora infestans RNA virus 1 RNA2A, complete genome	Phytophthora infestans RNA virus 1 RNA2A
+NC_014470.1 Bat coronavirus BM48-31/BGR/2008, complete genome	Bat coronavirus BM48-31/BGR/2008
+NC_017083.1 Rabbit coronavirus HKU14, complete genome	Rabbit coronavirus HKU14
+NC_018464.1 Shamonda virus N and NSs genes, segment S, genomic RNA, isolate Ib An 5550	Shamonda virus N and NSs genes
+NC_022518.1 Human endogenous retrovirus K113 complete genome	Human endogenous retrovirus K113
+NC_023503.1 Streptococcus phage 20617 complete prophage genome	Streptococcus phage 20617
+NC_026424.1 Influenza A virus (A/Shanghai/02/2013(H7N9)) segment 3 polymerase PA (PA) and PA-X protein (PA-X) genes, complete cds	Flu A (Shanghai(H7N9)) segment 3
+NC_026426.1 Influenza A virus (A/Shanghai/02/2013(H7N9)) segment 5 nucleocapsid protein (NP) gene, complete cds	Flu A (Shanghai(H7N9)) segment 5
+NC_026427.1 Influenza A virus (A/Shanghai/02/2013(H7N9)) segment 7 matrix protein 2 (M2) and matrix protein 1 (M1) genes, complete cds	Flu A (Shanghai(H7N9)) segment 7
+NC_026431.1 Influenza A virus (A/California/07/2009(H1N1)) segment 7 matrix protein 2 (M2) and matrix protein 1 (M1) genes, complete cds	Flu A (CAL(H1N1)) segment 7
+NC_026432.1 Influenza A virus (A/California/07/2009(H1N1)) segment 8 nuclear export protein (NEP) and nonstructural protein 1 (NS1) genes, complete cds	Flu A (CAL(H1N1)) segment 8
+NC_026433.1 Influenza A virus (A/California/07/2009(H1N1)) segment 4 hemagglutinin (HA) gene, complete cds	Flu A (CAL(H1N1)) segment 4
+NC_026434.1 Influenza A virus (A/California/07/2009(H1N1)) segment 6 neuraminidase (NA) gene, complete cds	Flu A (CAL(H1N1)) segment 6
+NC_026435.1 Influenza A virus (A/California/07/2009(H1N1)) segment 2 polymerase PB1 (PB1) gene, complete cds; and nonfunctional PB1-F2 protein (PB1-F2) gene, complete sequence	Flu A (CAL(H1N1)) segment 2
+NC_026436.1 Influenza A virus (A/California/07/2009(H1N1)) segment 5 nucleocapsid protein (NP) gene, complete cds	Flu A (CAL(H1N1)) segment 5
+NC_026437.1 Influenza A virus (A/California/07/2009(H1N1)) segment 3 polymerase PA (PA) gene, complete cds	Flu A (CAL(H1N1)) segment 3
+NC_026438.1 Influenza A virus (A/California/07/2009(H1N1)) segment 1 polymerase PB2 (PB2) gene, complete cds	Flu A (CAL(H1N1)) segment 1
+NC_028752.1 Camel alphacoronavirus isolate camel/Riyadh/Ry141/2015, complete genome	Camel alphacoronavirus isolate Riyadh
+NC_031032.1 Bacillus phage Stitch, complete genome	Bacillus phage Stitch
+NC_038425.1 Non-primate hepacivirus NZP1 polyprotein (POLY) gene, complete cds	Non-primate hepacivirus NZP1 gene
+NC_038828.1 Heterobasidion RNA virus 1 isolate HetRV1-ab1 putative coat protein gene, complete cds	Heterobasidion RNA virus 1
+NC_041925.1 UNVERIFIED: Proteus phage VB_PmiS-Isfahan, complete genome	Proteus phage VB_PmiS-Isfahan
+NC_045512.2 Severe acute respiratory syndrome coronavirus 2 isolate Wuhan-Hu-1, complete genome	SARS-CoV2 Wuhan-Hu-1
+NC_049342.1 Escherichia phage 500465-1, complete genome	Escherichia phage 500465-1
+NC_074405.1 SsRNA phage SRR5466337_3 genomic sequence	SsRNA phage SRR5466337_3
+NC_074583.1 SsRNA phage SRR5466369_2 genomic sequence	SsRNA phage SRR5466369_2

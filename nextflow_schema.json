@@ -218,13 +218,16 @@
       "default": false
     },
     "metagraph_align_graph": {
-      "type": "string"
+      "type": "string",
+      "default": "/lustre/scratch126/pam/projects/rvidata/personal/eu1/metagraph/bigviralindex-rvdbc/viromeindex_clustered_graph.dbg"
     },
     "metagraph_align_annotation": {
-      "type": "string"
+      "type": "string",
+      "default": "/lustre/scratch126/pam/projects/rvidata/personal/eu1/metagraph/bigviralindex-rvdbc/column_annotation_coordinates.column_coord.annodbg"
     },
     "metagraph_align_annotation_seqs": {
-      "type": "string"
+      "type": "string",
+      "default": "/lustre/scratch126/pam/projects/rvidata/personal/eu1/metagraph/bigviralindex-rvdbc/column_annotation_coordinates.seqs"
     },
     "metagraph_align_names_dmp": {
       "type": "string",
@@ -251,7 +254,8 @@
       "default": true
     },
     "metagraph_map_reference_fasta": {
-      "type": "string"
+      "type": "string",
+      "default": "/lustre/scratch126/pam/projects/rvidata/personal/eu1/rvdb-clustered/C-RVDBv32.0.renamed.fasta"
     },
     "metagraph_map_bowtie_threads": {
       "type": "integer",
@@ -343,7 +347,8 @@
       "default": false
     },
     "kraken2bracken_kraken2_db": {
-      "type": "string"
+      "type": "string",
+      "default": "/data/pam/software/kraken2/viral_20250402/k2_viral_20250402/"
     },
     "kraken2bracken_kraken2_threads": {
       "type": "integer",
@@ -401,18 +406,19 @@
     },
     "genome_file_abundance_estimation": {
       "type": "string",
-      "default": ""
+      "default": "/data/pam/collections/refseq/release230/viral.1.1.genomic.fna"
     },
     "precomputed_index_abundance_estimation": {
       "type": "string",
-      "default": ""
+      "default": "/data/pam/software/bowtie2/refseq/release230/viral/viral.1.1.genomic.bt2"
     },
     "stb_file_abundance_estimation": {
-      "type": "string"
+      "type": "string",
+      "default": "${projectDir}/files/release230_viral.1.1.genomic_custom.stb"
     },
     "custom_taxon_names_abundance_estimation": {
       "type": "string",
-      "default": ""
+      "default": "${projectDir}/files/handpicked_viral_taxa_short_names_dict.txt"
     },
     "bmtagger_db_abundance_estimation": {
       "type": "string"
