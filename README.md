@@ -674,6 +674,54 @@ Same shape as `GENERATE_ASSEMBLY_REPORT`, built and covered by their own nf-test
 
 This branch is porting `rvi-viral-metagenomics-pipeline` functionality into viral-lens; the [route map](docs/nf-metro/route_map.svg) tracks the target shape and [`docs/nf-metro/README.md`](docs/nf-metro/README.md) explains how to regenerate/extend it. Landed so far: the de novo assembly + viral binning lane (`--do_assembly`) and its report, fanning into a shared Reporting section alongside the existing classification report.
 
+The assembly lane has now been **run for real on the farm** (LSF + singularity, real
+geNomad/CheckV/vContact3/kraken2 databases) and completes end to end. Fixes that first
+real run forced out, all of which only a real execution could have surfaced:
+
+- manifest reads reached `ASSEMBLE_META` as strings, so `R1.countFastq()` threw;
+- none of the lane's 15 processes were opted into LSF under `sanger_standard`, so they
+  would have run on the submit host;
+- `count_vrhyme_membership()` reported the bin count twice, because Groovy's
+  `List.unique()` de-duplicates in place;
+- vContact3's `--db-version` defaulted to a version that exists in no deployed database,
+  and its post-processing step looked for the genome report outside the versioned
+  database directory;
+- `bowtie2_samtools_only_abundance_estimation` was referenced but never declared.
+
+### Output layout
+
+Per-sample outputs are grouped by lane, not by tool:
+
+```
+<outdir>/
+  <sample_id>/
+    mapping/                  # taxid lane
+      <taxid>/                # consensus, bam, per-taxid properties json
+      <sample_id>.kraken_report.txt
+    assembly/                 # --do_assembly only
+      metaspades/
+      genomad/
+      binning/
+        vrhyme/
+        checkv/
+    sequenceindex/            # reserved: map-to-sequence-indexes lane
+    abundance/                # reserved: abundance estimation lane
+    reports/                  # per-sample lane report json
+  vcontact3/                  # run-level: vContact3 runs once per batch
+  summary_report.csv, assembly_summary_report.csv, ...
+```
+
+Everything publishes under `--outdir`. The ported modules originally used
+`params.results_dir` (an `rvi_toolbox` default viral-lens does not declare), which split
+outputs across two trees; they now all use `params.outdir`.
+
+`sequenceindex/` and `abundance/` are placeholders for the lanes below and are not
+created until those lanes land.
+
+> **Note on resources:** `sanger_standard` caps `max_time` at 6h, so the lane's `time_12`
+> labels are clamped by `check_max`. That is fine at test scale; geNomad and vContact3 on
+> production-sized input may need that cap raised.
+
 Not yet landed, in rough dependency order:
 
 - **Map reads to sequence indexes** lane (pseudoalignment via Themisto2/Metagraph, sequence-to-graph alignment via Metagraph, QC Mapping) — `GENERATE_MAPPING_REPORT.nf` exists and is tested standalone, waiting on this lane.
