@@ -704,9 +704,11 @@ Per-sample outputs are grouped by lane, not by tool:
       binning/
         vrhyme/
         checkv/
-    sequenceindex/            # --do_sequence_index --run_msweep
+    sequenceindex/            # --do_sequence_index (--run_msweep and/or --run_metagraph_align)
       msweep/                 # mSWEEP abundances + probs
       msweep_map/             # breadth-of-coverage validation table
+      metagraph_hits/         # per-species read-hit counts + provisional calls
+      metagraph_map/          # breadth-of-coverage validation table
     abundance/                # reserved: abundance estimation lane
     reports/                  # per-sample lane report json
   vcontact3/                  # run-level: vContact3 runs once per batch
@@ -720,9 +722,10 @@ outputs across two trees; they now all use `params.outdir`.
 `abundance/` is a placeholder for the lane below and is not created until it lands.
 
 The Themisto2 lane's reference-data defaults point at
-`/data/pam/software/themisto2/viromeindex/1.0/`. Its `msweep_map_reference_fasta` must
-stay positionally aligned with `msweep_ref_groups` (record N == line N); both currently
-hold 1321608 entries.
+`/data/pam/software/themisto2/viromeindex/1.0/`, confirmed against real files on the farm.
+Its `msweep_map_reference_fasta` must stay positionally aligned with `msweep_ref_groups`
+(record N == line N); both currently hold 1321608 entries. The Metagraph lane's reference
+data has no default and is unverified — see the bullet above.
 
 > **Note on resources:** `sanger_standard` caps `max_time` at 6h, so the lane's `time_12`
 > labels are clamped by `check_max`. That is fine at test scale; geNomad and vContact3 on
@@ -730,7 +733,7 @@ hold 1321608 entries.
 
 Not yet landed, in rough dependency order:
 
-- **Map reads to sequence indexes** lane — the Themisto2/mSWEEP method has **landed and been verified on the farm** (`--do_sequence_index true --run_msweep true`, both flags default `false`); it feeds `GENERATE_MAPPING_REPORT.nf`, which is no longer an orphan. Still outstanding: the two Metagraph methods (sequence-to-graph alignment, and pseudoalignment — the latter is not a real module anywhere yet). Each method gets its own boolean flag rather than sharing a method string, so they can be enabled independently.
+- **Map reads to sequence indexes** lane — the Themisto2/mSWEEP method has **landed and been verified on the farm** (`--do_sequence_index true --run_msweep true`). Sequence-to-graph alignment via Metagraph has **landed but only DSL-dry-run-checked, not run for real** (`--run_metagraph_align true`, plus `metagraph_align_graph`/`metagraph_align_annotation`/`metagraph_align_annotation_seqs`/`metagraph_map_reference_fasta`, all `null` by default and unverified on real HPC paths — `rvi_toolbox`'s own `metagraph_align.config` suggests starting from eu1's personal scratch under `/lustre/scratch126/pam/projects/rvidata/personal/eu1/metagraph/bigviralindex-rvdbc/`, unconfirmed whether that still exists). Both methods feed one `GENERATE_MAPPING_REPORT.nf` call — see `main.nf`'s `if (params.do_sequence_index)` block. Still outstanding: pseudoalignment via Metagraph, which is not a real module anywhere upstream. Each method gets its own boolean flag rather than sharing a method string, so they can be enabled independently.
 - **Abundance estimation** lane (Kraken2+Bracken, optionally SCRuB cross-contamination decontamination, `ABUNDANCE_ESTIMATION`) — `GENERATE_ABUNDANCE_REPORT.nf` exists and is tested standalone, waiting on this lane.
 - **Wider input handling** — ENA download and iRODS retrieval (`MIXED_INPUT`), beyond today's single local-manifest `parse_mnf()`.
 - **`rvi_toolbox` fork reconciliation** — viral-lens's submodule tracks `rvi/rvi_toolbox.git`, 51+ commits behind that fork's own master at time of writing (missing vRhyme/vContact3/geNomad work already merged there); the SCRuB and Metagraph subworkflows this plan depends on exist only on a *different* fork (`eu1/rvi_toolbox.git`, merged to its master). This pass avoided the submodule entirely (see "Port de novo assembly + viral binning lane" commit) precisely because that reconciliation hasn't happened yet.
