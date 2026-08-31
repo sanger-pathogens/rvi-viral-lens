@@ -3,6 +3,12 @@ import argparse
 import re
 from collections import Counter, defaultdict
 
+# metagraph's coordinate indexes append the matched coordinate window to the label,
+# and a reference record whose own name already carries one ends up with two:
+#   'KM368312.1 | Alphainfluenzavirus influenzae:1612-1762:2314-2464'
+# Every window has to come off the species key, or each one becomes its own species.
+COORD_SUFFIX_RE = re.compile(r"(?::\d+-\d+)+$")
+
 
 def parse_label(label):
     """Split one metagraph annotation label into (species_key, full_label, record_id).
@@ -19,7 +25,9 @@ def parse_label(label):
         so grepping by taxid reliably finds the matching record regardless of how its
         trailing description differs from this label's.
       - '<accession> | <species_name>' (bigviralindex-rvdbc coordinate index): grouped by
-        species_name, as before.
+        species_name, as before. In a coordinate index the label also carries the matched
+        coordinate window (possibly more than one, see COORD_SUFFIX_RE); those are stripped
+        so every window of a species lands in the same bucket rather than its own.
       - a bare '<accession> <description>' (no taxid, no ' | ' separator): grouped by
         accession, one bucket per reference sequence.
     Returns None if the label matches none of these shapes.
@@ -32,7 +40,7 @@ def parse_label(label):
         return taxid, label, taxid
     if " | " in label:
         accession, _, species_name = label.partition(" | ")
-        return species_name, label, accession
+        return COORD_SUFFIX_RE.sub("", species_name), label, accession
     if " " in label:
         accession, _, _rest = label.partition(" ")
         return accession, label, accession
