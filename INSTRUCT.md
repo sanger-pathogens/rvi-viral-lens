@@ -28,6 +28,17 @@ Two sibling repos under the same parent directory (the parent itself is not a gi
   as read-only reference; don't need to change it. It's not a copy for this task, it's the
   actual sibling repo, so `git log`/`git show`/`git diff` against it directly.
 
+  **On the farm it is NOT next to `viral-lens/`.** There are ~15 checkouts, on different
+  branches, under
+  `/lustre/scratch126/pam/projects/rvidata/personal/eu1/rvi-viral-metagenomics/*/rvi-viral-metagenomics-pipeline`.
+  They differ in what they contain, so pick deliberately:
+  `metagraph-workflow/` (branch `main`) is the richest — it has `msweep.nf`,
+  `metagraph_align.nf` and `metagraph_map_qc.nf` together, and is what the Themisto2 port
+  was taken from. `broad-pipeline/` (`feature/assisted-assembly-genomad-bins`) has
+  *dropped* `VIRAL_MSWEEP`. `msweep-map-sourmash-ref/` shows `VIRAL_MSWEEP` actually
+  invoked from `main.nf`. Checking these branches is genuinely useful for seeing how
+  something was implemented upstream — the user asked for it explicitly.
+
 Both have their own `rvi_toolbox/` git submodule, but pointed at **two different, diverged
 forks** (this matters a lot, see below):
 
@@ -104,6 +115,14 @@ Reference data, all verified present:
 | `--genomad_db` | `/data/pam/software/genomad/genomad_db/genomad_db` |
 | `--checkv_db` | `/data/pam/software/ViWrap/CheckV_db/` |
 | `--vcontact3_db_path` | `/data/pam/software/vcontact3/` (holds `v232`, `v236`; default version is now 236) |
+
+Working run directories (launch scripts, logs, outputs, LSF driver output) live at
+`/lustre/scratch126/pam/projects/rvidata/personal/eu1/pipeline-integration/nf_runs/`:
+`run1/` (assembly lane) and `run2_seqindex/` (Themisto2 lane). Each has a `launch.sh`
+that is the whole reproducible invocation — read it first, then
+`bsub -q normal -n 2 -M 8000 -R "select[mem>8000] rusage[mem=8000]" -o driver.out bash launch.sh`.
+Run the nextflow driver itself under `bsub` too; the user asked for real runs on LSF, not
+local. Cheap `-preview` DAG checks locally are fine.
 
 Traps that cost real time, so you don't repeat them:
 
@@ -236,15 +255,42 @@ a human if the call isn't obvious): does `viral-lens/rvi_toolbox` start tracking
 viral-lens-owned files (as commit `c545c24` did) until the forks are reconciled someday
 separately? Whichever way, be consistent with whatever the assembly lane already did.
 
-### 3. Build the "map reads to sequence indexes" lane
+### 3. Build the "map reads to sequence indexes" lane — Themisto2 DONE, Metagraph outstanding
 
 Per the route map (`docs/nf-metro/route_map.mmd`, section `seq_index_mapping`): three
-methods converging on one QC Mapping step, feeding the already-built
-`GENERATE_MAPPING_REPORT.nf`.
+methods converging on one QC Mapping step, feeding `GENERATE_MAPPING_REPORT.nf` — which
+is now actually wired and running, no longer an orphan.
 
-- **Pseudoalign via Themisto2**: `VIRAL_MSWEEP` (`rvi_toolbox/subworkflows/msweep.nf` in
-  `rvi-viral-metagenomics-pipeline`) — exists and runs today, port the same way commit
-  `c545c24` ported the assembly lane.
+- **Pseudoalign via Themisto2 — DONE.** `VIRAL_MSWEEP` + `MSWEEP_MAP_QC` are ported as
+  viral-lens-owned files (`workflows/VIRAL_MSWEEP.nf`, `workflows/MSWEEP_MAP_QC.nf`,
+  `modules/{themisto2,msweep,cleanup,reference_subset}.nf`,
+  `bin/{select_reference_records,aggregate_species_coverage}.py`), wired into `main.nf`,
+  and **verified end to end on LSF**: THEMISTO_PSEUDOALIGN → MSWEEP → MSWEEP_MAP_QC →
+  GENERATE_MAPPING_REPORT all green, with mSWEEP calling *Betacoronavirus pandemicum* at
+  0.999 on a SARS-CoV-2 sample and map-QC confirming it at 29.8% breadth.
+
+  Gated by **two** flags, both default `false`: `--do_sequence_index` (lane master
+  switch) and `--run_msweep` (this method). One boolean per method, so the Metagraph
+  options below can be enabled independently rather than fighting over a single
+  method string.
+
+  Reference-data defaults are **corrected, not copied** — `rvi_toolbox`'s
+  `msweep.config` points at flat paths under `viromeindex/` that no longer exist (the
+  index now lives under a versioned `1.0/` directory), and its `msweep_map_qc.config`
+  leaves `msweep_map_reference_fasta` empty ("path TBD"). Now:
+
+  | param | value |
+  |---|---|
+  | `msweep_themisto_index` | `/data/pam/software/themisto2/viromeindex/1.0/rvdb_clustered_virome.thm2` |
+  | `msweep_ref_groups` | `/data/pam/software/themisto2/viromeindex/1.0/rvdb_clustered_virome_species_labels.txt` |
+  | `msweep_map_reference_fasta` | `/data/pam/software/themisto2/viromeindex/1.0/data/C-RVDBv32.0.fasta` |
+
+  That FASTA must stay **positionally aligned** with the labels file (record N == line N);
+  both currently hold exactly 1321608 entries. If you swap either, re-check that count.
+
+  `THEMISTO_PSEUDOALIGN`'s memory was cut from the upstream `100.GB * task.attempt` to
+  `25.GB * task.attempt` at the user's request — **apply the same to Metagraph when you
+  port it.** A broader request-vs-actual audit across every module is wanted later.
 - **Sequence-to-graph alignment via Metagraph**: `VIRAL_METAGRAPH_ALIGN`
   (`subworkflows/metagraph_align.nf` on `eu1/rvi_toolbox.git`, see above) +
   `METAGRAPH_MAP_QC` (`subworkflows/metagraph_map_qc.nf`). Depends on resolving item 2
@@ -260,10 +306,16 @@ methods converging on one QC Mapping step, feeding the already-built
 - **QC Mapping**: reuse `MSWEEP_MAP_QC` (msweep path) / `METAGRAPH_MAP_QC` (metagraph
   paths) as-is; don't invent a new unified QC step unless there's a concrete reason to.
 
-Once this lane exists, wire `GENERATE_MAPPING_REPORT` into `main.nf` the same way
-`GENERATE_ASSEMBLY_REPORT` is wired (see `main.nf`'s `if (params.do_assembly) { ... }`
-block as the template — same `meta.plus()` sample-level counting pattern, same
-`publish_lane_json` reuse).
+`GENERATE_MAPPING_REPORT` is already wired (see `main.nf`'s
+`if (params.do_sequence_index && params.run_msweep) { ... }` block). When you add a
+Metagraph method, feed its per-sample counts into the same `mapping_report_prep_ch`
+rather than building a second report path. The two helpers that populate that meta,
+`count_msweep_abundances()` / `count_msweep_map_qc()`, are at the bottom of `main.nf`
+beside the assembly ones.
+
+Note the `remainder: true` on that block's `join`: `MSWEEP_MAP_QC` emits optional
+outputs, so a sample with nothing above `msweep_map_min_abundance` produces no QC table
+and would otherwise vanish from the report entirely. `EMPTY_MAP_QC_COUNTS` fills it in.
 
 ### 4. Build the abundance estimation lane
 
