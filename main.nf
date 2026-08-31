@@ -15,7 +15,7 @@ include {SCOV2_SUBTYPING} from './workflows/SCOV2_SUBTYPING.nf'
 include {GENERATE_CLASSIFICATION_REPORT} from './workflows/GENERATE_CLASSIFICATION_REPORT.nf'
 include {RUN_NEXTCLADE} from './workflows/RUN_NEXTCLADE.nf'
 include {publish_consensus_files as publish_aln_files; publish_consensus_files as publish_nc_files; publish_consensus_files as publish_per_sample_json} from './modules/publish_lite.nf'
-include {publish_run_files; publish_run_files as publish_assembly_run_files} from './modules/publish_lite.nf'
+include {publish_run_files; publish_run_files as publish_assembly_run_files; publish_run_files as publish_mapping_run_files} from './modules/publish_lite.nf'
 
 // --- De novo assembly + viral binning (rvi_integration_1) --------------------
 // Ported from rvi-viral-metagenomics-pipeline/main.nf, wiring unchanged (see
@@ -28,7 +28,11 @@ include {VRHYME_BIN} from './workflows/VRHYME_BIN.nf'
 include {CHECKV_QC} from './workflows/CHECKV_QC.nf'
 include {VCONTACT3_RUN} from './workflows/VCONTACT3_RUN.nf'
 include {GENERATE_ASSEMBLY_REPORT} from './workflows/GENERATE_ASSEMBLY_REPORT.nf'
-include {publish_lane_json} from './modules/publish_lane_report.nf'
+include {publish_lane_json; publish_lane_json as publish_mapping_lane_json} from './modules/publish_lane_report.nf'
+
+// -- map reads to sequence indexes (rvi_integration_1)
+include {VIRAL_MSWEEP} from './workflows/VIRAL_MSWEEP.nf'
+include {GENERATE_MAPPING_REPORT} from './workflows/GENERATE_MAPPING_REPORT.nf'
 // GENERATE_MAPPING_REPORT / GENERATE_ABUNDANCE_REPORT already exist
 // (workflows/GENERATE_MAPPING_REPORT.nf, GENERATE_ABUNDANCE_REPORT.nf) and are
 // covered by their own nf-test workflow tests, but aren't wired in below yet:
@@ -298,6 +302,39 @@ workflow {
         publish_assembly_run_files(GENERATE_ASSEMBLY_REPORT.out.publish_run_level_summaries_ch)
     }
 
+    // === 8 - Map reads to sequence indexes (rvi_integration_1, opt-in) ===
+    // Themisto2 pseudoalignment + mSWEEP abundance, then breadth-of-coverage
+    // validation of the low-abundance calls. Runs off the same preprocessed reads
+    // the assembly lane uses, in parallel with it -- not downstream of it.
+    if (params.do_sequence_index) {
+        VIRAL_MSWEEP(preprocessed_3tuple_ch)
+
+        msweep_counts_ch = VIRAL_MSWEEP.out.abundances
+            .map { meta, abundances, _probs ->
+                [meta.id, meta, count_msweep_abundances(abundances)]
+            }
+
+        // map_qc drops samples with nothing above msweep_map_min_abundance (the
+        // MSWEEP_MAP_QC processes emit optional outputs), so join on the remainder
+        // rather than losing those samples from the report entirely.
+        mapqc_counts_ch = VIRAL_MSWEEP.out.map_qc
+            .map { meta, qc_tsv -> [meta.id, count_msweep_map_qc(qc_tsv)] }
+
+        msweep_counts_ch
+            .join(mapqc_counts_ch, remainder: true)
+            .map { id, meta, m_counts, qc_counts ->
+                def new_meta = meta + m_counts + (qc_counts ?: EMPTY_MAP_QC_COUNTS)
+                [id, new_meta]
+            }
+            .set { mapping_report_prep_ch }
+
+        GENERATE_MAPPING_REPORT(mapping_report_prep_ch)
+
+        // PUBLISH (mapping lane)
+        publish_mapping_lane_json(GENERATE_MAPPING_REPORT.out.publish_seq_level_ch)
+        publish_mapping_run_files(GENERATE_MAPPING_REPORT.out.publish_run_level_summaries_ch)
+    }
+
     // PUBLISH
     publish_aln_files(aln_publish_ch)
     publish_nc_files(publish_nextclade_outputs_ch)
@@ -462,6 +499,62 @@ def count_genomad_summary(tsv) {
         }
     }
     return [genomad_n_scaffolds: n_total, genomad_n_eligible: n_eligible]
+}
+
+// Default map-QC counts for a sample MSWEEP_MAP_QC produced no table for (nothing
+// above msweep_map_min_abundance), so every sample still gets a report row.
+EMPTY_MAP_QC_COUNTS = [mapqc_n_species: 0, mapqc_max_breadth_pct: 0.0]
+
+def count_msweep_abundances(txt) {
+    // <sample>_mSWEEP_abundances.txt: "<label>\t<relative_abundance>", '#'-prefixed and
+    // non-numeric-second-column lines skipped -- same rule bin/select_reference_records.py
+    // applies in parse_abundances(), so these counts describe the same set of groups the
+    // downstream map-QC step actually considered.
+    if (txt == null || !txt.exists()) {
+        return [msweep_n_groups: 0, msweep_top_group: '', msweep_top_abundance: 0.0]
+    }
+    def rows = []
+    txt.readLines().each { line ->
+        def trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) return
+        def cols = trimmed.split('\t')
+        if (cols.size() < 2) return
+        try {
+            rows << [cols[0], cols[1] as Double]
+        } catch (NumberFormatException ignored) {
+            // header or malformed row -- skipped, as parse_abundances does
+        }
+    }
+    def above = rows.findAll { row -> row[1] >= params.msweep_map_min_abundance }
+    if (!rows) {
+        return [msweep_n_groups: 0, msweep_top_group: '', msweep_top_abundance: 0.0]
+    }
+    def top = rows.max { row -> row[1] }
+    return [
+        msweep_n_groups:      above.size(),
+        msweep_top_group:     top[0],
+        msweep_top_abundance: top[1]
+    ]
+}
+
+def count_msweep_map_qc(tsv) {
+    // <sample>_msweep_map_qc.tsv, written by bin/aggregate_species_coverage.py:
+    // sample_id, species_label, relative_abundance, reference_length, query_length,
+    // covered_bases, breadth_pct, mean_depth, meanbaseq, meanmapq, reads_mapped
+    if (tsv == null || !tsv.exists()) return EMPTY_MAP_QC_COUNTS
+    def lines = tsv.readLines()
+    if (lines.size() < 2) return EMPTY_MAP_QC_COUNTS
+    def header = lines[0].split('\t')
+    def breadth_idx = header.findIndexOf { String col -> col == 'breadth_pct' }
+    def breadths = lines[1..-1].collect { line ->
+        def cols = line.split('\t')
+        if (breadth_idx < 0 || breadth_idx >= cols.size()) return 0.0
+        try { return cols[breadth_idx] as Double } catch (NumberFormatException ignored) { return 0.0 }
+    }
+    return [
+        mapqc_n_species:       lines.size() - 1,
+        mapqc_max_breadth_pct: breadths ? breadths.max() : 0.0
+    ]
 }
 
 def count_vrhyme_membership(tsv) {

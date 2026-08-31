@@ -6,7 +6,7 @@
 // aggregate_species_coverage.py joins these straight through to one row per species —
 // no more rolling up multiple sequences per label.
 
-params.script_src_path = "${projectDir}/rvi_toolbox/bin/"
+params.script_src_path = "${projectDir}/bin/"
 
 process SAMTOOLS_COVERAGE {
     tag "${meta.id}"

@@ -170,6 +170,47 @@
     "nextclade_index_json": {
       "type": "string"
     },
+    "do_sequence_index": {
+      "type": "boolean",
+      "default": false
+    },
+    "sequence_index_method": {
+      "type": "string",
+      "default": "themisto2",
+      "enum": ["themisto2"]
+    },
+    "msweep_themisto_index": {
+      "type": "string",
+      "default": "/data/pam/software/themisto2/viromeindex/1.0/rvdb_clustered_virome.thm2"
+    },
+    "msweep_ref_groups": {
+      "type": "string",
+      "default": "/data/pam/software/themisto2/viromeindex/1.0/rvdb_clustered_virome_species_labels.txt"
+    },
+    "msweep_subsample_limit": {
+      "type": "integer",
+      "default": 1000000
+    },
+    "cleanup_intermediate_files_msweep": {
+      "type": "boolean",
+      "default": false
+    },
+    "msweep_map_min_abundance": {
+      "type": "number",
+      "default": 0.001
+    },
+    "msweep_map_reference_fasta": {
+      "type": "string",
+      "default": "/data/pam/software/themisto2/viromeindex/1.0/data/C-RVDBv32.0.fasta"
+    },
+    "msweep_map_bowtie_threads": {
+      "type": "integer",
+      "default": 4
+    },
+    "msweep_map_reference_seed": {
+      "type": "integer",
+      "default": 12345
+    },
     "do_assembly": {
       "type": "boolean",
       "default": false
