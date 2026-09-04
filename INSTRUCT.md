@@ -257,11 +257,22 @@ labels), so they **bypass `check_max`** and `sanger_standard`'s `max_time = 6.h`
 
 ### Reproducing
 
-`nf_runs/` holds one directory per configuration (`regress`, `mg_align`, `mg_query`,
-`abund_k2b`, `abund_est`, `scrub_multi`, `assembly_multi`), plus `env.sh`,
-`launch_generic.sh` (single sample) and `launch_multi.sh` (3 samples, with a control),
-`one_sample_manifest.csv`, `multi_sample_manifest.csv` and `scrub_plate_map.csv`.
-Submit with `RUN_NAME=<x> EXTRA_ARGS="<flags>" bsub ... bash launch_generic.sh`.
+`nf_runs/` holds one directory per configuration, each with the `driver.out` its run
+produced: `regress`, `mg_align`, `mg_query`, `abund_k2b`, `abund_est`, `scrub_multi`,
+`assembly_multi`, `mixed_mgquery` (plus `run1`/`run2_seqindex` from the first round).
+
+Three launchers, all reading `RUN_NAME` and `EXTRA_ARGS` from the environment, all
+sourcing `env.sh`:
+
+| launcher | input | manifest |
+|---|---|---|
+| `launch_generic.sh` | 1 sample, 10k reads | `one_sample_manifest.csv` |
+| `launch_multi.sh` | 3 samples incl. a control | `multi_sample_manifest.csv` + `scrub_plate_map.csv` |
+| `launch_mixed.sh` | 2 samples, real depth, via MIXED_INPUT | `two_sample_fixed.csv` |
+
+Submit with
+`RUN_NAME=<x> EXTRA_ARGS="<flags>" bsub -q normal -n 2 -M 8000 -R "select[mem>8000] rusage[mem=8000]" -env "all" -o <run>/driver.out bash <launcher>`.
+The `-env "all"` matters: without it neither variable reaches the job.
 
 Two traps that cost time, both mine, both avoidable:
 
