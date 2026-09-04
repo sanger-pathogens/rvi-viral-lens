@@ -1,0 +1,62 @@
+%%metro style: dark
+%%metro legend: bl
+%%metro center_ports: true
+%%metro compact_offsets: true
+%%metro animate: true
+%%metro file: reads_in | FASTQ | Host-depleted, trimmed reads
+%%metro line: assembly | Every scaffold | #756bb1
+%%metro line: small_scaffolds | Small scaffolds bypass (under 2000 bp) | #f59e0b
+%%metro line: outputs | Tool outputs (reference only) | #94a3b8
+%%metro off_track: reads_in, genomad_notes, vrhyme_notes, checkv_notes, vcontact3_notes, genomad_annotate_notes
+
+graph LR
+    subgraph de_novo_assembly [De novo assembly]
+        %%metro entry: left | assembly
+        %%metro exit: right | assembly, small_scaffolds
+        %%metro process: metaspades | METASPADES
+        %%metro process: genomad | GENOMAD
+        reads_in[ ]
+        metaspades[metaSPAdes]
+        genomad[geNomad classify]
+        genomad_notes[Classification: viral or plasmid\nTaxonomic assignment - family level]
+        reads_in -->|assembly| metaspades
+        metaspades -->|assembly| genomad
+        genomad -->|outputs| genomad_notes
+    end
+
+    subgraph viral_binning [Viral binning]
+        %%metro entry: left | assembly, small_scaffolds
+        %%metro exit: right | assembly, small_scaffolds
+        %%metro process: vrhyme | VRHYME
+        vrhyme[vRhyme]
+        small_scaffolds[Small scaffolds\nunder 2000 bp - skip vRhyme]
+        vrhyme_notes[vMAGs: groups of viral contigs based on\nsequence features + read coverage patterns]
+        genomad -->|small_scaffolds| small_scaffolds
+        genomad -->|assembly| vrhyme
+        vrhyme -->|outputs| vrhyme_notes
+    end
+
+    subgraph vmag_qc [vMAG QC]
+        %%metro entry: left | assembly, small_scaffolds
+        %%metro exit: right | assembly, small_scaffolds
+        %%metro process: checkv | CHECKV
+        checkv[CheckV QC]
+        checkv_notes[Genome completeness estimate\nClosed genome predictions]
+        vrhyme -->|assembly| checkv
+        small_scaffolds -->|small_scaffolds| checkv
+        checkv -->|outputs| checkv_notes
+    end
+
+    subgraph annotations [Annotations]
+        %%metro entry: left | assembly, small_scaffolds
+        %%metro process: genomad_annotate | GENOMAD
+        %%metro process: vcontact3 | VCONTACT3
+        genomad_annotate[geNomad - gene annotations]
+        vcontact3[vContact3 - hierarchical genome clustering]
+        genomad_annotate_notes[Functional annotation of genes]
+        vcontact3_notes[Taxonomic assignment\nBetween-genome similarity network]
+        checkv -->|assembly,small_scaffolds| genomad_annotate
+        genomad_annotate -->|assembly| vcontact3
+        genomad_annotate -->|outputs| genomad_annotate_notes
+        vcontact3 -->|outputs| vcontact3_notes
+    end

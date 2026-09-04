@@ -112,3 +112,60 @@ existing map-to-taxid → consensus path), and three proposed additions lifted f
 label ends in "`- decision <letter>`" mark a spot the map can show the shape of but can't
 resolve on its own; those are tracked separately, not duplicated here since they'll drift
 out of date the moment they're decided.
+
+## Second map: assembly / viral binning / vMAG QC / annotations detail
+
+`assembly_binning_route_map.mmd` / `.svg` zooms into four stages that need per-tool output
+documentation: **De novo assembly** (metaSPAdes → geNomad classify), **Viral binning**
+(vRhyme), **vMAG QC** (CheckV), and **Annotations** (geNomad gene-annotation pass →
+vContact3). Three lines:
+- `assembly` (purple) — every scaffold, start to end.
+- `small_scaffolds` (amber) — the <2000 bp bypass: geNomad classify → small scaffolds →
+  CheckV → geNomad gene annotation, then it stops (see below).
+- `outputs` (slate) — a lighter, dead-end line connecting each tool to a detail box
+  listing what it produces: geNomad classify's viral-or-plasmid call and family-level
+  taxonomy; vRhyme's vMAGs; CheckV's completeness estimate and closed-genome predictions;
+  geNomad's functional gene annotation; vContact3's taxonomy and similarity network.
+
+Those detail boxes are marked `off_track` so the layout lifts them clear of the main
+trunk instead of squeezing them into it, and their text is recoloured slate (matching the
+`outputs` line) via `colour_output_notes.py` — see **Recolouring output-detail text**
+below, since nf-metro has no per-station text-colour directive.
+
+The map encodes two forks by size, both on the same threshold:
+- After geNomad classify: scaffolds ≥2000 bp go through vRhyme (grouped into vMAGs),
+  while scaffolds under 2000 bp ("small scaffolds") skip vRhyme — both paths rejoin at
+  CheckV in the vMAG QC stage.
+- After CheckV, both paths reach the geNomad gene-annotation pass in Annotations, but
+  **only the `assembly` line continues on to vContact3** — small scaffolds get gene
+  annotations but are not clustered by vContact3, so that station is where the
+  `small_scaffolds` line ends.
+
+geNomad appears twice by design: once early (classification + family-level taxonomy,
+station `genomad`) and again in Annotations (gene annotation, station `genomad_annotate`,
+placed *before* vContact3 so the small-scaffolds line can reach it without entering
+vContact3).
+
+Animated balls are baked in (`%%metro animate: true` in the header) rather than passed
+as a render flag, so every render of this file shows them by default.
+
+Note on a layout quirk: when geNomad classify fans out to two stations in the next
+section (`small_scaffolds` and `vrhyme`), the *declaration order* of those two edges
+matters — declaring `small_scaffolds` before `vrhyme` avoids a Tier-A layout-invariant
+warning (`_guard_no_route_through_section`) that the other order triggers. If either
+edge order in `viral_binning` is changed later, re-run `nf-metro render --validate` to
+confirm the warning hasn't come back.
+
+## Recolouring output-detail text
+
+nf-metro renders every station label (tool name or output-detail box) in the same theme
+colour — there's no `%%metro` directive for per-station text colour. `colour_output_notes.py`
+patches a rendered SVG in place, giving every station whose id ends in `_notes` (this
+map's output-detail boxes) the `outputs` line's colour instead, via a CSS override on
+`text.nf-metro-station-label[data-station-id$="_notes"]` inserted after `<defs>`. Run it
+right after every render of this file:
+
+```bash
+nf-metro render assembly_binning_route_map.mmd -o assembly_binning_route_map.svg --format svg --embed-font --validate
+python3 colour_output_notes.py assembly_binning_route_map.svg
+```

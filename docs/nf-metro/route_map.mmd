@@ -1,9 +1,9 @@
-%%metro title: viral-lens (post rvi_integration_1, envisioned)
 %%metro style: dark
 %%metro legend: bl
 %%metro line_order: definition
 %%metro center_ports: true
 %%metro compact_offsets: true
+%%metro animate: true
 %%metro file: manifest_in | CSV | Reads manifest
 %%metro file: ena_in | TXT | ENA accessions
 %%metro file: irods_in | CSV | iRODS lane manifest
@@ -32,24 +32,21 @@ graph LR
         %%metro exit: right | core, taxid, mapping, assembly, abundance
         %%metro process: mixed_input | MIXED_INPUT
         %%metro process: verify_fastq | VERIFY_FASTQ
-        %%metro process: subsample_iter | SUBSAMPLE_ITER
         %%metro process: trim | TRIMMOMATIC
         %%metro process: human_scrub | SCRUBBER
         manifest_in[ ]
         ena_in[ ]
         irods_in[ ]
-        mixed_input[MIXED_INPUT - decision A]
+        mixed_input[MIXED_INPUT]
         verify_fastq[VERIFY_FASTQ]
-        subsample_iter[SUBSAMPLE_ITER]
         trim[Trimmomatic]
         human_scrub[Human-read SCRUBBER]
         manifest_in -->|core| mixed_input
         ena_in -->|core| mixed_input
         irods_in -->|core| mixed_input
-        mixed_input -->|core| verify_fastq
-        verify_fastq -->|core| subsample_iter
-        subsample_iter -->|core| trim
-        trim -->|core| human_scrub
+        mixed_input -->|core,taxid,mapping,assembly,abundance| verify_fastq
+        verify_fastq -->|core,taxid,mapping,assembly,abundance| trim
+        trim -->|core,taxid,mapping,assembly,abundance| human_scrub
     end
 
     subgraph taxid_mapping [Map reads to taxid]
@@ -65,7 +62,7 @@ graph LR
 
     subgraph seq_index_mapping [Map reads to sequence indexes]
         %%metro entry: left | mapping
-        %%metro exit: right | core
+        %%metro exit: right | core, mapping
         %%metro process: pseudoalign_themisto | THEMISTO_PSEUDOALIGN
         %%metro process: pseudoalign_metagraph | METAGRAPH_QUERY
         %%metro process: seqgraph_align | METAGRAPH$
@@ -73,7 +70,7 @@ graph LR
         pseudoalign_themisto[Pseudoalign - Themisto2]
         pseudoalign_metagraph[Pseudoalign - Metagraph]
         seqgraph_align[Seq-to-graph align - Metagraph]
-        qc_mapping[QC Mapping]
+        qc_mapping[QC Mapping to finalise Species calls]
         human_scrub -->|mapping| pseudoalign_themisto
         human_scrub -->|mapping| pseudoalign_metagraph
         human_scrub -->|mapping| seqgraph_align
@@ -85,17 +82,20 @@ graph LR
     subgraph assembly [De novo assembly]
         %%metro entry: left | assembly
         %%metro exit: right | assembly
+        %%metro process: subsample_iter | SUBSAMPLE_ITER
         %%metro process: metaspades | METASPADES
         %%metro process: genomad | GENOMAD
+        subsample_iter[SUBSAMPLE_ITER]
         metaspades[metaSPAdes]
         genomad[geNomad classify]
-        human_scrub -->|assembly| metaspades
+        human_scrub -->|assembly| subsample_iter
+        subsample_iter -->|assembly| metaspades
         metaspades -->|assembly| genomad
     end
 
     subgraph viral_binning [Viral binning]
         %%metro entry: left | assembly
-        %%metro exit: right | core
+        %%metro exit: right | assembly
         %%metro process: vrhyme | VRHYME
         %%metro process: checkv | CHECKV
         %%metro process: vcontact3 | VCONTACT3
@@ -118,21 +118,24 @@ graph LR
         %%metro entry: left | abundance
         %%metro exit: right | core
         %%metro process: k2bracken | KRAKEN2BRACKEN
-        %%metro process: abund_est | ABUNDANCE_ESTIMATION
+        %%metro process: abund_est | INSTRAIN
+        %%metro process: msweep | MSWEEP
         %%metro process: scrub_decontam | SCRUB_DECONTAM
         plate_map_in[ ]
         k2bracken[Kraken2 + Bracken]
-        abund_est[ABUNDANCE_ESTIMATION]
+        abund_est[inStrain]
+        msweep[mSWEEP - decision E]
         scrub_decontam[SCRuB cross-contam - optional, decision D]
         human_scrub -->|abundance| k2bracken
         human_scrub -->|abundance| abund_est
+        human_scrub -->|abundance| msweep
         k2bracken -->|abundance| scrub_decontam
         plate_map_in -->|abundance| scrub_decontam
     end
 
     subgraph consensus [Consensus + lineage]
-        %%metro entry: left | taxid
-        %%metro exit: right | core
+        %%metro entry: left | taxid, mapping
+        %%metro exit: right | taxid, mapping
         %%metro process: generate_consensus | GENERATE_CONSENSUS
         %%metro process: nextclade | RUN_NEXTCLADE
         %%metro process: scov2 | SCOV2_SUBTYPING
@@ -140,12 +143,13 @@ graph LR
         nextclade[Nextclade]
         scov2[SCOV2_SUBTYPING]
         k2r -->|taxid| generate_consensus
-        generate_consensus -->|taxid| nextclade
-        generate_consensus -->|taxid| scov2
+        qc_mapping -->|mapping| generate_consensus
+        generate_consensus -->|taxid,mapping| nextclade
+        generate_consensus -->|taxid,mapping| scov2
     end
 
     subgraph reporting [Reporting]
-        %%metro entry: left | core
+        %%metro entry: left | core, taxid, mapping, assembly
         %%metro process: classification_report | GENERATE_CLASSIFICATION_REPORT
         %%metro process: mapping_report | MAPPING_REPORT
         %%metro process: assembly_report | ASSEMBLY_REPORT
@@ -158,14 +162,15 @@ graph LR
         mapping_report[Mapping report]
         assembly_report[Assembly report]
         abundance_report[Abundance report]
-        nextclade -->|core| classification_report
-        scov2 -->|core| classification_report
-        classification_report -->|core| taxid_report_out
+        nextclade -->|taxid,mapping| classification_report
+        scov2 -->|taxid,mapping| classification_report
+        classification_report -->|taxid| taxid_report_out
         qc_mapping -->|core| mapping_report
         mapping_report -->|core| mapping_out
-        vcontact3 -->|core| assembly_report
-        assembly_report -->|core| assembly_out
+        vcontact3 -->|assembly| assembly_report
+        assembly_report -->|assembly| assembly_out
         scrub_decontam -->|core| abundance_report
         abund_est -->|core| abundance_report
+        msweep -->|core| abundance_report
         abundance_report -->|core| abundance_out
     end
