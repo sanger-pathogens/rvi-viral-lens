@@ -576,7 +576,7 @@ farm-specific auth), then iRODS last (the most infrastructure-dependent of the t
 
 ---
 
-## `main.nf` split into `subworkflows/` — pure refactor, DSL-checked only, needs a farm re-run
+## `main.nf` split into `subworkflows/` — pure refactor, now FARM-VERIFIED as output-identical
 
 Same no-farm-access constraint as every round above. `main.nf` had grown to ~850 lines
 because four of the five rvi_integration_1 lanes (mapping/taxid, assembly, sequence-index,
@@ -621,14 +621,90 @@ every other lane, so all four lanes share exactly one upstream channel. Nextflow
 input coercion means this should be a no-op for `SORT_READS_BY_REF`, but call this out
 specifically if anything in the taxid/consensus lane behaves differently after a real run.
 
-**Verification so far, same caveat as every lane above: DSL-checked only, nothing executed
-for real.** `nextflow run main.nf --help` (no other args) was used to confirm the full
-include graph resolves and the script parses/runs up through real parameter validation
-(fails only on missing `--manifest`/`--db_path`, as expected) — this is weaker than the
-`-preview --do_assembly true ...` full-DAG check the working conventions below call for.
-**Run that full `-preview` check (all four lanes enabled) before trusting this refactor,
-then re-run whatever real farm command you were about to run anyway** — if this refactor
-introduced a real bug, a full real run is what will surface it, not another `-preview`.
+### Verification: DONE, farm-run and diffed against pre-refactor baselines
+
+This refactor has now been verified for real, not just DSL-checked. Two things were
+checked: that the moved code is textually the same logic, and that real runs produce the
+same output as runs from before the split.
+
+**Static check.** Each old inlined lane block in `fbe08d3:main.nf` was diffed against the
+corresponding `fde04c7:subworkflows/*.nf` file, normalizing indentation, blank lines and
+comments. All four lanes are identical in logic: the only per-lane body change is the
+`if (params.do_*) {` wrapper becoming the subworkflow header (gating moved to `main.nf`),
+plus the `count_*()` helpers moving along with their lane. Note the mapping lane's four
+`publish_*` calls only *look* new in such a diff — they sat at the bottom of the old
+top-level `workflow {}` (old lines 494-498), after the abundance block, not inside the
+mapping section. Beyond the documented `preprocessed_3tuple_ch` change, exactly two other
+real differences exist, both benign:
+
+- A `.toString()` was added to `sample_report_with_join_key_ch`'s join key. This looked
+  dangerous: `meta.id` is built by interpolation at `workflows/SORT_READS_BY_REF.nf:145`,
+  so it is a **GString**, and at the Groovy level `GString.equals(String)` is `false` with
+  a different `hashCode()` (`37 + s.hashCode()`), which would silently empty the join that
+  feeds `GENERATE_CLASSIFICATION_REPORT`. Probed directly on LSF
+  (`nf_runs/gstring_probe/probe.nf`, kept for future reference): **Nextflow normalizes
+  join keys**, and GString-keyed and String-keyed joins both match. Harmless — but don't
+  "tidy" GString/String key handling elsewhere assuming raw Groovy semantics apply.
+- `if (!params.do_scov2_subtyping == true)` became a proper `else`. Only differs when
+  `do_scov2_subtyping` is truthy but not `true`, where the old code left
+  `scov2_subtyped_ch` undefined. A fix, not a regression.
+
+**Also checked: the new-species consensus feature is genuinely inert when off.** Its
+consumer is gated on `params.call_consensus_for_new_species`, but `identified_species_ch`
+is built **unconditionally** in `MAPPING`, and its `.map{}` would throw on a
+header-with-no-rows pre-report. That case cannot arise: `bin/k2r_report.py` (lines
+~200-206) builds the frame from an empty dict when nothing is selected, so a zero-hit
+sample yields a 1-byte, column-less file that the `size() > 1` filter drops before the map
+ever sees it. If `k2r_report.py` is ever changed to emit real column headers in the empty
+case, that map needs a row-count guard.
+
+**Real farm runs.** All submitted under `bsub` (the user's standing rule: never run
+`main.nf` on the head node, not even `-preview`). Driver harness: `nf_runs/env.sh` plus the
+new `nf_runs/launch_case.sh`, which takes `RUN_NAME`/`MANIFEST`/`EXTRA_ARGS` and gives each
+run its own launchDir (concurrent runs sharing one launchDir collide on the session lock).
+
+| case | run dir | result |
+|---|---|---|
+| all four lanes + `--run_kraken2bracken`, `-preview -with-dag` | `nf_runs/preview_dag/` | `Success: true` |
+| `--do_preprocessing false`, single sample | `nf_runs/nopreproc/` | `Success: true`, 2m57s |
+| `--do_assembly --do_sequence_index --run_msweep`, single sample | `nf_runs/regress_post/` | `Success: true`, 16m57s |
+| `--do_assembly`, 3 samples | `nf_runs/assembly_multi_post/` | `Success: true`, 14m44s |
+
+The last two deliberately re-ran commands **parameter-identical** to the pre-refactor
+baselines already sitting in `nf_runs/regress/` and `nf_runs/assembly_multi/` (verified:
+the `genomad_db`/`checkv_db`/`vcontact3_db_path` values passed explicitly match the
+`nextflow.config` defaults those baselines picked up), so outputs could be diffed rather
+than merely exit-code-checked:
+
+- **`regress_post` vs `regress`**: identical file inventory (70/70), all 15 sequence
+  outputs byte-identical (8 per-taxid consensus FASTAs, metaspades contigs+scaffolds,
+  geNomad `virus.fna`/proteins, vRhyme bin `.fasta`/`.faa`/`.ffn`), 35/38 text reports
+  byte-identical. The 3 diffs: `mapping_run_summary.json` and `mapping_summary_report.csv`
+  differ *only* by the added `new_species_consensus_n: 0` column (the opt-in feature
+  contributing its count even when off — every pre-existing column matched exactly,
+  including `msweep_top_group`/`0.999273` and `mapqc_max_breadth_pct`/`29.7918`); and
+  `_mSWEEP_probs.tsv` differs on 6 of 7328 lines by a last-significant-digit float jitter
+  (`2.56821e-06` vs `2.56822e-06`) from mSWEEP's own EM solver — its `abundances` output,
+  which is what actually feeds the report, is identical.
+- **`assembly_multi_post` vs `assembly_multi`**: identical file inventory (142/142), all
+  sequence outputs byte-identical, `assembly_summary_report.csv` and
+  `assembly_run_summary.json` **identical**, 65/67 text files identical. The 2 diffs are
+  both tool-internal float jitter on the Zeptometrix sample (CheckV completeness
+  `93.06734216838821` vs `...18`, ~1e-14; geNomad virus score `0.9720` vs `0.9721` on one
+  365 bp scaffold) and neither perturbs any `count_*()` value.
+
+This multi-sample case is the one that exercises `VRHYME_BIN`'s cross-sample scaffold
+pooling (item 1's specific worry), and it came out clean.
+
+**Side benefit — item 1's open question about the assembly `count_*()` helpers is now
+answered.** They parse real geNomad/vRhyme/CheckV/vContact3 output correctly, across three
+samples including the awkward case (Zeptometrix: `vrhyme_n_bins=0` but
+`checkv_n_high_quality=1`, i.e. the unbinned-scaffold path):
+`genomad_n_scaffolds` 12/8/7, `genomad_n_eligible` 12/8/7, `vrhyme_n_bins` 1/1/0,
+`vrhyme_n_binned_scaffolds` 6/6/0, `vcontact3_n_genomes` 7/3/7. The
+`count_vcontact3_for_sample()` naive-`.split(',')` caveat still stands in principle — no
+embedded comma has turned up in real `final_assignments.csv` output yet.
+
 Also worth noting: `nextflow lint subworkflows/abundance.nf` crashes with an internal
 parser error (`Range [51, 52) out of bounds for length 51`), traced to a `try`/`catch`
 inside a `.each{}` closure sitting in a top-level `def` (copied verbatim from the original
@@ -850,16 +926,13 @@ single sample, and a bug elsewhere will be easier to isolate before that cross-s
 machinery is in play.
 
 Specifically check:
-- Do `main.nf`'s new `count_genomad_summary()` / `count_vrhyme_membership()` /
-  `count_checkv_quality()` / `count_vcontact3_for_sample()` helpers (now at the bottom of
-  `subworkflows/assembly.nf`, moved out of `main.nf` in the round described in "main.nf
-  split into subworkflows/" below)
-  actually parse the real TSV/CSV files correctly? They were written against column names
-  confirmed by reading `bin/vcontact3_prep.py`/`bin/vcontact3_postprocess.py`
-  (`seq_name`/`n_genes` in geNomad's `virus_summary.tsv`; `scaffold`/`bin` in vRhyme's
-  `membership.tsv`; `contig_id`/`checkv_quality` in CheckV's `quality_summary.tsv`;
-  `Genome`/`genus_prediction` in vContact3's `final_assignments.csv`) but never run against
-  real output.
+- ~~Do the `count_genomad_summary()` / `count_vrhyme_membership()` /
+  `count_checkv_quality()` / `count_vcontact3_for_sample()` helpers parse the real TSV/CSV
+  files correctly?~~ **ANSWERED — yes.** They live at the bottom of
+  `subworkflows/assembly.nf` now (moved out of `main.nf`), and the 3-sample
+  `nf_runs/assembly_multi_post/` run produced sane non-zero counts across all four,
+  including the unbinned-scaffold case. See "Verification: DONE" under "`main.nf` split
+  into `subworkflows/`" above for the actual numbers.
 - `count_vcontact3_for_sample()` does naive `.split(',')` CSV parsing (no quoting support).
   If any real column contains an embedded comma, this breaks — swap in a real CSV
   read if so.
