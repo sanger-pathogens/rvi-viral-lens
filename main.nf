@@ -46,15 +46,21 @@ workflow {
     --do_assembly              : ${params.do_assembly}
     --do_sequence_index        : ${params.do_sequence_index}
     --do_abundance             : ${params.do_abundance}
+    --default_error_strategy   : ${params.default_error_strategy}
+    --max_attempts             : ${params.max_attempts}
 
-  --> SORT_READS_BY_REF workflow parameters:
-    --manifest                   : ${params.manifest}
-    --db_path                    : ${params.db_path}
-    --db_library_fa_path         : ${params.db_library_fa_path}
-    --min_reads_for_taxid        : ${params.min_reads_for_taxid}
-    --k2r_max_total_reads_per_fq : ${params.k2r_max_total_reads_per_fq}
-
-  --> GENERATE_CONSENSUS workflow parameters:
+  --> MAPPING workflow parameters (subworkflows/mapping.nf: taxid mapping, consensus, Nextclade, SCOV2 subtyping):
+    --manifest                    : ${params.manifest}
+    --db_path                     : ${params.db_path}
+    --db_library_fa_path          : ${params.db_library_fa_path}
+    --min_reads_for_taxid         : ${params.min_reads_for_taxid}
+    --k2r_max_total_reads_per_fq  : ${params.k2r_max_total_reads_per_fq}
+    --mem_k2r_b0_offset           : ${params.mem_k2r_b0_offset}
+    --mem_k2r_b0                  : ${params.mem_k2r_b0}
+    --mem_k2r_b0_final            : ${params.mem_k2r_b0_final}
+    --mem_k2r_b1                  : ${params.mem_k2r_b1}
+    --mem_k2r_f1                  : ${params.mem_k2r_f1}
+    --mem_k2r_a2                  : ${params.mem_k2r_a2}
     --do_consensus_polishing      : ${params.do_consensus_polishing }
     --read_aligner                : ${params.read_aligner}
     --read_aligner_params         : ${params.read_aligner_params}
@@ -63,22 +69,35 @@ workflow {
     --ivar_initial_freq_threshold : ${params.ivar_initial_freq_threshold}
     --ivar_polish_min_depth       : ${params.ivar_polish_min_depth}
     --ivar_polish_freq_threshold  : ${params.ivar_polish_freq_threshold}
+    --scv2_keyword                : ${params.scv2_keyword}
+    --nextclade_index_json        : ${params.nextclade_index_json}
 
-  --> viral subtyping branching parameters:
-    --scv2_keyword             : ${params.scv2_keyword}
+  --> ASSEMBLY workflow parameters (subworkflows/assembly.nf; only used if --do_assembly true):
+    --genomad_db                  : ${params.genomad_db}
+    --checkv_db                   : ${params.checkv_db}
+    --vcontact3_db_path           : ${params.vcontact3_db_path}
+    --vcontact3_db_version        : ${params.vcontact3_db_version}
+    --metaspades_subsample_limit  : ${params.metaspades_subsample_limit}
+    --vrhyme_min_scaffold_length  : ${params.vrhyme_min_scaffold_length}
 
-  --> Nextclade parameters:
-    --nextclade_index_json      : ${params.nextclade_index_json}
+  --> SEQUENCE_INDEX workflow parameters (subworkflows/sequence_index.nf; only used if --do_sequence_index true):
+    --run_msweep                  : ${params.run_msweep}
+    --run_metagraph_align         : ${params.run_metagraph_align}
+    --run_metagraph_query         : ${params.run_metagraph_query}
+    --msweep_themisto_index       : ${params.msweep_themisto_index}
+    --msweep_ref_groups           : ${params.msweep_ref_groups}
+    --msweep_map_min_abundance    : ${params.msweep_map_min_abundance}
+    --metagraph_align_graph       : ${params.metagraph_align_graph}
+    --metagraph_align_annotation  : ${params.metagraph_align_annotation}
+    --metagraph_align_min_hits    : ${params.metagraph_align_min_hits}
 
-  --> resource management:
-    --default_error_strategy   : ${params.default_error_strategy}
-    --mem_k2r_b0_offset        : ${params.mem_k2r_b0_offset}
-    --mem_k2r_b0               : ${params.mem_k2r_b0}
-    --mem_k2r_b0_final         : ${params.mem_k2r_b0_final}
-    --mem_k2r_b1               : ${params.mem_k2r_b1}
-    --mem_k2r_f1               : ${params.mem_k2r_f1}
-    --mem_k2r_a2               : ${params.mem_k2r_a2}
-    --max_attempts             : ${params.max_attempts}
+  --> ABUNDANCE workflow parameters (subworkflows/abundance.nf; only used if --do_abundance true):
+    --run_kraken2bracken             : ${params.run_kraken2bracken}
+    --run_abundance_estimation       : ${params.run_abundance_estimation}
+    --run_scrub                      : ${params.run_scrub}
+    --kraken2bracken_kraken2_db      : ${params.kraken2bracken_kraken2_db}
+    --kraken2bracken_classification_level : ${params.kraken2bracken_classification_level}
+    --scrub_plate_map                : ${params.scrub_plate_map}
   ------------------------------------------
   Runtime data:
   -------------------------------------------
