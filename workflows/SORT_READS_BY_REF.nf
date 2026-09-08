@@ -170,6 +170,13 @@ workflow SORT_READS_BY_REF {
     emit:
         sample_taxid_ch // tuple (meta, reads, ref_files)
         sample_pre_report_ch // pre_report
+        // Per-sample pre-report file, one element per sample, emitted as soon as THAT
+        // sample's Kraken2/k2r processing finishes -- unlike sample_pre_report_ch above
+        // (already exploded into one row per sample+taxid via splitCsv), this lets a
+        // consumer read "every species this sample's Kraken2 pass found" without a
+        // groupTuple()/collect() that would have to wait for the whole run to finish
+        // (see subworkflows/mapping.nf's identified_species_ch).
+        raw_sample_pre_report_ch
 
 }
 

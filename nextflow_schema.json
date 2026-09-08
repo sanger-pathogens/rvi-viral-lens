@@ -261,6 +261,14 @@
       "type": "integer",
       "default": 4
     },
+    "call_consensus_for_new_species": {
+      "type": "boolean",
+      "default": false
+    },
+    "new_species_min_breadth_pct": {
+      "type": "number",
+      "default": 10.0
+    },
     "do_assembly": {
       "type": "boolean",
       "default": false

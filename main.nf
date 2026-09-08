@@ -169,8 +169,11 @@ workflow {
     }
 
     // === 4 - Map reads to sequence indexes (rvi_integration_1, opt-in) ===
+    // MAPPING.out.identified_species_ch is always available (MAPPING runs
+    // unconditionally above) -- SEQUENCE_INDEX uses it to tell which of its own species
+    // calls are genuinely new (see subworkflows/mapping.nf / sequence_index.nf).
     if (params.do_sequence_index) {
-        SEQUENCE_INDEX(preprocessed_3tuple_ch)
+        SEQUENCE_INDEX(preprocessed_3tuple_ch, MAPPING.out.identified_species_ch)
     }
 
     // === 5 - Abundance estimation (rvi_integration_1, opt-in) ===

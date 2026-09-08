@@ -14,10 +14,19 @@ include {VIRAL_METAGRAPH_QUERY} from '../workflows/VIRAL_METAGRAPH_QUERY.nf'
 include {GENERATE_MAPPING_REPORT} from '../workflows/GENERATE_MAPPING_REPORT.nf'
 include {publish_lane_json as publish_mapping_lane_json} from '../modules/publish_lane_report.nf'
 include {publish_run_files as publish_mapping_run_files} from '../modules/publish_lite.nf'
+// -- new-species consensus (rvi_integration_1, opt-in via --call_consensus_for_new_species):
+// when a sequence-index method calls a species above new_species_min_breadth_pct breadth
+// that MAPPING's Kraken2/SORT_READS_BY_REF did NOT already find for that sample, run it
+// through GENERATE_CONSENSUS too, same as any Kraken2-found taxid.
+include {INDEX_REFERENCE_FASTA; EXTRACT_REFERENCE_SUBSET} from '../modules/reference_subset.nf'
+include {SELECT_REFERENCE_RECORD_BY_NAME} from '../modules/select_reference_record_by_name.nf'
+include {GENERATE_CONSENSUS} from '../workflows/GENERATE_CONSENSUS.nf'
+include {publish_consensus_files as publish_new_species_consensus_files} from '../modules/publish_lite.nf'
 
 workflow SEQUENCE_INDEX {
     take:
-        preprocessed_3tuple_ch // tuple (meta, read1, read2)
+        preprocessed_3tuple_ch  // tuple (meta, read1, read2)
+        identified_species_ch   // [sample_id, [normalized_species_name, ...]] -- MAPPING.out.identified_species_ch
 
     main:
         sequence_index_sample_ch = preprocessed_3tuple_ch
@@ -76,6 +85,100 @@ workflow SEQUENCE_INDEX {
             metagraph_query_mapqc_counts_ch = Channel.empty()
         }
 
+        // -- New-species consensus (opt-in): species a sequence-index method called with
+        // real breadth of coverage that MAPPING's Kraken2 pass never found for that
+        // sample. See subworkflows/mapping.nf's identified_species_ch header comment for
+        // why this compares by free-text species name (the only thing Kraken2 taxids and
+        // the mSWEEP/Metagraph reference indexes' own labels have in common) and why the
+        // per-sample "already identified" set needs no batch-wide wait.
+        if (params.call_consensus_for_new_species) {
+            // Union every method's own already-computed map_qc breadth table, filtered to
+            // real hits (breadth_pct > new_species_min_breadth_pct). Each method's channel
+            // is already Channel.empty() when that method is off, so nothing extra to gate
+            // here. flatMap on an empty/no-candidate result emits nothing, same as today's
+            // other per-method count_*() helpers being called on an empty channel.
+            msweep_candidates_ch = VIRAL_MSWEEP.out.map_qc
+                .flatMap { meta, tsv -> parse_new_species_candidates(tsv, 'species_label').collect { name -> [meta.id, name] } }
+
+            metagraph_align_candidates_ch = VIRAL_METAGRAPH_ALIGN.out.map_qc
+                .flatMap { meta, tsv -> parse_new_species_candidates(tsv, 'species').collect { name -> [meta.id, name] } }
+
+            metagraph_query_candidates_ch = VIRAL_METAGRAPH_QUERY.out.map_qc
+                .flatMap { meta, tsv -> parse_new_species_candidates(tsv, 'species').collect { name -> [meta.id, name] } }
+
+            // .unique() streams -- it emits each non-duplicate immediately as it passes,
+            // it does not need to see the whole channel close first (unlike groupTuple()).
+            candidate_new_species_ch = msweep_candidates_ch
+                .mix(metagraph_align_candidates_ch, metagraph_query_candidates_ch)
+                .unique { sample_id, name -> [sample_id, name.trim().toLowerCase()] }
+
+            // Drop anything MAPPING already found for that sample. remainder:true so a
+            // sample with no MAPPING entry at all (e.g. every fastq filtered as empty
+            // upstream) still passes its candidates through -- treated as "nothing
+            // already identified", not as "drop everything".
+            candidate_new_species_ch
+                .map { sample_id, name -> [sample_id, name, name.trim().toLowerCase()] }
+                .join(identified_species_ch, remainder: true)
+                .filter { _sample_id, _name, name_norm, identified -> !(identified != null && identified.contains(name_norm)) }
+                .map { sample_id, name, _name_norm, _identified -> [sample_id, name] }
+                .set { new_species_ch }
+
+            // Build the synthetic per-(sample,species) meta GENERATE_CONSENSUS/its publish
+            // step need: taxid here is a filesystem-safe slug of the species name, NOT a
+            // real Kraken taxid -- there isn't one, these species were never Kraken2-sorted.
+            new_species_meta_ch = new_species_ch
+                .map { sample_id, species_name ->
+                    def slug = species_name.replaceAll(/[^A-Za-z0-9]+/, '_').replaceAll(/^_+|_+$/, '')
+                    def meta = [
+                        id: "${sample_id}.${slug}",
+                        sample_id: sample_id,
+                        taxid: slug,
+                        species_name: species_name,
+                        discovered_by: 'sequence_index',
+                    ]
+                    [meta, species_name]
+                }
+
+            // Same reference (msweep_ref_groups/msweep_map_reference_fasta) mSWEEP's own
+            // map_qc already indexes, reused regardless of run_msweep -- both params always
+            // have real defaults (see nextflow.config).
+            INDEX_REFERENCE_FASTA(Channel.fromPath(params.msweep_map_reference_fasta))
+            new_species_indexed_reference_ch = INDEX_REFERENCE_FASTA.out.fasta.first()
+            new_species_sequence_lengths_ch  = INDEX_REFERENCE_FASTA.out.lengths.first()
+            new_species_labels_ch            = Channel.fromPath(params.msweep_ref_groups).first()
+
+            SELECT_REFERENCE_RECORD_BY_NAME(new_species_meta_ch, new_species_labels_ch, new_species_sequence_lengths_ch)
+            EXTRACT_REFERENCE_SUBSET(SELECT_REFERENCE_RECORD_BY_NAME.out.record_id, new_species_indexed_reference_ch)
+
+            // Deliberately no cross-sample de-duplication here: a species found "new" in
+            // many samples gets its reference extracted once per sample rather than once
+            // per run -- keeps everything scoped per-sample (no batch-wide wait) at the
+            // cost of some redundant extraction work.
+            reads_by_sample_ch = preprocessed_3tuple_ch
+                .map { meta, r1, r2 -> [meta.id, r1, r2] } // meta.id == sample_id here (pre-lane)
+
+            EXTRACT_REFERENCE_SUBSET.out.subset_fasta
+                .map { meta, ref_fa -> [meta.sample_id, meta, ref_fa] }
+                .combine(reads_by_sample_ch, by: 0)
+                .map { _sample_id, meta, ref_fa, r1, r2 -> [meta, [r1, r2], ref_fa] }
+                .set { new_species_consensus_in_ch }
+
+            GENERATE_CONSENSUS(new_species_consensus_in_ch)
+
+            GENERATE_CONSENSUS.out.filtered_consensus_ch
+                .map { meta, bam, bam_idx, consensus, _qc_json -> [meta, [bam, bam_idx, consensus]] }
+                .set { new_species_aln_publish_ch }
+
+            publish_new_species_consensus_files(new_species_aln_publish_ch)
+
+            new_species_counts_ch = GENERATE_CONSENSUS.out.filtered_consensus_ch
+                .map { meta, _bam, _bam_idx, _consensus, _qc_json -> [meta.sample_id, 1] }
+                .groupTuple()
+                .map { sample_id, ones -> [sample_id, [new_species_consensus_n: ones.size()]] }
+        } else {
+            new_species_counts_ch = Channel.empty()
+        }
+
         sequence_index_sample_ch
             .join(msweep_counts_ch, remainder: true)
             .join(mapqc_counts_ch, remainder: true)
@@ -83,10 +186,12 @@ workflow SEQUENCE_INDEX {
             .join(metagraph_align_mapqc_counts_ch, remainder: true)
             .join(metagraph_query_counts_ch, remainder: true)
             .join(metagraph_query_mapqc_counts_ch, remainder: true)
-            .map { id, meta, m_counts, qc_counts, mga_counts, mga_qc_counts, mgq_counts, mgq_qc_counts ->
+            .join(new_species_counts_ch, remainder: true)
+            .map { id, meta, m_counts, qc_counts, mga_counts, mga_qc_counts, mgq_counts, mgq_qc_counts, ns_counts ->
                 def new_meta = meta + (m_counts ?: EMPTY_MSWEEP_COUNTS) + (qc_counts ?: EMPTY_MAP_QC_COUNTS) +
                     (mga_counts ?: EMPTY_METAGRAPH_ALIGN_COUNTS) + (mga_qc_counts ?: EMPTY_METAGRAPH_ALIGN_MAPQC_COUNTS) +
-                    (mgq_counts ?: EMPTY_METAGRAPH_QUERY_COUNTS) + (mgq_qc_counts ?: EMPTY_METAGRAPH_QUERY_MAPQC_COUNTS)
+                    (mgq_counts ?: EMPTY_METAGRAPH_QUERY_COUNTS) + (mgq_qc_counts ?: EMPTY_METAGRAPH_QUERY_MAPQC_COUNTS) +
+                    (ns_counts ?: EMPTY_NEW_SPECIES_COUNTS)
                 [id, new_meta]
             }
             .set { mapping_report_prep_ch }
@@ -113,6 +218,11 @@ EMPTY_METAGRAPH_ALIGN_COUNTS = [metagraph_align_n_species_considered: 0, metagra
 EMPTY_METAGRAPH_ALIGN_MAPQC_COUNTS = [metagraph_align_mapqc_n_species: 0, metagraph_align_mapqc_max_breadth_pct: 0.0]
 EMPTY_METAGRAPH_QUERY_COUNTS = [metagraph_query_n_species_considered: 0, metagraph_query_n_species_called: 0]
 EMPTY_METAGRAPH_QUERY_MAPQC_COUNTS = [metagraph_query_mapqc_n_species: 0, metagraph_query_mapqc_max_breadth_pct: 0.0]
+// New-species consensus (--call_consensus_for_new_species): how many species a
+// sequence-index method called, with real breadth, that MAPPING's Kraken2 pass didn't
+// already find for that sample -- 0 whenever the feature is off, or on but nothing new
+// was found for this sample.
+EMPTY_NEW_SPECIES_COUNTS = [new_species_consensus_n: 0]
 
 def empty_metagraph_counts(prefix) {
     return prefix == 'metagraph_align' ? EMPTY_METAGRAPH_ALIGN_COUNTS : EMPTY_METAGRAPH_QUERY_COUNTS
@@ -212,4 +322,31 @@ def count_msweep_map_qc(tsv) {
         mapqc_n_species:       lines.size() - 1,
         mapqc_max_breadth_pct: breadths ? breadths.max() : 0.0
     ]
+}
+
+def parse_new_species_candidates(tsv, species_col) {
+    // A method's own *_map_qc.tsv (msweep_map_qc.tsv: species_label; metagraph_map_qc.tsv,
+    // both align and query: species) -- one row per species that method already validated
+    // by mapping. Returns the species names (original case, for reference-record lookup)
+    // whose breadth_pct clears new_species_min_breadth_pct.
+    if (tsv == null || !tsv.exists()) return []
+    def lines = tsv.readLines()
+    if (lines.size() < 2) return []
+    def header = lines[0].split('\t')
+    def species_idx = header.findIndexOf { String col -> col == species_col }
+    def breadth_idx = header.findIndexOf { String col -> col == 'breadth_pct' }
+    if (species_idx < 0 || breadth_idx < 0) return []
+    def candidates = []
+    lines[1..-1].each { line ->
+        def cols = line.split('\t')
+        if (species_idx >= cols.size() || breadth_idx >= cols.size()) return
+        try {
+            if ((cols[breadth_idx] as Double) > params.new_species_min_breadth_pct) {
+                candidates << cols[species_idx]
+            }
+        } catch (NumberFormatException ignored) {
+            // header or malformed row -- skipped
+        }
+    }
+    return candidates
 }

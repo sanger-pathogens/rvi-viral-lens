@@ -728,6 +728,106 @@ up above that threshold, which no DSL/`-preview` check can exercise at all. The 
 current plan is to farm-test the assembly lane without this step first and add it back
 later only if a real run actually needs it.
 
+## SEQUENCE_INDEX -> MAPPING cross-lane: consensus for species Kraken2 missed — DSL-checked only, needs a real overlap/disagreement case to prove anything
+
+**Not farm-verified, and can't be meaningfully checked with `-preview`** — the entire
+point of this feature is behavior that only shows up when a real sample has a species
+Kraken2 misses but mSWEEP/Metagraph catch with real breadth. A DSL/`-preview` check only
+proves the wiring resolves, not that the logic is right. **Your first real run after
+pulling this should specifically include (or synthesize) a sample where Kraken2 and a
+sequence-index method disagree** — e.g. a species just below `min_reads_for_taxid` or
+outside the Kraken2 db, but present in the mSWEEP/Metagraph reference index with decent
+depth.
+
+**What it does**: when `--call_consensus_for_new_species true`, `SEQUENCE_INDEX` now also
+runs `GENERATE_CONSENSUS` (the same process `MAPPING` uses) for any species a
+sequence-index method (mSWEEP or either Metagraph method) calls with `breadth_pct` above
+`new_species_min_breadth_pct` (default 10.0) that `MAPPING`'s Kraken2/`SORT_READS_BY_REF`
+pass did **not** already find for that sample. Off by default — this is a new cross-lane
+dependency (`SEQUENCE_INDEX` now takes `MAPPING.out.identified_species_ch` as a second
+input).
+
+**Species-identity reconciliation**: Kraken2 taxids and the mSWEEP/Metagraph RVDB-index
+labels are unrelated numbering schemes with no shared numeric ID (confirmed: `ref_selected`
+in `bin/k2r_report.py`, `species_label`/`species` in `bin/aggregate_species_coverage.py`/
+`bin/call_metagraph_species.py` are all free-text ICTV/NCBI-style binomial names, not
+taxids). Comparison is by normalized (`.trim().toLowerCase()`) species-name text — the
+only thing they have in common today. If `metagraph_align_names_dmp` ever gets a real
+`names.dmp` (currently the `assets/NO_NAMES_DMP` placeholder), Metagraph's labels could
+start being taxid-derived, which wouldn't change what MAPPING emits but could change
+whether Metagraph's own species text still matches mSWEEP's/Kraken2's — worth a re-check
+if that param is ever populated for real.
+
+**Synchronization is per-sample, not batch-wide** — this was an explicit ask (confirmed
+with the user: "just the current sample finish is okay"). `workflows/SORT_READS_BY_REF.nf`
+now also emits `raw_sample_pre_report_ch` (the per-sample pre-report *file*, before it
+gets exploded via `.splitCsv()` into the existing `sample_pre_report_ch`). Reading that
+file directly in `subworkflows/mapping.nf` (`identified_species_ch`, plain
+`.readLines()`, same style as every `count_*()` helper elsewhere in this codebase) gives
+a per-sample "already identified" set with no `.groupTuple()`/`.collect()` — those
+operators can't emit a group until their *whole* upstream channel closes, which would
+mean waiting for Kraken2/k2r to finish for every sample in the run before any sample's
+new-species consensus could start. `.unique()` (used later to de-dupe candidate new
+species) doesn't have this problem — it streams, emitting each non-duplicate immediately.
+
+**New files**:
+- `bin/select_reference_record_by_name.py` + `modules/select_reference_record_by_name.nf`
+  (`SELECT_REFERENCE_RECORD_BY_NAME`): a trimmed sibling of
+  `bin/select_reference_records.py`/`SELECT_REFERENCE_RECORDS` (mSWEEP's own low-abundance
+  validation, `modules/reference_subset.nf`) — same "longest sequence for this label"
+  rule, minus the abundance-threshold gating (the caller already knows exactly which
+  species it wants). Reuses `INDEX_REFERENCE_FASTA`/`EXTRACT_REFERENCE_SUBSET` from
+  `modules/reference_subset.nf` unchanged, always against `msweep_ref_groups`/
+  `msweep_map_reference_fasta` regardless of whether `run_msweep` is on — those params
+  always have real defaults.
+
+**Deliberately no cross-sample de-duplication**: a species found "new" in many samples
+gets its reference extracted once *per sample*, not once per run — keeps everything
+scoped per-sample (matching the no-batch-wait decision above) at the cost of some
+redundant `seqkit`/extraction work if the same new species turns up across many samples.
+Revisit only if that redundancy proves to actually matter on a real multi-sample run.
+
+**Publish/report**: reuses `publish_consensus_files` (own `include ... as
+publish_new_species_consensus_files` alias) — lands at
+`${outdir}/${sample_id}/mapping/<slugified species name>/`, alongside real-Kraken2-taxid
+results. `meta.taxid` for these is a filesystem-safe slug of the species name, **not a
+real Kraken taxid** — confirmed acceptable with the user, since there isn't a real one
+(these species were never Kraken2-sorted). A `new_species_consensus_n` count feeds into
+the existing `mapping_report_prep_ch` join chain the same way every other sequence-index
+count does (`GENERATE_MAPPING_REPORT`/`write_lane_summary.py` are schema-free, no changes
+needed there).
+
+**Known, deliberately out-of-scope wrinkle**: `VIRAL_MSWEEP.nf`'s own map_qc validation
+is driven by mSWEEP's probabilistic abundance estimate (`SELECT_REFERENCE_RECORDS` keys
+off `MSWEEP.out.abundances`), unlike the Metagraph methods, which call species directly
+from raw pseudoalignment hit counts (`CALL_METAGRAPH_SPECIES`). The eventual intent
+(flagged by the user, not yet built) is to restructure this the same way — Themisto2
+pseudoalignment-hit-driven species calling, mSWEEP demoted to an optional add-on
+estimate — but that needs a new hit-count caller script (parsing Themisto2's raw
+pseudoalignment format, mirroring `bin/call_metagraph_species.py`) that doesn't exist
+anywhere: checked viral-lens's own history, `rvi-viral-metagenomics-pipeline`'s `main`,
+and its `feature_mGEMS`/`msweep_map_sourmash_ref` branches (and their `rvi_toolbox`
+submodule pins) — none of them do this; `feature_mGEMS` replaces map_qc with mGEMS
+read-binning instead (a different, unrelated approach), and `msweep_map_sourmash_ref`
+only changes *which* reference record gets picked (sourmash ANI vs. longest sequence),
+still triggered by mSWEEP's abundance output. **Decided out of scope for this feature** —
+this cross-lane consensus work deliberately uses today's mSWEEP-abundance-driven
+`map_qc` as its candidate source. If/when that Themisto2 restructuring happens, re-check
+this feature's mSWEEP-sourced candidates too.
+
+**Verification so far**: `nextflow run main.nf -preview --do_sequence_index true
+--run_msweep true --run_metagraph_align true --run_metagraph_query true
+--call_consensus_for_new_species true --manifest
+tests/test_data/test_manifests/test_input_manifest.csv --db_path
+tests/test_data/test_kraken_databases/minimal` — `Success: true`; confirmed via
+`-with-dag` (the live progress display truncates too aggressively to show every process
+name) that `SEQUENCE_INDEX:SELECT_REFERENCE_RECORD_BY_NAME`,
+`SEQUENCE_INDEX:INDEX_REFERENCE_FASTA`, `SEQUENCE_INDEX:EXTRACT_REFERENCE_SUBSET`, and the
+full `SEQUENCE_INDEX:GENERATE_CONSENSUS:*` process chain all appear correctly in the
+resolved DAG, alongside `MAPPING`'s own separate copy of the same `GENERATE_CONSENSUS`
+processes. **None of this has executed against real data or a real species
+disagreement** — the whole point of this feature is unverifiable without one.
+
 ## Your remaining work, roughly in priority/dependency order
 
 ### 1. Prove the assembly lane actually runs -- DONE, see above

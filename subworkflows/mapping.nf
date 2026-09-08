@@ -114,4 +114,32 @@ workflow MAPPING {
         publish_nc_files(publish_nextclade_outputs_ch)
         publish_per_sample_json(GENERATE_CLASSIFICATION_REPORT.out.publish_seq_level_ch)
         publish_run_files(GENERATE_CLASSIFICATION_REPORT.out.publish_run_level_summaries_ch)
+
+        // --- rvi_integration_1: per-sample "species already identified by MAPPING" ---
+        // Consumed by SEQUENCE_INDEX to decide which of its own species calls are
+        // genuinely new. Built straight off SORT_READS_BY_REF's raw per-sample
+        // pre-report FILE (one element per sample, available as soon as THAT sample's
+        // Kraken2/k2r pass finishes) rather than the exploded sample_pre_report_ch +
+        // groupTuple() -- groupTuple() can't emit a group until its whole upstream
+        // channel closes, which would mean waiting for every sample in the run, not
+        // just this one. ref_selected (bin/k2r_report.py's chosen reference's free-text
+        // name) is the only thing on the MAPPING side comparable to the sequence-index
+        // methods' species_label/species fields -- there's no shared numeric ID between
+        // Kraken2 taxids and the mSWEEP/Metagraph reference indexes' own labels.
+        SORT_READS_BY_REF.out.raw_sample_pre_report_ch
+            .filter { it -> it.size() > 1 } // mirror SORT_READS_BY_REF's own empty-file guard
+            .map { report_file ->
+                def lines = report_file.readLines()
+                def header = lines[0].split('\t')
+                def sample_id_idx = header.findIndexOf { String col -> col == 'sample_id' }
+                def ref_selected_idx = header.findIndexOf { String col -> col == 'ref_selected' }
+                def rows = lines[1..-1].collect { line -> line.split('\t') }
+                def sample_id = rows[0][sample_id_idx]
+                def species = rows.collect { row -> row[ref_selected_idx].trim().toLowerCase() }.unique()
+                [sample_id, species]
+            }
+            .set { identified_species_ch }
+
+    emit:
+        identified_species_ch // [sample_id, [normalized_species_name, ...]]
 }
