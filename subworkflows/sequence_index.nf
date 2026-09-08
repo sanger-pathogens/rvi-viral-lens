@@ -45,9 +45,15 @@ workflow SEQUENCE_INDEX {
             // below rather than losing those samples from the report entirely.
             mapqc_counts_ch = VIRAL_MSWEEP.out.map_qc
                 .map { meta, qc_tsv -> [meta.id, count_msweep_map_qc(qc_tsv)] }
+
+            // Kept as its own variable so the new-species block below can consume it
+            // without touching VIRAL_MSWEEP.out, which is undefined unless the
+            // subworkflow was actually invoked.
+            msweep_map_qc_ch = VIRAL_MSWEEP.out.map_qc
         } else {
             msweep_counts_ch = Channel.empty()
             mapqc_counts_ch = Channel.empty()
+            msweep_map_qc_ch = Channel.empty()
         }
 
         // -- Sequence-to-graph alignment via Metagraph (metagraph align), then its own
@@ -62,9 +68,12 @@ workflow SEQUENCE_INDEX {
             // reasoning as mSWEEP's map_qc above.
             metagraph_align_mapqc_counts_ch = VIRAL_METAGRAPH_ALIGN.out.map_qc
                 .map { meta, tsv -> [meta.id, count_metagraph_map_qc(tsv, 'metagraph_align')] }
+
+            metagraph_align_map_qc_ch = VIRAL_METAGRAPH_ALIGN.out.map_qc
         } else {
             metagraph_align_counts_ch = Channel.empty()
             metagraph_align_mapqc_counts_ch = Channel.empty()
+            metagraph_align_map_qc_ch = Channel.empty()
         }
 
         // -- Pseudoalignment via Metagraph (metagraph query --query-mode labels), same
@@ -80,9 +89,12 @@ workflow SEQUENCE_INDEX {
 
             metagraph_query_mapqc_counts_ch = VIRAL_METAGRAPH_QUERY.out.map_qc
                 .map { meta, tsv -> [meta.id, count_metagraph_map_qc(tsv, 'metagraph_query')] }
+
+            metagraph_query_map_qc_ch = VIRAL_METAGRAPH_QUERY.out.map_qc
         } else {
             metagraph_query_counts_ch = Channel.empty()
             metagraph_query_mapqc_counts_ch = Channel.empty()
+            metagraph_query_map_qc_ch = Channel.empty()
         }
 
         // -- New-species consensus (opt-in): species a sequence-index method called with
@@ -93,17 +105,20 @@ workflow SEQUENCE_INDEX {
         // per-sample "already identified" set needs no batch-wide wait.
         if (params.call_consensus_for_new_species) {
             // Union every method's own already-computed map_qc breadth table, filtered to
-            // real hits (breadth_pct > new_species_min_breadth_pct). Each method's channel
-            // is already Channel.empty() when that method is off, so nothing extra to gate
-            // here. flatMap on an empty/no-candidate result emits nothing, same as today's
-            // other per-method count_*() helpers being called on an empty channel.
-            msweep_candidates_ch = VIRAL_MSWEEP.out.map_qc
+            // real hits (breadth_pct > new_species_min_breadth_pct). These consume the
+            // *_map_qc_ch variables set in each method's if/else above, NOT
+            // VIRAL_*.out.map_qc directly: a subworkflow that was never invoked has no
+            // .out at all, so reaching for it aborts the run with "Access to
+            // 'VIRAL_METAGRAPH_ALIGN.out' is undefined" the moment this feature is enabled
+            // with any subset of the three methods. flatMap over an empty channel emits
+            // nothing, which is what "that method is off" should mean here.
+            msweep_candidates_ch = msweep_map_qc_ch
                 .flatMap { meta, tsv -> parse_new_species_candidates(tsv, 'species_label').collect { name -> [meta.id, name] } }
 
-            metagraph_align_candidates_ch = VIRAL_METAGRAPH_ALIGN.out.map_qc
+            metagraph_align_candidates_ch = metagraph_align_map_qc_ch
                 .flatMap { meta, tsv -> parse_new_species_candidates(tsv, 'species').collect { name -> [meta.id, name] } }
 
-            metagraph_query_candidates_ch = VIRAL_METAGRAPH_QUERY.out.map_qc
+            metagraph_query_candidates_ch = metagraph_query_map_qc_ch
                 .flatMap { meta, tsv -> parse_new_species_candidates(tsv, 'species').collect { name -> [meta.id, name] } }
 
             // .unique() streams -- it emits each non-duplicate immediately as it passes,

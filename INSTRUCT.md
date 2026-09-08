@@ -824,11 +824,69 @@ dependency (`SEQUENCE_INDEX` now takes `MAPPING.out.identified_species_ch` as a 
 input).
 
 **Species-identity reconciliation**: Kraken2 taxids and the mSWEEP/Metagraph RVDB-index
-labels are unrelated numbering schemes with no shared numeric ID (confirmed: `ref_selected`
-in `bin/k2r_report.py`, `species_label`/`species` in `bin/aggregate_species_coverage.py`/
-`bin/call_metagraph_species.py` are all free-text ICTV/NCBI-style binomial names, not
-taxids). Comparison is by normalized (`.trim().toLowerCase()`) species-name text — the
-only thing they have in common today. If `metagraph_align_names_dmp` ever gets a real
+labels are unrelated numbering schemes with no shared numeric ID, so comparison is by
+normalized (`.trim().toLowerCase()`) species-name text.
+
+**CORRECTED — the original version of this matched on the wrong column, and did so in
+every case.** The claim that used to sit here, that `ref_selected` "is the only thing on
+the MAPPING side comparable to the sequence-index methods' `species_label`/`species`
+fields", is false. `bin/k2r_report.py` writes *two* free-text name columns into the
+pre-report, at different ranks:
+
+| column | derived from | rank | example |
+|---|---|---|---|
+| `virus_name` | kraken2ref's `source_taxid` | **S** | `Betacoronavirus pandemicum` |
+| `ref_selected` | the selected reference taxid | S1/S2/S3 | `Severe acute respiratory syndrome coronavirus 2` |
+
+mSWEEP and Metagraph label the RVDB index with ICTV species binomials, i.e. `virus_name`'s
+vocabulary — never `ref_selected`'s. Matching on `ref_selected` alone therefore never
+matched *anything*: every species MAPPING had already found looked "new", so the feature
+called a redundant second consensus for it instead of a new-species one. Farm-proven on
+`nf_runs/newspecies_after/`'s sample, where mSWEEP calls *Betacoronavirus pandemicum* at
+29.79% breadth and MAPPING had already found it with 7297 reads under taxid 2697049.
+
+`virus_name` is reliably species rank, not incidentally so: kraken2ref decomposes
+species -> below-species by construction and its decomposed JSON carries the rank code in
+its own `source` field (`source = [12, 'S']`, `target = [13, 'S1']`,
+`path_as_taxids = [3418604, 2697049]` for that SARS-CoV-2 row). Checked across every
+`*_decomposed.json` from all runs to date: **68 of 68 reference selections have `source`
+rank `S`.**
+
+`identified_species_ch` now matches on the **union** of `virus_name` and `ref_selected`,
+not `virus_name` alone. That is deliberate: a sequence-index label that happens to match a
+strain-level reference Kraken2 already selected is also genuinely already covered, and
+adding entries to the "already identified" set can only ever suppress a candidate, never
+invent one.
+
+## New-species consensus: it also crashed unless ALL THREE methods were enabled
+
+Second, independent bug in the same feature, found the moment it was first run with a
+method subset. `subworkflows/sequence_index.nf`'s new-species block reached directly into
+`VIRAL_METAGRAPH_ALIGN.out.map_qc` / `VIRAL_METAGRAPH_QUERY.out.map_qc`, past the
+`if (params.run_*)` guards. A subworkflow that was never invoked has no `.out`, so
+`--call_consensus_for_new_species true --run_msweep true` (no Metagraph) aborted in 19
+seconds with:
+
+```
+Access to 'VIRAL_METAGRAPH_ALIGN.out' is undefined since the workflow
+'VIRAL_METAGRAPH_ALIGN' has not been invoked before accessing the output attribute
+```
+
+The block's own comment asserted the opposite — "Each method's channel is already
+`Channel.empty()` when that method is off, so nothing extra to gate here" — which
+conflated the per-method `*_counts_ch` variables (which *are* set to `Channel.empty()` in
+each `else`) with the subworkflow output accessor, which is not a channel at all until the
+subworkflow runs. **This is exactly why the feature's original `-preview` verification
+missed it: that check enabled all three methods at once**, the one combination where the
+bug is invisible. Fixed by capturing each method's `map_qc` into an
+`msweep_map_qc_ch`/`metagraph_align_map_qc_ch`/`metagraph_query_map_qc_ch` variable inside
+its own `if/else` (matching how the file already handles the counts channels) and having
+the new-species block consume those. Verified by `-preview` on both mSWEEP-only and
+metagraph-query-only (`nf_runs/preview_fix/`, `nf_runs/preview_fix_mgonly/`).
+
+**Lesson worth generalizing: when a feature is gated by N independent method flags, a
+single all-flags-on `-preview` is not coverage.** Check at least one single-method subset
+too — it is cheap and it is where `.out`-access bugs live. If `metagraph_align_names_dmp` ever gets a real
 `names.dmp` (currently the `assets/NO_NAMES_DMP` placeholder), Metagraph's labels could
 start being taxid-derived, which wouldn't change what MAPPING emits but could change
 whether Metagraph's own species text still matches mSWEEP's/Kraken2's — worth a re-check
