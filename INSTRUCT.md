@@ -99,6 +99,11 @@ exist yet. That's most of what's left.
 The assembly lane has been run for real on the farm and completes end to end
 (`Success: true`). Everything in this section is now established fact, not belief.
 
+A `VERIFY_FASTQ` + `SUBSAMPLE_ITER(initial_subsample_limit)` first-step was tried and then
+deliberately reverted (see "Assembly lane: VERIFY_FASTQ + initial-subsample step tried and
+reverted" further down) — the user wants to test the lane without it first. Don't
+re-add it without checking that section.
+
 ### Environment that actually works
 
 ```bash
@@ -571,6 +576,158 @@ farm-specific auth), then iRODS last (the most infrastructure-dependent of the t
 
 ---
 
+## `main.nf` split into `subworkflows/` — pure refactor, DSL-checked only, needs a farm re-run
+
+Same no-farm-access constraint as every round above. `main.nf` had grown to ~850 lines
+because four of the five rvi_integration_1 lanes (mapping/taxid, assembly, sequence-index,
+abundance) were inlined directly in its top-level `workflow { ... }` block, each dragging
+its own sample-level `count_*()` report helpers along as bottom-of-file `def`s. Only
+`PREPROCESSING` was already a proper subworkflow (`rvi_toolbox/subworkflows/preprocessing.nf`).
+
+Reorganized so each lane is its own `take:`/`main:` subworkflow file under the new
+`viral-lens/subworkflows/` directory, self-contained (own includes, own `count_*()`
+helpers, own PUBLISH calls):
+
+- `subworkflows/mapping.nf` — `MAPPING`: `SORT_READS_BY_REF` → `GENERATE_CONSENSUS` →
+  Nextclade → SCOV2 subtyping → `GENERATE_CLASSIFICATION_REPORT`. Mirrors the still-frozen
+  `mapping_pipeline_main.nf` lane byte-for-byte in logic, just as a callable subworkflow
+  instead of a standalone entry point.
+- `subworkflows/sequence_index.nf` — `SEQUENCE_INDEX`: the three mapping methods
+  (Themisto2/mSWEEP, Metagraph align, Metagraph query) → `GENERATE_MAPPING_REPORT`, plus
+  the `count_msweep_*()`/`count_metagraph_*()` helpers and `EMPTY_*_COUNTS` constants
+  referenced in item 3 above.
+- `subworkflows/assembly.nf` — `ASSEMBLY`: `ASSEMBLE_META` → `GENOMAD_CLASSIFY` →
+  `VRHYME_BIN`/`CHECKV_QC` → `VCONTACT3_RUN` → `GENERATE_ASSEMBLY_REPORT`, plus the
+  `count_genomad_summary()`/`count_vrhyme_membership()`/`count_checkv_quality()`/
+  `count_vcontact3_for_sample()` helpers referenced in item 1 above.
+- `subworkflows/abundance.nf` — `ABUNDANCE`: `KRAKEN2BRACKEN`/`SCRUB_DECONTAM`/
+  `ABUNDANCE_ESTIMATION` → `GENERATE_ABUNDANCE_REPORT`, plus `count_bracken_species()` and
+  `EMPTY_BRACKEN_COUNTS`, referenced in item 4 above.
+
+`main.nf` itself is now ~290 lines: the log banner, `--do_mixed_input`/`parse_mnf()` input
+handling, the `PREPROCESSING` call, and one gated call per lane
+(`MAPPING(preprocessed_3tuple_ch)` unconditionally, `ASSEMBLY`/`SEQUENCE_INDEX`/`ABUNDANCE`
+behind their existing `params.do_*` flags). No process, channel-shape, or param-gating
+logic changed — this was a pure move, verified by grepping `main.nf` for direct calls to
+any of the moved processes (`SORT_READS_BY_REF(`, `ASSEMBLE_META(`, `KRAKEN2BRACKEN(`,
+etc.) and confirming none remain.
+
+One real (behavior-neutral) simplification made along the way: previously, when
+`params.do_preprocessing` was `false`, the taxid-mapping lane's input
+(`sort_reads_in_ch`) came straight from the un-coerced `reads_ch` (raw manifest strings),
+while every other lane already used the `file()`-coerced `preprocessed_3tuple_ch`. That
+asymmetry is gone — `MAPPING` now derives its input from `preprocessed_3tuple_ch` like
+every other lane, so all four lanes share exactly one upstream channel. Nextflow's `path`
+input coercion means this should be a no-op for `SORT_READS_BY_REF`, but call this out
+specifically if anything in the taxid/consensus lane behaves differently after a real run.
+
+**Verification so far, same caveat as every lane above: DSL-checked only, nothing executed
+for real.** `nextflow run main.nf --help` (no other args) was used to confirm the full
+include graph resolves and the script parses/runs up through real parameter validation
+(fails only on missing `--manifest`/`--db_path`, as expected) — this is weaker than the
+`-preview --do_assembly true ...` full-DAG check the working conventions below call for.
+**Run that full `-preview` check (all four lanes enabled) before trusting this refactor,
+then re-run whatever real farm command you were about to run anyway** — if this refactor
+introduced a real bug, a full real run is what will surface it, not another `-preview`.
+Also worth noting: `nextflow lint subworkflows/abundance.nf` crashes with an internal
+parser error (`Range [51, 52) out of bounds for length 51`), traced to a `try`/`catch`
+inside a `.each{}` closure sitting in a top-level `def` (copied verbatim from the original
+`main.nf`, so pre-existing, not introduced here) — that's a bug in the separate `nextflow
+lint` static-analysis tool, not in the pipeline; `nextflow run`/`-preview` (the actual
+compiler) handle it fine. Don't spend time trying to "fix" that code to satisfy the linter.
+
+## Assembly lane: VERIFY_FASTQ + initial-subsample step tried and reverted
+
+**Current status: NOT in the code.** This was added, DSL-checked (see "Verification so
+far" below), then explicitly reverted at the user's request — they want to test the
+assembly lane without it first. `subworkflows/assembly.nf` is back to calling
+`ASSEMBLE_META(preprocessed_3tuple_ch)` / `VRHYME_BIN(..., preprocessed_3tuple_ch)`
+directly; the three new params (`initial_subsample_limit`/`minimum_fastq_reads`/
+`fastq_error_handling_mode`) were removed from `nextflow.config` and
+`nextflow_schema.json` again. The rest of this section is kept as a record of what was
+tried and why, in case a real farm run later shows it's actually needed (see the gap it
+was meant to fix, below) — **don't re-add it without checking with the user first.**
+
+The gap this would have fixed is specifically about large/misbehaving inputs, which is
+exactly what a `-preview` DAG check cannot exercise (it never runs a real process, so it
+can't observe metaspades/preprocessing actually choking on an oversized fastq) — worth
+revisiting if a real farm run hits that problem.
+
+`rvi-viral-metagenomics-pipeline/main.nf` runs `VERIFY_FASTQ` then `SUBSAMPLE_ITER`
+(capped at `initial_subsample_limit`, 10M read pairs by default) as the very first thing
+in its workflow, before `PREPROCESSING` even starts — a blanket safety cap so nothing
+downstream (preprocessing, assembly, anything) chokes on a pathologically large or
+unreadable input:
+
+```groovy
+MIXED_INPUT
+| VERIFY_FASTQ
+
+initial_subsample_limit_ch = Channel.value( params.initial_subsample_limit )
+SUBSAMPLE_ITER(VERIFY_FASTQ.out.verified_fastq_ch, initial_subsample_limit_ch)
+
+SUBSAMPLE_ITER.out.final_read_channel
+.set{ capped_reads_ch }
+```
+
+`viral-lens/workflows/ASSEMBLE_META.nf` (ported in item 1) already has its own, separate,
+much tighter `SUBSAMPLE_ITER` call internally (`metaspades_subsample_limit`, 500k reads —
+this one exists specifically because metaspades assembly quality/tractability needs a much
+lower depth than general use), but the *earlier*, blanket 10M-cap pass from the reference
+pipeline's top-level workflow was never ported at all — nobody had hit a real input large
+enough to need it yet.
+
+**What was tried** (`subworkflows/assembly.nf`, top of `main:`, before `ASSEMBLE_META` is
+called): `VERIFY_FASTQ(preprocessed_3tuple_ch)` → `SUBSAMPLE_ITER(...,
+initial_subsample_limit_ch)` → `capped_reads_ch`, which now feeds both `ASSEMBLE_META`
+(which still does its own further 500k-cap internally, unchanged) and `VRHYME_BIN`'s raw
+reads argument (previously `preprocessed_3tuple_ch` directly) — matching the reference
+pipeline, where `VRHYME_BIN`'s equivalent (`ready_reads_ch`) is also post-10M-cap, not
+post-500k-cap.
+
+**Deliberately scoped to the assembly lane only**, not moved to the top of `main.nf`
+ahead of `PREPROCESSING` the way the reference pipeline has it: `preprocessed_3tuple_ch`
+in viral-lens is shared by three other, already-farm-verified lanes (mapping,
+sequence-index, abundance — see items 1/3/4/5 above) that were never built expecting this
+cap. Applying it globally would silently change their input the moment `--do_assembly` is
+turned on for an unrelated run. If a real farm run later shows the other lanes need the
+same blanket protection (e.g. a genuinely oversized or corrupt input reaching
+`PREPROCESSING` itself, before assembly even starts), that's a deliberate follow-up
+decision, not something to add reflexively — loop in a human, same as the `rvi_toolbox`
+fork-problem decision (item 2 below).
+
+**New params** (`nextflow.config` + `nextflow_schema.json`, both updated, defaults copied
+verbatim from the reference pipeline's own `nextflow.config`): `initial_subsample_limit`
+(10000000), `minimum_fastq_reads` (0), `fastq_error_handling_mode` (`'exit_on_error'` —
+one of `exit_on_error`/`only_unreadable`/`ignore`, see `VERIFY_FASTQ`'s own header comment
+in `rvi_toolbox/subworkflows/verify_fastq.nf` for exact semantics). `subsample_iterations`/
+`subsample_seed` already existed (pre-staged for this exact purpose, per the comment
+already sitting above them in `nextflow.config` before this round touched it) and needed
+no change. `VERIFY_FASTQ`/`SUBSAMPLE_ITER` both already lived in viral-lens's own
+`rvi_toolbox` submodule (same "check before porting" pattern as item 5) — no fork/port
+needed, only wiring.
+
+**Verification so far**: `nextflow run main.nf -preview --do_assembly true --genomad_db
+/tmp/x --checkv_db /tmp/x --vcontact3_db_path /tmp/x --manifest
+tests/test_data/test_manifests/test_input_manifest.csv --db_path
+tests/test_data/test_kraken_databases/minimal` — DAG builds (`Success: true`), and the
+process list visibly shows **two** distinct `SUBSAMPLE_ITER:SUBSAMPLE_SEQTK` entries (the
+new blanket one, and `ASSEMBLE_META`'s pre-existing tighter one), confirming both stages
+are wired as separate, sequential caps rather than one accidentally shadowing the other.
+Also re-ran with all four lanes enabled together (`--do_assembly --do_sequence_index
+--run_msweep --do_abundance`, `run_kraken2bracken`/`run_abundance_estimation` left off to
+dodge the pre-existing, already-documented `kraken2bracken_kraken2_db=null` gap from item
+4) — same clean `Success: true`. **None of this executed against a real fastq file before
+being reverted.**
+
+**If this is ever re-added**: test with at least one sample whose read count is high
+enough to exercise `initial_subsample_limit` (or, cheaper, temporarily set
+`--initial_subsample_limit` below your test sample's real read count to force the cap to
+trigger even on a small file) — the whole point of this step is behavior that only shows
+up above that threshold, which no DSL/`-preview` check can exercise at all. The user's
+current plan is to farm-test the assembly lane without this step first and add it back
+later only if a real run actually needs it.
+
 ## Your remaining work, roughly in priority/dependency order
 
 ### 1. Prove the assembly lane actually runs -- DONE, see above
@@ -594,7 +751,9 @@ machinery is in play.
 
 Specifically check:
 - Do `main.nf`'s new `count_genomad_summary()` / `count_vrhyme_membership()` /
-  `count_checkv_quality()` / `count_vcontact3_for_sample()` helpers (bottom of `main.nf`)
+  `count_checkv_quality()` / `count_vcontact3_for_sample()` helpers (now at the bottom of
+  `subworkflows/assembly.nf`, moved out of `main.nf` in the round described in "main.nf
+  split into subworkflows/" below)
   actually parse the real TSV/CSV files correctly? They were written against column names
   confirmed by reading `bin/vcontact3_prep.py`/`bin/vcontact3_postprocess.py`
   (`seq_name`/`n_genes` in geNomad's `virus_summary.tsv`; `scaffold`/`bin` in vRhyme's
@@ -717,7 +876,8 @@ that same chain rather than building a second report path — that was the whole
 restructuring it earlier this round. The helpers that populate the meta
 (`count_msweep_abundances()`, `count_msweep_map_qc()`, `count_metagraph_species_hits()`,
 `count_metagraph_map_qc()` — the last two now take a `prefix` arg so align's and query's
-counts don't collide) are at the bottom of `main.nf` beside the assembly ones, each
+counts don't collide) are at the bottom of `subworkflows/sequence_index.nf` (moved out of
+`main.nf` — see "main.nf split into subworkflows/" below), each
 paired with a named `EMPTY_*_COUNTS` constant for the "this method didn't run, or ran but
 produced no optional output for this sample" case — every `.join(..., remainder: true)`
 in that block depends on one of those.
