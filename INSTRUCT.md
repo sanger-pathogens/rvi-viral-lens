@@ -843,6 +843,28 @@ sequence index found gets the same treatment as a Kraken2-found taxid. The
 species-identity reconciliation described below is unchanged by that move; only where the
 consensus runs changed.
 
+**SECOND CORRECTION — the dedup only checked the first candidate per sample (fixed in
+`4973f35`).** Separate from, and later than, the wrong-column bug documented below. The
+filter used `join(identified_species_ch, remainder: true)`, but Nextflow's `join()` pairs
+matching keys **one-to-one** — it does not broadcast one right-hand element across many
+left-hand ones. There are many candidates per sample and exactly one identified-species
+list, so every candidate after the first got a `null` right-hand side (courtesy of
+`remainder: true`) and passed through unchecked. Themisto2 called 9 species on one real
+sample, so this was the normal case.
+
+Two things follow for you:
+
+- **It would have looked exactly like a regression of the wrong-column bug** — redundant
+  consensuses for species Kraken2 already found — via a completely different mechanism.
+  If you see that symptom on the farm, check both.
+- **`combine(by:)` broadcasts, `join()` does not.** Worth remembering generally: this
+  codebase joins many-per-sample against one-per-sample channels in several places. The
+  fix also had to complete the right-hand side first (`identified_by_sample_ch`,
+  defaulting to `[]`), because `combine(by:)` is an inner join and would otherwise
+  silently drop candidates for samples with no Kraken2 pre-report at all — the opposite
+  of the intended passthrough. Verified both operators against the real channel shapes in
+  a standalone script; don't swap them back without doing the same.
+
 **Species-identity reconciliation**: Kraken2 taxids and the mSWEEP/Metagraph RVDB-index
 labels are unrelated numbering schemes with no shared numeric ID, so comparison is by
 normalized (`.trim().toLowerCase()`) species-name text.
