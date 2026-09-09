@@ -692,7 +692,7 @@ than merely exit-code-checked:
   outputs byte-identical (8 per-taxid consensus FASTAs, metaspades contigs+scaffolds,
   geNomad `virus.fna`/proteins, vRhyme bin `.fasta`/`.faa`/`.ffn`), 35/38 text reports
   byte-identical. The 3 diffs: `mapping_run_summary.json` and `mapping_summary_report.csv`
-  differ *only* by the added `new_species_consensus_n: 0` column (the opt-in feature
+  differ *only* by the added `new_species_candidates_n: 0` column (the opt-in feature
   contributing its count even when off — every pre-existing column matched exactly,
   including `msweep_top_group`/`0.999273` and `mapqc_max_breadth_pct`/`29.7918`); and
   `_mSWEEP_probs.tsv` differs on 6 of 7328 lines by a last-significant-digit float jitter
@@ -828,12 +828,30 @@ outside the Kraken2 db, but present in the Themisto2/Metagraph reference index w
 depth.
 
 **What it does**: when `--call_consensus_for_new_species true`, `CLASSIFYING_INDEX`
-resolves a reference record for any species a sequence-index method calls with
-`breadth_pct` above `new_species_min_breadth_pct` (default 10.0) that
-`CLASSIFYING_KRAKEN2` did **not** already find for that sample, and hands it to `MAPPING`
-for consensus. Off by default — this is a new cross-classifier dependency
-(`CLASSIFYING_INDEX` takes `CLASSIFYING_KRAKEN2.out.identified_species_ch` as a second
-input).
+resolves a reference record for every species a sequence-index method calls with
+`breadth_pct` above `new_species_min_breadth_pct` (default 10.0) and hands them all to
+`MAPPING`; `MAPPING` then drops the ones `CLASSIFYING_KRAKEN2` already found for that
+sample and consensuses the rest. Off by default — the cross-classifier dependency is
+`MAPPING` taking `CLASSIFYING_KRAKEN2.out.identified_species_ch` as a fifth input.
+
+**Where the species-level check lives, and why it moved there.** It was originally inside
+`CLASSIFYING_INDEX` (filtering before handing over); it is now in `MAPPING`, at the point
+where a consensus actually gets spent. Two reasons: the invariant "one consensus per
+(sample, species)" then holds structurally for anything reaching `MAPPING` rather than
+resting on each classifier filtering itself, and a classifier no longer needs to know what
+a *different* classifier found — `CLASSIFYING_INDEX` is now independent of Kraken2
+entirely. The trade-off, noted in `MAPPING`'s own comment: references get resolved for
+candidates that are then dropped, so on a sample where a method calls several species that
+Kraken2 already found, most of that `SELECT_REFERENCE_RECORD_BY_NAME` +
+`EXTRACT_REFERENCE_SUBSET` work is wasted. If that cost ever matters, move reference
+resolution into `MAPPING` behind the filter too — at the price of the symmetric "both
+classifiers hand over identical shapes" interface, since the Kraken2 side resolves its own
+references upstream inside `SORT_READS_BY_REF`.
+
+Consequence for the sequence-index report: its `new_species_consensus_n` column is now
+`new_species_candidates_n`, counting what the classifier can honestly know (candidates
+handed over, pre-filter). For the post-filter truth, count classification-report rows
+carrying `discovered_by: 'sequence_index'`.
 
 **Restructured since it was first written (see "Classifier/consensus split" below).** It
 originally ran its *own* `GENERATE_CONSENSUS` call inside the sequence-index lane and
@@ -968,7 +986,7 @@ publish_new_species_consensus_files` alias) — lands at
 `${outdir}/${sample_id}/mapping/<slugified species name>/`, alongside real-Kraken2-taxid
 results. `meta.taxid` for these is a filesystem-safe slug of the species name, **not a
 real Kraken taxid** — confirmed acceptable with the user, since there isn't a real one
-(these species were never Kraken2-sorted). A `new_species_consensus_n` count feeds into
+(these species were never Kraken2-sorted). A `new_species_candidates_n` count feeds into
 the existing `mapping_report_prep_ch` join chain the same way every other sequence-index
 count does (`GENERATE_MAPPING_REPORT`/`write_lane_summary.py` are schema-free, no changes
 needed there).
@@ -1218,12 +1236,23 @@ classifiers emit exactly two channels, and `MAPPING` `mix()`es each pair:
   matching consensus's `meta.id`. `report_meta` holds the descriptive per-(sample,
   reference) fields the classification report writes out.
 
-`mix()` and not `join`/`combine` because the two sets are disjoint by construction:
-`CLASSIFYING_INDEX` only ever emits species `CLASSIFYING_KRAKEN2` did *not* find. A
-classifier that isn't running passes `Channel.empty()` — `main.nf` does this explicitly in
-an `else` branch rather than reaching for `CLASSIFYING_INDEX.out.*`, which is undefined
-when the subworkflow was never invoked (the same trap already documented for
-`VIRAL_METAGRAPH_ALIGN.out`).
+`MAPPING` takes a fifth input, `CLASSIFYING_KRAKEN2.out.identified_species_ch`, and uses
+it to drop sequence-index candidates for species Kraken2 already found *before* mixing —
+so the two sets are disjoint because `MAPPING` made them so, not by assumption. See "Where
+the species-level check lives" above for why that enforcement sits here.
+
+`mix()` and not `join`/`combine` for the union itself, since post-filter these are disjoint
+sets of (sample, reference) pairs rather than two views of the same pair. A classifier that
+isn't running passes `Channel.empty()` — `main.nf` does this explicitly in an `else` branch
+rather than reaching for `CLASSIFYING_INDEX.out.*`, which is undefined when the subworkflow
+was never invoked (the same trap already documented for `VIRAL_METAGRAPH_ALIGN.out`).
+
+**A trap this move walked straight into, worth knowing before editing these filters**: a
+closure's parameter count must match the tuple's width. `combine(by: 0)` leaves the joined
+right-hand element on the tuple, so the `.map` *after* a `.filter` needs a trailing
+throwaway param (`_identified`) — omitting it aborts the run with "Invalid method
+invocation `call` with arguments ... on _closureN". Caught by running the filter against
+the real channel shapes in a standalone script, not by inspection.
 
 **What actually changes behaviorally**: a species only Themisto2/Metagraph found now gets
 Nextclade, SARS-CoV-2 subtyping and a classification-report row. Subtyping in particular
@@ -1243,10 +1272,12 @@ sequence index caught gets subtyped like any other.
   per-consensus JSON keying expects `meta.id`. The old code got this from a *second*,
   near-duplicate construction of the same channel off `sample_pre_report_ch`; that
   duplication is now collapsed into one channel used for both purposes.
-- `new_species_consensus_n` in the sequence-index report now counts "new species handed to
-  `MAPPING` with a resolved reference" rather than "consensuses that completed" — the
-  completion outcome now lives in `MAPPING`/the classification report and isn't visible
-  from the classifier. Same column name, slightly looser meaning.
+- `new_species_consensus_n` is now `new_species_candidates_n`, counting candidates handed
+  to `MAPPING` pre-filter — the only thing the classifier can honestly measure once
+  `MAPPING` owns both the dedup and the consensus. The post-filter truth is in the
+  classification report, via `discovered_by: 'sequence_index'` on the meta. Renaming was
+  safe because the lane reports take their columns from the union of meta keys
+  (`bin/write_lane_summary.py`), so there is no fixed schema to break.
 
 **Verification**: `-preview` across four flag combinations (baseline; `--do_sequence_index`;
 `+ --call_consensus_for_new_species`; `+ --do_assembly --do_abundance`), all resolving. The

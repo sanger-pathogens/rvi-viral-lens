@@ -31,7 +31,6 @@ include {SELECT_REFERENCE_RECORD_BY_NAME} from '../modules/select_reference_reco
 workflow CLASSIFYING_INDEX {
     take:
         preprocessed_3tuple_ch  // tuple (meta, read1, read2)
-        identified_species_ch   // [sample_id, [normalized_species_name, ...]] -- CLASSIFYING_KRAKEN2.out.identified_species_ch
 
     main:
         sequence_index_sample_ch = preprocessed_3tuple_ch
@@ -152,34 +151,13 @@ workflow CLASSIFYING_INDEX {
                 .mix(metagraph_align_candidates_ch, metagraph_query_candidates_ch)
                 .unique { sample_id, name -> [sample_id, name.trim().toLowerCase()] }
 
-            // Complete the "already identified" side before broadcasting it: exactly one
-            // entry per sample in this lane, holding an empty list for samples
-            // CLASSIFYING_KRAKEN2 produced no pre-report for (e.g. every fastq filtered as
-            // empty upstream) -- treated as "nothing already identified", not as "drop
-            // everything". This join IS cardinality-safe: one element per sample on each
-            // side, so remainder:true only fills in genuinely absent samples.
-            identified_by_sample_ch = sequence_index_sample_ch
-                .join(identified_species_ch, remainder: true)
-                .map { sample_id, _meta, identified -> [sample_id, identified ?: []] }
-
-            // Drop anything CLASSIFYING_KRAKEN2 already found for that sample.
-            //
-            // combine(by: 0), NOT join: there are MANY candidates per sample and exactly
-            // ONE identified-species list, and Nextflow's join() pairs matching keys
-            // one-to-one rather than broadcasting the single right-hand element across
-            // them. Joining here checked only the first candidate per sample; every later
-            // one got a null right-hand side (via remainder:true) and passed through
-            // unchecked, so a sample where a method called several species -- the normal
-            // case, Themisto2 called 9 on one real sample -- had all but one of them
-            // treated as new regardless of what Kraken2 had already found. Verified with a
-            // standalone two-operator comparison before changing it; combine(by: 0)
-            // broadcasts, which is the semantics this filter always needed.
-            candidate_new_species_ch
-                .map { sample_id, name -> [sample_id, name, name.trim().toLowerCase()] }
-                .combine(identified_by_sample_ch, by: 0)
-                .filter { _sample_id, _name, name_norm, identified -> !identified.contains(name_norm) }
-                .map { sample_id, name, _name_norm, _identified -> [sample_id, name] }
-                .set { new_species_ch }
+            // NOT filtered against what Kraken2 already found -- that check lives in
+            // subworkflows/mapping.nf now, at the point where a consensus actually gets
+            // spent, so this classifier knows nothing about the other one. Everything
+            // clearing the breadth threshold is emitted as a candidate; MAPPING drops the
+            // ones it has already covered. See MAPPING's own comment for the reasoning
+            // and for the cost of resolving references before that filter runs.
+            new_species_ch = candidate_new_species_ch
 
             // Build the synthetic per-(sample,species) meta MAPPING needs. Two things to
             // know about it:
@@ -264,17 +242,20 @@ workflow CLASSIFYING_INDEX {
             new_species_report_ch = new_species_sample_taxid_ch
                 .map { meta, _reads, _ref_fa -> [meta.id, meta] }
 
-            // Counts "new species handed to MAPPING for consensus", i.e. candidates that
-            // cleared the breadth threshold, weren't already Kraken2-identified, AND got a
-            // reference record resolved. Slightly looser than the figure this reported
-            // before the classifier/consensus split (which counted consensuses
-            // GENERATE_CONSENSUS actually completed) -- that outcome now lives in MAPPING,
-            // in the classification report, and isn't visible from here. Column name kept
-            // for continuity of this report's schema.
+            // Counts CANDIDATES handed to MAPPING -- species that cleared the breadth
+            // threshold and got a reference record resolved. Renamed from
+            // new_species_consensus_n, which is no longer what this can honestly measure:
+            // this classifier no longer knows which candidates were actually new (MAPPING
+            // filters against Kraken2's findings) nor which got a completed consensus
+            // (also MAPPING). For the post-filter truth, count rows in the classification
+            // report carrying `discovered_by: 'sequence_index'` -- that field is already
+            // on the meta MAPPING dumps per consensus. Safe to rename: the lane reports
+            // take their columns from the union of meta keys (bin/write_lane_summary.py),
+            // so there is no fixed schema to break.
             new_species_counts_ch = EXTRACT_REFERENCE_SUBSET.out.subset_fasta
                 .map { meta, _ref_fa -> [meta.sample_id, 1] }
                 .groupTuple()
-                .map { sample_id, ones -> [sample_id, [new_species_consensus_n: ones.size()]] }
+                .map { sample_id, ones -> [sample_id, [new_species_candidates_n: ones.size()]] }
         } else {
             new_species_counts_ch = Channel.empty()
             new_species_sample_taxid_ch = Channel.empty()
@@ -331,11 +312,13 @@ EMPTY_METAGRAPH_ALIGN_COUNTS = [metagraph_align_n_species_considered: 0, metagra
 EMPTY_METAGRAPH_ALIGN_MAPQC_COUNTS = [metagraph_align_mapqc_n_species: 0, metagraph_align_mapqc_max_breadth_pct: 0.0]
 EMPTY_METAGRAPH_QUERY_COUNTS = [metagraph_query_n_species_considered: 0, metagraph_query_n_species_called: 0]
 EMPTY_METAGRAPH_QUERY_MAPQC_COUNTS = [metagraph_query_mapqc_n_species: 0, metagraph_query_mapqc_max_breadth_pct: 0.0]
-// New-species consensus (--call_consensus_for_new_species): how many species a
-// sequence-index method called, with real breadth, that CLASSIFYING_KRAKEN2 didn't
-// already find for that sample -- 0 whenever the feature is off, or on but nothing new
-// was found for this sample.
-EMPTY_NEW_SPECIES_COUNTS = [new_species_consensus_n: 0]
+// New-species candidates (--call_consensus_for_new_species): how many species a
+// sequence-index method called with real breadth and got a reference resolved for, i.e.
+// how many were handed to MAPPING as consensus candidates -- 0 whenever the feature is
+// off, or on but nothing cleared the threshold for this sample. Whether MAPPING then
+// kept them (Kraken2 hadn't already found them) is not visible from here, by design:
+// see the counts block above.
+EMPTY_NEW_SPECIES_COUNTS = [new_species_candidates_n: 0]
 
 def empty_species_hits_counts(prefix) {
     return prefix == 'metagraph_align' ? EMPTY_METAGRAPH_ALIGN_COUNTS : EMPTY_METAGRAPH_QUERY_COUNTS

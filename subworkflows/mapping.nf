@@ -51,13 +51,75 @@ workflow MAPPING {
         kraken2_report_ch       // [join_key, report_meta]                         -- CLASSIFYING_KRAKEN2
         index_sample_taxid_ch   // tuple (meta, [read_1, read_2], reference_fasta) -- CLASSIFYING_INDEX, or Channel.empty()
         index_report_ch         // [join_key, report_meta]                         -- CLASSIFYING_INDEX, or Channel.empty()
+        identified_species_ch   // [sample_id, [normalized_species_name, ...]]     -- CLASSIFYING_KRAKEN2
 
     main:
+        // --- "one consensus per (sample, species)" is enforced HERE ---------------
+        // Deliberately in MAPPING rather than in the classifier that produces the
+        // candidates. MAPPING is what actually spends a consensus on a species, so the
+        // invariant holds structurally for anything that reaches it, instead of resting
+        // on each classifier remembering to filter itself -- and a classifier needing to
+        // know what a *different* classifier found was an odd coupling to begin with.
+        // CLASSIFYING_INDEX consequently emits every species it called above the breadth
+        // threshold and knows nothing about Kraken2.
+        //
+        // The cost of moving it here: CLASSIFYING_INDEX resolves a reference record for
+        // every candidate, including ones dropped just below. That is wasted
+        // SELECT_REFERENCE_RECORD_BY_NAME + EXTRACT_REFERENCE_SUBSET work, and on a
+        // sample where a method calls several species and Kraken2 already found most of
+        // them, most of that work is wasted. The clean fix if it ever matters is to move
+        // reference resolution in here too, behind this filter -- at the price of the
+        // symmetric "both classifiers hand over identical shapes" interface, since the
+        // Kraken2 side resolves its own references upstream inside SORT_READS_BY_REF.
+        //
+        // Complete the "already identified" side over the samples that actually have
+        // index candidates: exactly one entry each, empty list where CLASSIFYING_KRAKEN2
+        // produced no pre-report for that sample (its emit only covers samples with a
+        // non-empty one, and a sample Kraken2 found nothing in is exactly the
+        // interesting case here). remainder:true fills those with null. The third shape
+        // it yields -- a sample Kraken2 found species in but no index method called
+        // anything for, [key, null, list] -- is dropped: there is nothing to filter.
+        identified_by_sample_ch = index_sample_taxid_ch
+            .map { meta, _reads, _ref_fa -> [meta.sample_id, meta.sample_id] }
+            .unique()
+            .join(identified_species_ch, remainder: true)
+            .filter { _sample_id, has_candidates, _identified -> has_candidates != null }
+            .map { sample_id, _has_candidates, identified -> [sample_id, identified ?: []] }
+
+        // combine(by: 0), NOT join: many candidates per sample against one
+        // identified-species list, and join() pairs keys one-to-one instead of
+        // broadcasting. That was the bug fixed in 4973f35 -- moving the filter here must
+        // not reintroduce it.
+        index_sample_taxid_ch
+            .map { meta, reads, ref_fa -> [meta.sample_id, meta, reads, ref_fa] }
+            .combine(identified_by_sample_ch, by: 0)
+            .filter { _sample_id, meta, _reads, _ref_fa, identified ->
+                !identified.contains(meta.species_name.trim().toLowerCase())
+            }
+            // The trailing _identified matters: combine() left it on the tuple and this
+            // closure's parameter count has to match the tuple's width, or Nextflow
+            // aborts with "Invalid method invocation `call` with arguments ...".
+            .map { _sample_id, meta, reads, ref_fa, _identified -> [meta, reads, ref_fa] }
+            .set { index_new_sample_taxid_ch }
+
+        // Same predicate over the report side. Filtered independently rather than
+        // semi-joined against the surviving taxid channel: both carry sample_id and
+        // species_name, and the predicate is pure, so both necessarily reach the same
+        // verdict for a given (sample, species).
+        index_report_ch
+            .map { join_key, report_meta -> [report_meta.sample_id, join_key, report_meta] }
+            .combine(identified_by_sample_ch, by: 0)
+            .filter { _sample_id, _join_key, report_meta, identified ->
+                !identified.contains(report_meta.species_name.trim().toLowerCase())
+            }
+            .map { _sample_id, join_key, report_meta, _identified -> [join_key, report_meta] }
+            .set { index_new_report_ch }
+
         // The union both classifiers feed. mix() (not join/combine) because these are
-        // disjoint sets of (sample, reference) pairs, not two views of the same one:
-        // CLASSIFYING_INDEX only ever emits species CLASSIFYING_KRAKEN2 did NOT find.
-        sample_taxid_ch = kraken2_sample_taxid_ch.mix(index_sample_taxid_ch)
-        sample_report_with_join_key_ch = kraken2_report_ch.mix(index_report_ch)
+        // disjoint sets of (sample, reference) pairs, not two views of the same one --
+        // disjoint because of the filter immediately above, not by assumption.
+        sample_taxid_ch = kraken2_sample_taxid_ch.mix(index_new_sample_taxid_ch)
+        sample_report_with_join_key_ch = kraken2_report_ch.mix(index_new_report_ch)
 
         GENERATE_CONSENSUS(sample_taxid_ch)
 

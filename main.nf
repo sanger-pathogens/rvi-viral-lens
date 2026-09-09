@@ -179,16 +179,16 @@ workflow {
     }
 
     // === 4 - Classify reads against sequence indexes (rvi_integration_1, opt-in) ===
-    // CLASSIFYING_KRAKEN2.out.identified_species_ch is always available (that
-    // subworkflow runs unconditionally above) -- CLASSIFYING_INDEX uses it to tell which
-    // of its own species calls are genuinely new.
+    // Independent of CLASSIFYING_KRAKEN2: it emits every species it calls above the
+    // breadth threshold, and MAPPING decides which of those are actually new (see
+    // subworkflows/mapping.nf).
     //
     // The else branch matters: a subworkflow that was never invoked has no .out at all,
     // so handing MAPPING `CLASSIFYING_INDEX.out.*` directly would abort the run with
     // "Access to 'CLASSIFYING_INDEX.out' is undefined" whenever --do_sequence_index is
     // off. Empty channels are what "that classifier didn't run" should mean here.
     if (params.do_sequence_index) {
-        CLASSIFYING_INDEX(preprocessed_3tuple_ch, CLASSIFYING_KRAKEN2.out.identified_species_ch)
+        CLASSIFYING_INDEX(preprocessed_3tuple_ch)
         index_sample_taxid_ch = CLASSIFYING_INDEX.out.sample_taxid_ch
         index_report_ch = CLASSIFYING_INDEX.out.sample_report_with_join_key_ch
     } else {
@@ -197,12 +197,15 @@ workflow {
     }
 
     // === 5 - Consensus, lineage calling and classification report ===
-    // One pass over both classifiers' output (see subworkflows/mapping.nf).
+    // One pass over both classifiers' output (see subworkflows/mapping.nf), which also
+    // owns the "don't consensus a species twice for a sample" filter --
+    // identified_species_ch is what it filters the sequence-index side against.
     MAPPING(
         CLASSIFYING_KRAKEN2.out.sample_taxid_ch,
         CLASSIFYING_KRAKEN2.out.sample_report_with_join_key_ch,
         index_sample_taxid_ch,
-        index_report_ch
+        index_report_ch,
+        CLASSIFYING_KRAKEN2.out.identified_species_ch
     )
 
     // === 6 - Abundance estimation (rvi_integration_1, opt-in) ===
