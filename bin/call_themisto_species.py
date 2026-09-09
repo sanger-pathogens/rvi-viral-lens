@@ -7,17 +7,37 @@ def open_maybe_gzip(path):
     return gzip.open(path, "rt") if path.endswith(".gz") else open(path)
 
 
+# Label values that are placeholders rather than real species names. These are mapped to
+# None below and then skipped exactly like a blank line, so they never reach species_hits,
+# record_ids or index_label_map -- and therefore never get map-QC'd, reported, or offered
+# to --call_consensus_for_new_species as a candidate.
+#
+# VIRAL-LENS DEVIATION from the upstream feature_msweep_map version of this script, which
+# treats "NA" as an ordinary species name. In rvdb_clustered_virome_species_labels.txt
+# 7500 of 1321608 lines (0.57%) are the literal string "NA", so upstream aggregates 7500
+# unrelated reference sequences into one pseudo-species. On a single SARS-CoV-2/H1N1 test
+# sample that pseudo-species drew 11021 read-hits and 89.79% breadth -- the second-highest
+# call in the run -- purely because one of those 7500 records (SEQIDX_1320074) is a real
+# unlabelled SARS-CoV-2 genome. A call named "NA" carries no information, and worse, it is
+# not a name MAPPING can ever match, so it read as a brand-new species.
+UNUSABLE_LABELS = frozenset({"NA"})
+
+
 def parse_species_labels(path):
     """Read species_labels.txt: one label per line, Nth line (1-based) = Nth sequence in
     the .thm2 index / reference FASTA — the same file mSWEEP uses as its -i ref_groups
     argument. Returned as a list indexed by 0-based Themisto reference index (dense
     array lookup rather than a dict: heavily-clustered viral indexes can pseudoalign one
     read against thousands of reference indices, so this lookup runs hundreds of millions
-    of times per sample and a list avoids per-lookup hashing overhead)."""
+    of times per sample and a list avoids per-lookup hashing overhead).
+
+    Blank lines and UNUSABLE_LABELS placeholders both become None, which the
+    pseudoalignment parser skips."""
     labels = []
     with open(path) as fh:
         for line in fh:
-            labels.append(line.strip() or None)
+            label = line.strip()
+            labels.append(None if (not label or label in UNUSABLE_LABELS) else label)
     return labels
 
 

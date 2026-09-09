@@ -60,21 +60,15 @@ workflow SEQUENCE_INDEX {
             msweep_counts_ch = VIRAL_THEMISTO_MSWEEP.out.abundances
                 .map { meta, abundances, _probs -> [meta.id, count_msweep_abundances(abundances)] }
 
-            mapqc_counts_ch = VIRAL_THEMISTO_MSWEEP.out.map_qc
-                .map { meta, qc_tsv -> [meta.id, count_msweep_map_qc(qc_tsv)] }
-
-            // Kept as their own variables so the new-species block below can consume them
+            // Kept as its own variable so the new-species block below can consume it
             // without touching VIRAL_THEMISTO_MSWEEP.out, which is undefined unless the
             // subworkflow was actually invoked.
             themisto_map_qc_ch = VIRAL_THEMISTO_MSWEEP.out.themisto_map_qc
-            msweep_map_qc_ch   = VIRAL_THEMISTO_MSWEEP.out.map_qc
         } else {
             themisto_counts_ch       = Channel.empty()
             themisto_mapqc_counts_ch = Channel.empty()
             msweep_counts_ch         = Channel.empty()
-            mapqc_counts_ch          = Channel.empty()
             themisto_map_qc_ch       = Channel.empty()
-            msweep_map_qc_ch         = Channel.empty()
         }
 
         // -- Sequence-to-graph alignment via Metagraph (metagraph align), then its own
@@ -139,9 +133,6 @@ workflow SEQUENCE_INDEX {
             themisto_candidates_ch = themisto_map_qc_ch
                 .flatMap { meta, tsv -> parse_new_species_candidates(tsv, 'species').collect { name -> [meta.id, name] } }
 
-            msweep_candidates_ch = msweep_map_qc_ch
-                .flatMap { meta, tsv -> parse_new_species_candidates(tsv, 'species_label').collect { name -> [meta.id, name] } }
-
             metagraph_align_candidates_ch = metagraph_align_map_qc_ch
                 .flatMap { meta, tsv -> parse_new_species_candidates(tsv, 'species').collect { name -> [meta.id, name] } }
 
@@ -150,8 +141,10 @@ workflow SEQUENCE_INDEX {
 
             // .unique() streams -- it emits each non-duplicate immediately as it passes,
             // it does not need to see the whole channel close first (unlike groupTuple()).
+            // No mSWEEP candidates: mSWEEP now estimates abundance only and produces no
+            // breadth table to threshold on (see ../workflows/VIRAL_THEMISTO_MSWEEP.nf).
             candidate_new_species_ch = themisto_candidates_ch
-                .mix(msweep_candidates_ch, metagraph_align_candidates_ch, metagraph_query_candidates_ch)
+                .mix(metagraph_align_candidates_ch, metagraph_query_candidates_ch)
                 .unique { sample_id, name -> [sample_id, name.trim().toLowerCase()] }
 
             // Drop anything MAPPING already found for that sample. remainder:true so a
@@ -225,15 +218,14 @@ workflow SEQUENCE_INDEX {
             .join(themisto_counts_ch, remainder: true)
             .join(themisto_mapqc_counts_ch, remainder: true)
             .join(msweep_counts_ch, remainder: true)
-            .join(mapqc_counts_ch, remainder: true)
             .join(metagraph_align_counts_ch, remainder: true)
             .join(metagraph_align_mapqc_counts_ch, remainder: true)
             .join(metagraph_query_counts_ch, remainder: true)
             .join(metagraph_query_mapqc_counts_ch, remainder: true)
             .join(new_species_counts_ch, remainder: true)
-            .map { id, meta, t_counts, t_qc_counts, m_counts, qc_counts, mga_counts, mga_qc_counts, mgq_counts, mgq_qc_counts, ns_counts ->
+            .map { id, meta, t_counts, t_qc_counts, m_counts, mga_counts, mga_qc_counts, mgq_counts, mgq_qc_counts, ns_counts ->
                 def new_meta = meta + (t_counts ?: EMPTY_THEMISTO_COUNTS) + (t_qc_counts ?: EMPTY_THEMISTO_MAPQC_COUNTS) +
-                    (m_counts ?: EMPTY_MSWEEP_COUNTS) + (qc_counts ?: EMPTY_MAP_QC_COUNTS) +
+                    (m_counts ?: EMPTY_MSWEEP_COUNTS) +
                     (mga_counts ?: EMPTY_METAGRAPH_ALIGN_COUNTS) + (mga_qc_counts ?: EMPTY_METAGRAPH_ALIGN_MAPQC_COUNTS) +
                     (mgq_counts ?: EMPTY_METAGRAPH_QUERY_COUNTS) + (mgq_qc_counts ?: EMPTY_METAGRAPH_QUERY_MAPQC_COUNTS) +
                     (ns_counts ?: EMPTY_NEW_SPECIES_COUNTS)
@@ -257,7 +249,6 @@ workflow SEQUENCE_INDEX {
 EMPTY_THEMISTO_COUNTS = [themisto_n_species_considered: 0, themisto_n_species_called: 0]
 EMPTY_THEMISTO_MAPQC_COUNTS = [themisto_mapqc_n_species: 0, themisto_mapqc_max_breadth_pct: 0.0]
 EMPTY_MSWEEP_COUNTS = [msweep_n_groups: 0, msweep_top_group: '', msweep_top_abundance: 0.0]
-EMPTY_MAP_QC_COUNTS = [mapqc_n_species: 0, mapqc_max_breadth_pct: 0.0]
 // One pair per Metagraph method (align, query) -- both call count_species_hits()/
 // count_map_qc_breadth() with a distinct prefix, since both methods' counts can merge
 // into the same per-sample meta and would otherwise collide on field name.
@@ -351,25 +342,6 @@ def count_map_qc_breadth(tsv, prefix) {
     ]
 }
 
-def count_msweep_map_qc(tsv) {
-    // <sample>_msweep_map_qc.tsv, written by bin/aggregate_species_coverage.py:
-    // sample_id, species_label, relative_abundance, reference_length, query_length,
-    // covered_bases, breadth_pct, mean_depth, meanbaseq, meanmapq, reads_mapped
-    if (tsv == null || !tsv.exists()) return EMPTY_MAP_QC_COUNTS
-    def lines = tsv.readLines()
-    if (lines.size() < 2) return EMPTY_MAP_QC_COUNTS
-    def header = lines[0].split('\t')
-    def breadth_idx = header.findIndexOf { String col -> col == 'breadth_pct' }
-    def breadths = lines[1..-1].collect { line ->
-        def cols = line.split('\t')
-        if (breadth_idx < 0 || breadth_idx >= cols.size()) return 0.0
-        try { return cols[breadth_idx] as Double } catch (NumberFormatException ignored) { return 0.0 }
-    }
-    return [
-        mapqc_n_species:       lines.size() - 1,
-        mapqc_max_breadth_pct: breadths ? breadths.max() : 0.0
-    ]
-}
 
 def parse_new_species_candidates(tsv, species_col) {
     // A method's own *_map_qc.tsv (msweep_map_qc.tsv: species_label; metagraph_map_qc.tsv,

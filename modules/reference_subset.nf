@@ -7,6 +7,10 @@
 
 params.script_src_path = "${projectDir}/bin/"
 
+// UNUSED since the Themisto2 restructuring dropped MSWEEP_MAP_QC (mSWEEP now estimates
+// abundance only -- see workflows/VIRAL_THEMISTO_MSWEEP.nf). Kept, not deleted, so the
+// step can be restored if abundance-driven breadth validation is ever wanted again;
+// nothing invokes it today.
 process SELECT_REFERENCE_RECORDS {
     tag "${meta.id}"
     label 'cpu_1'

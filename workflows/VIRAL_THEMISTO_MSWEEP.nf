@@ -40,7 +40,6 @@ include { THEMISTO_PSEUDOALIGN              } from '../modules/themisto2.nf'
 include { CALL_THEMISTO_SPECIES             } from '../modules/themisto_species_call.nf'
 include { MSWEEP                            } from '../modules/msweep.nf'
 include { CLEANUP_THEMISTO_PSEUDOALIGNMENTS } from '../modules/cleanup.nf'
-include { MSWEEP_MAP_QC                     } from './MSWEEP_MAP_QC.nf'
 include { THEMISTO_MAP_QC                   } from './THEMISTO_MAP_QC.nf'
 include { SUBSAMPLE_ITER                    } from '../rvi_toolbox/subworkflows/subsample.nf'
 
@@ -107,19 +106,21 @@ workflow VIRAL_THEMISTO_MSWEEP {
 
     // mSWEEP's probabilistic abundance estimation is optional — off by default in favour
     // of the direct species-hit call above.
+    //
+    // ABUNDANCE ESTIMATION ONLY. Upstream also ran MSWEEP_MAP_QC here, mapping reads
+    // against each low-abundance call's reference to validate it by breadth of coverage.
+    // That step is deliberately dropped in viral-lens: THEMISTO_MAP_QC above already does
+    // breadth validation for this arm, and does it better, because it maps against each
+    // species' MOST-HIT reference record whereas SELECT_REFERENCE_RECORDS picked the
+    // LONGEST sequence carrying the label. Measured on the same sample, that choice was
+    // worth 29.79% breadth (mSWEEP's pick) versus 99.96% (Themisto's) for the same
+    // SARS-CoV-2 call. Keeping both meant paying for a second bowtie2 index + mapping pass
+    // per sample to produce the worse of two answers to the same question.
     if (params.run_msweep) {
         MSWEEP(pseudoaligned_ch, ref_groups_ch)
-
-        // Validate against the same (subsampled) reads mSWEEP's call was actually based on,
-        // not the original deeper reads_ch — otherwise breadth/depth here could look better
-        // than what mSWEEP itself saw.
-        MSWEEP_MAP_QC(capped_reads_ch, MSWEEP.out.abundances, ref_groups_ch)
-
-        abundances_ch    = MSWEEP.out.abundances
-        msweep_map_qc_ch = MSWEEP_MAP_QC.out.qc_table
+        abundances_ch = MSWEEP.out.abundances
     } else {
-        abundances_ch    = Channel.empty()
-        msweep_map_qc_ch = Channel.empty()
+        abundances_ch = Channel.empty()
     }
 
     // Pseudoalignment files are never published (see themisto2.nf) and, left unmanaged,
@@ -141,7 +142,6 @@ workflow VIRAL_THEMISTO_MSWEEP {
     species_hits     = CALL_THEMISTO_SPECIES.out.species_hits
     themisto_map_qc  = themisto_map_qc_ch
     abundances       = abundances_ch
-    map_qc           = msweep_map_qc_ch
 }
 
 /*

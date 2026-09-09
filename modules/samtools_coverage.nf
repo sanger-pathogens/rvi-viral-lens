@@ -30,6 +30,10 @@ process SAMTOOLS_COVERAGE {
     """
 }
 
+// UNUSED since the Themisto2 restructuring dropped MSWEEP_MAP_QC (mSWEEP now estimates
+// abundance only -- see workflows/VIRAL_THEMISTO_MSWEEP.nf). Kept, not deleted, so the
+// step can be restored if abundance-driven breadth validation is ever wanted again;
+// nothing invokes it today.
 process AGGREGATE_SPECIES_COVERAGE {
     tag "${meta.id}"
     label 'cpu_1'
@@ -58,6 +62,10 @@ process AGGREGATE_SPECIES_COVERAGE {
     """
 }
 
+// UNUSED since the Themisto2 restructuring dropped MSWEEP_MAP_QC (mSWEEP now estimates
+// abundance only -- see workflows/VIRAL_THEMISTO_MSWEEP.nf). Kept, not deleted, so the
+// step can be restored if abundance-driven breadth validation is ever wanted again;
+// nothing invokes it today.
 process GENERATE_MSWEEP_MAP_SUMMARY {
     label 'cpu_1'
     label 'mem_1'

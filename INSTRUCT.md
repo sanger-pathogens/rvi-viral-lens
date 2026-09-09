@@ -1041,11 +1041,14 @@ pandemicum", 741451 == "Alphainfluenzavirus influenzae", and one line either sid
 so there is no off-by-one). The *species names* are only as good as the index's labels,
 and on this sample two real defects showed up:
 
-- **7500 of 1321608 label lines (0.57%) are the literal string `NA`.** They aggregate into
-  one pseudo-species "NA", which on this sample got 11021 hits and **89.79% breadth** --
-  the second-highest call. Its actual reference record (`SEQIDX_1320074`) is
+- **7500 of 1321608 label lines (0.57%) are the literal string `NA`** -- now FILTERED,
+  see below. Upstream aggregates them into one pseudo-species "NA", which on this sample
+  drew 11021 hits and **89.79% breadth**, the second-highest call in the run. Its actual
+  reference record (`SEQIDX_1320074`) is
   `PZ169745.1 Severe acute respiratory syndrome coronavirus 2 isolate .../2022`: real
-  SARS-CoV-2 signal wearing a useless label, not a spurious hit.
+  SARS-CoV-2 signal wearing a useless label, not a spurious hit -- which is exactly why a
+  call named "NA" is worse than no call: it carries no information, and it is not a name
+  MAPPING can ever match, so it read as a brand-new species.
 - **At least one record is mislabelled in RVDB/GenBank itself.** `SEQIDX_741451`, labelled
   `Alphainfluenzavirus influenzae`, is
   `OZ387637.1 Influenza A virus (A/Michigan/45/2015(H1N1)) ... chromosome: MN908947.3` --
@@ -1059,20 +1062,92 @@ Horseshoe bat sarbecovirus) sit at 3-14% breadth: sarbecovirus cross-mapping, co
 separated from the 99.96% true call by the breadth validation. That is `THEMISTO_MAP_QC`
 doing its job.
 
-**Consequence for `--call_consensus_for_new_species`, which is worth settling before the
-two features are used together.** With the 10.0 default `new_species_min_breadth_pct`,
-three of Themisto's calls clear the bar without matching anything MAPPING found, so they
-would each get a new-species consensus: `NA` (89.79%), `Bat coronavirus` (14.08%),
-`Betacoronavirus sp. RpYN06` (11.06%). All three are artifacts -- a missing label and two
-cross-mapping relatives. Options, none yet chosen: skip `NA` labels in
-`bin/call_themisto_species.py` (deviates from upstream, so decide deliberately), raise
-`new_species_min_breadth_pct` well above the cross-mapping band, or require a minimum
-mean_depth/reads_mapped rather than breadth alone. **Don't enable both features together
-until this is decided.**
+### `NA` labels are now skipped (deliberate deviation from upstream)
+
+`bin/call_themisto_species.py` maps placeholder labels (`UNUSABLE_LABELS`, currently just
+`"NA"`) to `None`, so they are skipped exactly like a blank line and never reach
+`species_hits`, `record_ids` or `index_label_map` -- and therefore never get map-QC'd,
+reported, or offered to `--call_consensus_for_new_species`. This is the one behavioural
+difference from the upstream branch; `modules/themisto_species_call.nf` carries a pointer
+to it so it is not silently lost on a future re-port.
+
+Verified by re-running the script directly against the real pseudoalignment files from
+`nf_runs/themisto_real/work/`: the `NA` row disappears and **every other species' hit
+count is unchanged** (`Betacoronavirus pandemicum` 14127, `Alphainfluenzavirus influenzae`
+6103, ...), i.e. 19 considered / 9 called instead of 20 / 10 -- exactly one fewer of each.
+The per-read dedup is unaffected, as it should be: a read hitting both an `NA` record and
+a real species still counts once for the real species. Confirmed end to end on the farm
+(`nf_runs/real_default/`, `nf_runs/real_msweep/`): zero `NA` rows in the published
+`species_hits.tsv`, report reading 19 considered / 9 called,
+`themisto_mapqc_max_breadth_pct` still 99.9632.
+
+**The filter does NOT reach mSWEEP's own output.** `MSWEEP` is a separate binary that
+reads `msweep_ref_groups` directly, so `<sample>_mSWEEP_abundances.txt` still carries an
+`NA` group (0.000173 on this sample). That is below `msweep_map_min_abundance` (0.001), so
+`count_msweep_abundances()` does not count it and `msweep_n_groups` is 1 -- but a sample
+where the unlabelled records draw real signal could surface `NA` as an mSWEEP group. Only
+the Themisto read-hit path is filtered.
+
+**Remaining consequence for `--call_consensus_for_new_species` -- still unsettled.** With
+`NA` gone, two of Themisto's calls still clear the 10.0 default
+`new_species_min_breadth_pct` without matching anything MAPPING found, and would each get
+a new-species consensus: `Bat coronavirus` (14.08% breadth) and `Betacoronavirus sp.
+RpYN06` (11.06%). Both are sarbecovirus cross-mapping from the sample's real SARS-CoV-2,
+not new species. Options, none yet chosen: raise `new_species_min_breadth_pct` above the
+cross-mapping band (which sat at 3-14% here), or gate on mean_depth/reads_mapped rather
+than breadth alone (these two had 0.46x and 0.40x mean depth against 43.9x for the true
+call, so depth separates them far more cleanly than breadth does). **Don't enable both
+features together until this is decided.**
 
 Also still unproven: Themisto's hit calls have not been compared against mSWEEP's on the
 same sample with `--run_msweep true` (which would produce both tables side by side), and
 no multi-sample Themisto run has been done.
+
+## mSWEEP is abundance-estimation ONLY -- its mapping/breadth validation was removed
+
+`MSWEEP_MAP_QC` is gone from the flow and `workflows/MSWEEP_MAP_QC.nf` is **deleted**.
+When `--run_msweep true`, `VIRAL_THEMISTO_MSWEEP` now runs `MSWEEP` and emits
+`abundances` only.
+
+**Why:** it answered the same question as `THEMISTO_MAP_QC` -- "does this species' call
+hold up when reads are mapped against its reference?" -- and answered it worse.
+`SELECT_REFERENCE_RECORDS` chose the *longest* sequence carrying a label; Themisto chooses
+the species' *most-hit* record. Measured on the same sample and the same call
+(`Betacoronavirus pandemicum`): **29.79% breadth via mSWEEP's pick, 99.96% at 43.9x depth
+via Themisto's**. Keeping both cost a second bowtie2 index + mapping pass per sample to
+produce the inferior answer.
+
+Removed with it: the `mapqc_n_species` / `mapqc_max_breadth_pct` report columns,
+`EMPTY_MAP_QC_COUNTS`, `count_msweep_map_qc()`, and mSWEEP's contribution to
+`--call_consensus_for_new_species` candidates (it has no breadth table to threshold now --
+Themisto and the Metagraph methods still contribute).
+
+**Now dead but deliberately kept, not deleted** -- restorable if abundance-driven breadth
+validation is ever wanted again, and each carries a comment saying so:
+`SELECT_REFERENCE_RECORDS` (`modules/reference_subset.nf`), `AGGREGATE_SPECIES_COVERAGE`
+and `GENERATE_MSWEEP_MAP_SUMMARY` (`modules/samtools_coverage.nf`). Their
+`withName:` entries in `nextflow.config` remain and will emit the usual harmless "no
+process matching config selector" warning. `msweep_map_bowtie_threads` is unused for the
+same reason but stays defined so existing command lines still validate.
+`msweep_map_min_abundance` (still used by `count_msweep_abundances()`) and
+`msweep_map_reference_fasta` (still used by the new-species consensus path) are both in
+real use -- don't remove those. **Note `INDEX_REFERENCE_FASTA`/`EXTRACT_REFERENCE_SUBSET`
+and `SAMTOOLS_COVERAGE` in those same module files are very much alive** (Themisto map-QC,
+Metagraph map-QC, and the new-species path all use them) -- don't prune the files wholesale.
+
+**Verified:** `-with-dag` on four combinations shows `--run_msweep true` resolving `MSWEEP`
+with none of `SELECT_REFERENCE_RECORDS`/`AGGREGATE_SPECIES_COVERAGE`/
+`GENERATE_MSWEEP_MAP_SUMMARY`. Real farm runs `nf_runs/real_default/` (3m09s) and
+`nf_runs/real_msweep/` (3m06s), both `Success: true`: no `msweep_map/` directory and no
+`msweep_map_summary` anywhere, `msweep/` holding only the abundances + probs files, and
+the report showing `msweep_n_groups=1`, `msweep_top_group=Betacoronavirus pandemicum`,
+`msweep_top_abundance=0.999273` alongside Themisto's own 9 calls.
+
+**First side-by-side of the two methods** (`nf_runs/real_msweep/`): mSWEEP reports one
+group above threshold; Themisto calls 9 species, agreeing with mSWEEP on the top call and
+additionally surfacing 7 sarbecovirus relatives at 3-14% breadth / 0.09-0.46x depth, which
+the breadth/depth columns separate cleanly from the 99.96% / 43.9x true call. Themisto is
+the more sensitive caller; the map-QC table is what makes that sensitivity usable.
 
 ## Your remaining work, roughly in priority/dependency order
 

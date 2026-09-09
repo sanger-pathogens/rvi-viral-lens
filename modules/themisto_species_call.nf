@@ -10,6 +10,10 @@
 // INDEX_REFERENCE_FASTA SEQIDX_<n> tagging (reference_subset.nf), so no separate
 // reference-extraction module is needed downstream (see themisto_map_qc.nf).
 
+// VIRAL-LENS DEVIATION from upstream: bin/call_themisto_species.py skips placeholder
+// labels (currently the literal "NA", 7500 lines of rvdb_clustered_virome_species_labels.txt)
+// instead of treating them as a species. See UNUSABLE_LABELS in that script for why.
+
 params.script_src_path = "${projectDir}/bin/"
 
 process CALL_THEMISTO_SPECIES {
