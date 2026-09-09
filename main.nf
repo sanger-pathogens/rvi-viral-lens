@@ -92,14 +92,18 @@ workflow {
     --run_metagraph_query         : ${params.run_metagraph_query}
     --run_msweep (add-on)         : ${params.run_msweep}
     --themisto_align_min_hits     : ${params.themisto_align_min_hits}
-    --themisto_align_run_map_qc   : ${params.themisto_align_run_map_qc}
-    --themisto_map_reference_fasta: ${params.themisto_map_reference_fasta}
     --msweep_themisto_index       : ${params.msweep_themisto_index}
     --msweep_ref_groups           : ${params.msweep_ref_groups}
     --msweep_map_min_abundance    : ${params.msweep_map_min_abundance}
     --metagraph_align_graph       : ${params.metagraph_align_graph}
     --metagraph_align_annotation  : ${params.metagraph_align_annotation}
     --metagraph_align_min_hits    : ${params.metagraph_align_min_hits}
+
+  --> New-species consensus (subworkflows/mapping.nf; sequence-index calls Kraken2 missed):
+    --call_consensus_for_new_species : ${params.call_consensus_for_new_species}
+    --new_species_min_breadth_pct    : ${params.new_species_min_breadth_pct}
+    --msweep_map_reference_fasta     : ${params.msweep_map_reference_fasta}
+    --metagraph_map_reference_fasta  : ${params.metagraph_map_reference_fasta}
 
   --> ABUNDANCE workflow parameters (subworkflows/abundance.nf; only used if --do_abundance true):
     --run_kraken2bracken             : ${params.run_kraken2bracken}

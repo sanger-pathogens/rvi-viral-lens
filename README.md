@@ -733,13 +733,11 @@ Per-sample outputs are grouped by lane, not by tool:
       binning/
         vrhyme/
         checkv/
-    sequenceindex/            # --do_sequence_index (--run_msweep / --run_metagraph_align / --run_metagraph_query, any combination)
-      msweep/                 # mSWEEP abundances + probs
-      msweep_map/             # breadth-of-coverage validation table
+    sequenceindex/            # --do_sequence_index (--run_themisto / --run_metagraph_align / --run_metagraph_query, any combination)
+      themisto_hits/          # Themisto2: per-species read-hit counts + provisional calls
+      msweep/                 # --run_msweep only: mSWEEP abundances + probs
       metagraph_hits/         # metagraph align: per-species read-hit counts + provisional calls
-      metagraph_map/          # metagraph align: breadth-of-coverage validation table
       metagraph_query_hits/   # metagraph query: per-species read-hit counts + provisional calls
-      metagraph_query_map/    # metagraph query: breadth-of-coverage validation table
     abundance/                # --do_abundance (--run_kraken2bracken / --run_abundance_estimation / --run_scrub)
       kraken2/, bracken/      # per-sample Kraken2 classification + Bracken re-estimation
       instrain/               # --run_abundance_estimation only (inStrain genome profiling)

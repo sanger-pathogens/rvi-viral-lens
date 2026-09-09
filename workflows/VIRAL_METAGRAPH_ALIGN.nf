@@ -7,18 +7,16 @@
     Aligns preprocessed paired reads (each mate independently, see metagraph.nf) against a
     pre-built metagraph de Bruijn graph + annotation index, counts reads per species from
     the alignment labels, and provisionally calls a species present in the sample once its
-    read-hit count clears metagraph_align_min_hits. When metagraph_align_run_map_qc is set,
-    each called species is additionally validated by mapping the same reads directly
-    against its single most-hit reference record and recording genome breadth of coverage
-    (see metagraph_map_qc.nf) — an independent sanity check on metagraph align's read-hit
-    calls.
+    read-hit count clears metagraph_align_min_hits. Hit count is the whole calling
+    criterion: no reads are mapped here (see the note by the emit block, and
+    subworkflows/classifying_index.nf's header for where breadth is measured instead).
     Reads are capped at metagraph_align_subsample_limit per mate before alignment (mirrors
     VIRAL_THEMISTO_MSWEEP's subsampling): metagraph align's per-query output is one label line per
     matched k-mer window, so it scales with input depth far faster than a normal aligner's
     output would, and species calling only needs enough hits to clear metagraph_align_min_hits
     — feeding it full depth on a deep sample mostly just costs METAGRAPH/CALL_METAGRAPH_SPECIES
     time without changing which species get called.
-    Per-sample results are published under <outdir>/<sample>/sequenceindex/{metagraph_hits,metagraph_map}.
+    Per-sample results are published under <outdir>/<sample>/sequenceindex/metagraph_hits.
 ========================================================================================
 */
 
@@ -29,7 +27,6 @@
 */
 include { METAGRAPH_ALIGN        } from '../modules/metagraph_align.nf'
 include { CALL_METAGRAPH_SPECIES } from '../modules/metagraph_species_call.nf'
-include { METAGRAPH_MAP_QC       } from './METAGRAPH_MAP_QC.nf'
 include { SUBSAMPLE_ITER         } from '../rvi_toolbox/subworkflows/subsample.nf'
 
 /*
@@ -64,35 +61,25 @@ workflow VIRAL_METAGRAPH_ALIGN {
 
     METAGRAPH_ALIGN(capped_reads_ch, graph_ch, annotation_ch, annotation_seqs_ch)
 
-    // 'metagraph_hits'/'metagraph_map_summary': distinct from VIRAL_METAGRAPH_QUERY.nf's
-    // subdir/summary names, so the two methods don't overwrite each other's output when
-    // both run for the same sample (see CALL_METAGRAPH_SPECIES's output_subdir).
+    // 'metagraph_hits': a subdir name distinct from VIRAL_METAGRAPH_QUERY.nf's, so the two
+    // methods don't overwrite each other's output when both run for the same sample (see
+    // CALL_METAGRAPH_SPECIES's output_subdir).
     CALL_METAGRAPH_SPECIES(METAGRAPH_ALIGN.out.alignments, names_dmp_ch, 'metagraph_hits')
 
-    // metagraph_align_run_map_qc lets species-hit calling be validated on its own first.
-    if (params.metagraph_align_run_map_qc) {
-        reference_fasta_ch = Channel.fromPath(params.metagraph_map_reference_fasta).first()
-
-        // Validate against the same (subsampled) reads CALL_METAGRAPH_SPECIES's call was
-        // actually based on, not the original deeper reads_ch — otherwise breadth/depth here
-        // could look better than what the species call itself saw.
-        METAGRAPH_MAP_QC(
-            capped_reads_ch,
-            CALL_METAGRAPH_SPECIES.out.record_ids,
-            CALL_METAGRAPH_SPECIES.out.index_label_map,
-            CALL_METAGRAPH_SPECIES.out.species_hits,
-            reference_fasta_ch,
-            'metagraph_map',
-            'metagraph_map_summary'
-        )
-        map_qc_ch = METAGRAPH_MAP_QC.out.qc_table
-    } else {
-        map_qc_ch = Channel.empty()
-    }
+    // NO map-QC here. Species are called on read-hit counts alone
+    // (metagraph_align_min_hits); the validation mapping that used to follow -- bowtie2
+    // the reads against each called species' reference, then samtools coverage for breadth
+    // -- was removed deliberately. Its breadth figure is now obtained downstream instead,
+    // from the consensus alignment subworkflows/mapping.nf performs anyway, so a
+    // sequence-index species is mapped once rather than twice. METAGRAPH_MAP_QC.nf is kept
+    // but unused; see its header.
 
     emit:
-    species_hits = CALL_METAGRAPH_SPECIES.out.species_hits
-    map_qc       = map_qc_ch
+    species_hits    = CALL_METAGRAPH_SPECIES.out.species_hits
+    // SEQIDX_<n> -> species for the species that cleared min-hits: the "ideal reference"
+    // per call, which map-QC used to consume and MAPPING now uses to extract a consensus
+    // reference. Optional per sample (unwritten when nothing cleared min-hits).
+    index_label_map = CALL_METAGRAPH_SPECIES.out.index_label_map
 }
 
 /*

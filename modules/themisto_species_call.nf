@@ -5,10 +5,11 @@
 // its single most-hit reference index (see call_themisto_species.py). Unlike mSWEEP,
 // this needs no probabilistic abundance model: species_labels.txt already maps each
 // 0-based Themisto reference index straight to a label, so the read-hit count itself is
-// enough to call a species present and to pick which one of its sequences to validate.
+// enough to call a species present and to pick which one of its sequences to map.
 // Reference indices are also 1:1 positional with the msweep_map_reference_fasta/
-// INDEX_REFERENCE_FASTA SEQIDX_<n> tagging (reference_subset.nf), so no separate
-// reference-extraction module is needed downstream (see themisto_map_qc.nf).
+// INDEX_REFERENCE_FASTA SEQIDX_<n> tagging (reference_subset.nf), which is what lets
+// subworkflows/mapping.nf extract a called species' reference by exact id (see
+// EXTRACT_REFERENCE_RECORD) with nothing in between.
 
 // VIRAL-LENS DEVIATION from upstream: bin/call_themisto_species.py skips placeholder
 // labels (currently the literal "NA", 7500 lines of rvdb_clustered_virome_species_labels.txt)

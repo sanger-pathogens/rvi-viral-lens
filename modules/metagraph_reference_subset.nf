@@ -55,3 +55,48 @@ process EXTRACT_METAGRAPH_REFERENCE_SUBSET {
     ' ${meta.id}_subset_raw.fasta > ${meta.id}_subset.fasta
     """
 }
+
+// Single-record variant of the above, for one already-chosen record taken by value rather
+// than a file of them: subworkflows/mapping.nf resolves consensus references one
+// (sample, species) at a time, so it has the record in `meta`, not in a file.
+//
+// It takes the finished grep pattern, not the raw record id: the taxid-vs-accession rule
+// (see build_record_id_pattern() in bin/call_metagraph_species.py) is applied in Groovy by
+// metagraph_record_pattern() in subworkflows/mapping.nf, rather than reimplemented in
+// shell here where the regex would have to survive both Nextflow's own string
+// interpolation and the shell's quoting.
+//
+// No header rewrite here (unlike EXTRACT_METAGRAPH_REFERENCE_SUBSET): nothing downstream
+// of consensus generation joins on the reference's rname, so the library's own header is
+// kept as-is, which keeps the published consensus traceable to the exact library record.
+process EXTRACT_METAGRAPH_REFERENCE_RECORD {
+    tag "${meta.id}"
+    label 'cpu_2'
+    label 'mem_4'
+    label 'time_queue_from_normal'
+
+    container 'quay.io/biocontainers/seqkit:2.10.0--h9ee0642_0'
+
+    input:
+    tuple val(meta), val(record_pattern)
+    path(reference_fasta)
+
+    output:
+    tuple val(meta), path("${meta.id}_subset.fasta"), emit: subset_fasta, optional: true
+
+    script:
+    """
+    # See EXTRACT_METAGRAPH_REFERENCE_SUBSET for why `|| true` is needed on the grep side
+    # of this pipe: `seqkit head -n 1` closes stdin after the first record and can SIGPIPE
+    # a grep still writing further matches, which pipefail would otherwise treat as failure.
+    (seqkit grep -n -r -p '${record_pattern}' ${reference_fasta} || true) \\
+        | seqkit head -n 1 > ${meta.id}_subset.fasta
+
+    # A pattern that matched nothing leaves a 0-byte FASTA behind, and `>` means the file
+    # exists regardless. Remove it so the optional output is genuinely absent and this
+    # species is dropped, rather than reaching GENERATE_CONSENSUS with no reference.
+    if [ ! -s ${meta.id}_subset.fasta ]; then
+        rm -f ${meta.id}_subset.fasta
+    fi
+    """
+}

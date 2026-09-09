@@ -8,15 +8,15 @@
     metagraph_query.nf) against a pre-built metagraph de Bruijn graph + annotation index
     using metagraph query --query-mode labels, counts reads per species from the matched
     labels, and provisionally calls a species present in the sample once its read-hit
-    count clears metagraph_align_min_hits. Same species-calling and (optional) map-QC
-    validation as VIRAL_METAGRAPH_ALIGN.nf, and reuses the same shared index/threshold
-    params -- the two subworkflows are alternative methods against the same reference
+    count clears metagraph_align_min_hits. Hit count is the whole calling criterion: no
+    reads are mapped here (see the note by the emit block). Same species-calling as
+    VIRAL_METAGRAPH_ALIGN.nf, and reuses the same shared index/threshold params -- the two subworkflows are alternative methods against the same reference
     data, not independently configured pipelines. See metagraph_query.nf for why this
     exists as a separate, simpler module rather than the old filter+query pipeline
     metagraph_align.nf itself replaced.
     Reads are capped at metagraph_align_subsample_limit per mate before querying, same
     reasoning as VIRAL_METAGRAPH_ALIGN.nf.
-    Per-sample results are published under <outdir>/<sample>/sequenceindex/{metagraph_query_hits,metagraph_query_map}.
+    Per-sample results are published under <outdir>/<sample>/sequenceindex/metagraph_query_hits.
 ========================================================================================
 */
 
@@ -27,7 +27,6 @@
 */
 include { METAGRAPH_QUERY        } from '../modules/metagraph_query.nf'
 include { CALL_METAGRAPH_SPECIES } from '../modules/metagraph_species_call.nf'
-include { METAGRAPH_MAP_QC       } from './METAGRAPH_MAP_QC.nf'
 include { SUBSAMPLE_ITER         } from '../rvi_toolbox/subworkflows/subsample.nf'
 
 /*
@@ -60,30 +59,24 @@ workflow VIRAL_METAGRAPH_QUERY {
 
     METAGRAPH_QUERY(capped_reads_ch, graph_ch, annotation_ch, annotation_seqs_ch)
 
-    // 'metagraph_query_hits'/'metagraph_query_map_summary': distinct from
-    // VIRAL_METAGRAPH_ALIGN.nf's names -- see that subworkflow's identical comment.
+    // 'metagraph_query_hits': a name distinct from VIRAL_METAGRAPH_ALIGN.nf's, so the two
+    // methods' outputs cannot overwrite each other when both run for the same sample.
     CALL_METAGRAPH_SPECIES(METAGRAPH_QUERY.out.alignments, names_dmp_ch, 'metagraph_query_hits')
 
-    if (params.metagraph_align_run_map_qc) {
-        reference_fasta_ch = Channel.fromPath(params.metagraph_map_reference_fasta).first()
-
-        METAGRAPH_MAP_QC(
-            capped_reads_ch,
-            CALL_METAGRAPH_SPECIES.out.record_ids,
-            CALL_METAGRAPH_SPECIES.out.index_label_map,
-            CALL_METAGRAPH_SPECIES.out.species_hits,
-            reference_fasta_ch,
-            'metagraph_query_map',
-            'metagraph_query_map_summary'
-        )
-        map_qc_ch = METAGRAPH_MAP_QC.out.qc_table
-    } else {
-        map_qc_ch = Channel.empty()
-    }
+    // NO map-QC here. Species are called on read-hit counts alone
+    // (metagraph_align_min_hits); the validation mapping that used to follow -- bowtie2
+    // the reads against each called species' reference, then samtools coverage for breadth
+    // -- was removed deliberately. Its breadth figure is now obtained downstream instead,
+    // from the consensus alignment subworkflows/mapping.nf performs anyway, so a
+    // sequence-index species is mapped once rather than twice. METAGRAPH_MAP_QC.nf is kept
+    // but unused; see its header.
 
     emit:
-    species_hits = CALL_METAGRAPH_SPECIES.out.species_hits
-    map_qc       = map_qc_ch
+    species_hits    = CALL_METAGRAPH_SPECIES.out.species_hits
+    // SEQIDX_<n> -> species for the species that cleared min-hits: the "ideal reference"
+    // per call, which map-QC used to consume and MAPPING now uses to extract a consensus
+    // reference. Optional per sample (unwritten when nothing cleared min-hits).
+    index_label_map = CALL_METAGRAPH_SPECIES.out.index_label_map
 }
 
 /*

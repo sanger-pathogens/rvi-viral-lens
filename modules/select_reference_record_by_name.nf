@@ -3,14 +3,14 @@
 // abundance-threshold gating, for a caller that already knows which species it wants.
 //
 // UNUSED since the classifier/mapping split moved reference resolution into
-// subworkflows/mapping.nf. That resolution now reuses the reference record the calling
-// method's own map-QC table already names (EXTRACT_REFERENCE_RECORD in
-// reference_subset.nf), so nothing needs to re-derive one from the species name. Kept, not
-// deleted, for two reasons: it is the only deterministic species -> record rule in the
+// subworkflows/mapping.nf. That resolution reuses the record id the calling method's own
+// index-label map already names for the species (EXTRACT_REFERENCE_RECORD in
+// reference_subset.nf, or EXTRACT_METAGRAPH_REFERENCE_RECORD in
+// metagraph_reference_subset.nf), so nothing needs to re-derive one from the species name.
+// Kept, not deleted, because it is the only deterministic species -> record rule in the
 // codebase (seeded longest-sequence, independent of which method called the species),
 // which is the fix if the multi-method non-determinism noted in
-// subworkflows/classifying_index.nf ever matters; and it is the way to resolve a reference
-// for a species that was never map-QC'd at all.
+// subworkflows/classifying_index.nf ever matters.
 
 params.script_src_path = "${projectDir}/bin/"
 

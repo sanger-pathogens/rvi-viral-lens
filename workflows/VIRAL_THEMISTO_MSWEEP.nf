@@ -8,16 +8,15 @@
     msweep_subsample_limit — species calling doesn't need full depth and excess reads only
     cost Themisto2 time/memory) against a pre-built Themisto2 (.thm2) index, then call
     species directly from the pseudoalignment read-hit counts (see
-    themisto_species_call.nf) and validate each call by mapping the same (subsampled)
-    reads directly against its single most-hit reference sequence and recording genome
-    breadth of coverage (see themisto_map_qc.nf) — mirrors metagraph_align.nf's read-hit
-    calling/validation, just against Themisto2 pseudoalignment counts instead of metagraph
-    align's alignment labels. mSWEEP's own probabilistic abundance estimation (and its
-    matching low-abundance mapping validation, msweep_map_qc.nf) is optional and off by
-    default — set run_msweep to also run it alongside the above.
+    themisto_species_call.nf) — mirrors metagraph_align.nf's read-hit calling, just
+    against Themisto2 pseudoalignment counts instead of metagraph align's alignment
+    labels. Hit count is the whole calling criterion: no reads are mapped here (see the
+    note by the emit block, and subworkflows/classifying_index.nf's header). mSWEEP's own
+    probabilistic abundance estimation is optional and off by default — set run_msweep to
+    also run it alongside the above.
     Per-sample results are published under
-    <outdir>/<sample>/sequenceindex/{themisto_hits,themisto_map}, and (if run_msweep)
-    <outdir>/<sample>/{msweep,msweep_map}.
+    <outdir>/<sample>/sequenceindex/themisto_hits, and (if run_msweep)
+    <outdir>/<sample>/msweep.
 
     Core processes are adapted from the gemsweep pipeline (themisto2 branch).
     PORTED (rvi_integration_1) from eu1/rvi_toolbox.git's `feature_msweep_map` branch
@@ -40,7 +39,6 @@ include { THEMISTO_PSEUDOALIGN              } from '../modules/themisto2.nf'
 include { CALL_THEMISTO_SPECIES             } from '../modules/themisto_species_call.nf'
 include { MSWEEP                            } from '../modules/msweep.nf'
 include { CLEANUP_THEMISTO_PSEUDOALIGNMENTS } from '../modules/cleanup.nf'
-include { THEMISTO_MAP_QC                   } from './THEMISTO_MAP_QC.nf'
 include { SUBSAMPLE_ITER                    } from '../rvi_toolbox/subworkflows/subsample.nf'
 
 /*
@@ -85,37 +83,24 @@ workflow VIRAL_THEMISTO_MSWEEP {
     // probabilistic model needed (see themisto_species_call.nf).
     CALL_THEMISTO_SPECIES(pseudoaligned_ch, ref_groups_ch)
 
-    // themisto_align_run_map_qc lets species-hit calling be validated on its own first.
-    if (params.themisto_align_run_map_qc) {
-        themisto_map_reference_fasta_ch = Channel.fromPath(params.themisto_map_reference_fasta).first()
-
-        // Validate against the same (subsampled) reads CALL_THEMISTO_SPECIES's call was
-        // actually based on, not the original deeper reads_ch — otherwise breadth/depth
-        // here could look better than what the species call itself saw.
-        THEMISTO_MAP_QC(
-            capped_reads_ch,
-            CALL_THEMISTO_SPECIES.out.record_ids,
-            CALL_THEMISTO_SPECIES.out.index_label_map,
-            CALL_THEMISTO_SPECIES.out.species_hits,
-            themisto_map_reference_fasta_ch
-        )
-        themisto_map_qc_ch = THEMISTO_MAP_QC.out.qc_table
-    } else {
-        themisto_map_qc_ch = Channel.empty()
-    }
+    // NO map-QC here. Species are called on read-hit counts alone
+    // (themisto_align_min_hits); the validation mapping that used to follow -- bowtie2 the
+    // reads against each called species' reference, then samtools coverage for breadth --
+    // was removed deliberately. Its breadth figure is now obtained downstream instead,
+    // from the consensus alignment subworkflows/mapping.nf performs anyway, so a
+    // sequence-index species is mapped once rather than twice. THEMISTO_MAP_QC.nf is kept
+    // but unused; see its header.
 
     // mSWEEP's probabilistic abundance estimation is optional — off by default in favour
     // of the direct species-hit call above.
     //
     // ABUNDANCE ESTIMATION ONLY. Upstream also ran MSWEEP_MAP_QC here, mapping reads
     // against each low-abundance call's reference to validate it by breadth of coverage.
-    // That step is deliberately dropped in viral-lens: THEMISTO_MAP_QC above already does
-    // breadth validation for this arm, and does it better, because it maps against each
-    // species' MOST-HIT reference record whereas SELECT_REFERENCE_RECORDS picked the
-    // LONGEST sequence carrying the label. Measured on the same sample, that choice was
-    // worth 29.79% breadth (mSWEEP's pick) versus 99.96% (Themisto's) for the same
-    // SARS-CoV-2 call. Keeping both meant paying for a second bowtie2 index + mapping pass
-    // per sample to produce the worse of two answers to the same question.
+    // That step was dropped when THEMISTO_MAP_QC arrived (it answered the same question,
+    // and better: most-hit reference rather than SELECT_REFERENCE_RECORDS' longest
+    // sequence per label -- worth 99.96% vs 29.79% breadth on the same SARS-CoV-2 call),
+    // and no validation mapping happens in this lane at all now that THEMISTO_MAP_QC has
+    // gone too. Breadth is measured once, downstream, off the consensus alignment.
     if (params.run_msweep) {
         MSWEEP(pseudoaligned_ch, ref_groups_ch)
         abundances_ch = MSWEEP.out.abundances
@@ -140,7 +125,10 @@ workflow VIRAL_THEMISTO_MSWEEP {
 
     emit:
     species_hits     = CALL_THEMISTO_SPECIES.out.species_hits
-    themisto_map_qc  = themisto_map_qc_ch
+    // SEQIDX_<n> -> species for the species that cleared min-hits: the "ideal reference"
+    // per call, which map-QC used to consume and MAPPING now uses to extract a consensus
+    // reference. Optional per sample (unwritten when nothing cleared min-hits).
+    index_label_map  = CALL_THEMISTO_SPECIES.out.index_label_map
     abundances       = abundances_ch
 }
 

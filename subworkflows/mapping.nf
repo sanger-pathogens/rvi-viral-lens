@@ -15,19 +15,21 @@
 // The two classifiers hand over DIFFERENT shapes, deliberately:
 //   - CLASSIFYING_KRAKEN2 arrives consensus-ready (reads + reference), because
 //     SORT_READS_BY_REF resolves its references as part of classifying;
-//   - CLASSIFYING_INDEX arrives as species calls plus the reference record each was
-//     validated against, and no reads. Extracting that reference and pairing reads for
+//   - CLASSIFYING_INDEX arrives as species calls plus the reference record its own index
+//     points at for each, and no reads. Extracting that reference and pairing reads for
 //     consensus is this subworkflow's job, done only for the calls that survive the
 //     "Kraken2 already found it" filter.
 //
-// Note what "mapping" means on each side. CLASSIFYING_INDEX has already mapped reads once,
-// with bowtie2, inside its map-QC step -- that is where the breadth_pct it reports comes
-// from, and thresholding on it is how a call is judged worth a consensus at all. What
-// happens here is the separate CONSENSUS mapping (params.read_aligner + iVar), so a
-// surviving sequence-index species is mapped twice in total, by different aligners for
-// different purposes. That is deliberate: reusing the bowtie2 BAM would build these
-// consensuses differently from every Kraken2-side one and make the two incomparable.
+// This is the ONLY place either classifier's reads get mapped. CLASSIFYING_INDEX calls
+// species on read-hit counts alone and maps nothing, so there is no breadth figure
+// attached to its calls when they arrive -- which is why the breadth threshold that
+// decides whether a sequence-index-only species is worth reporting is applied here, AFTER
+// the consensus alignment, rather than up in the classifier (see
+// params.new_species_min_breadth_pct below). The cost of that ordering is that a noise
+// call's consensus is computed and then discarded; the saving is that a real call is
+// mapped once instead of twice.
 include {INDEX_REFERENCE_FASTA; EXTRACT_REFERENCE_RECORD} from '../modules/reference_subset.nf'
+include {EXTRACT_METAGRAPH_REFERENCE_RECORD} from '../modules/metagraph_reference_subset.nf'
 include {GENERATE_CONSENSUS} from '../workflows/GENERATE_CONSENSUS.nf'
 include {SCOV2_SUBTYPING} from '../workflows/SCOV2_SUBTYPING.nf'
 include {GENERATE_CLASSIFICATION_REPORT} from '../workflows/GENERATE_CLASSIFICATION_REPORT.nf'
@@ -66,8 +68,8 @@ workflow MAPPING {
     run):
 
     - **index_species_calls_ch**: [sample_id, call], call being a Map
-      of species_name, reference_record, hit_count, breadth_pct and
-      method.
+      of species_name, reference_record, reference_source, hit_count
+      and method. No breadth: nothing has mapped these reads yet.
 
     Plus **reads_ch**, tuple(meta, read_1, read_2) per sample, needed
     to map the index-side species this subworkflow resolves itself.
@@ -173,10 +175,40 @@ workflow MAPPING {
                     discovered_by: 'sequence_index',
                     discovered_by_method: call.method,
                     index_reference_record: call.reference_record,
+                    index_reference_source: call.reference_source,
                     index_hit_count: call.hit_count,
-                    index_breadth_pct: call.breadth_pct,
                 ]
-                [meta, call.reference_record]
+                [meta, call]
+            }
+
+        // A record id only means something against the reference FASTA the calling
+        // method's own index was built from, and the methods disagree about which that is:
+        //
+        //   'seqidx'    Themisto2 -- positional SEQIDX_<n> into msweep_map_reference_fasta
+        //   'metagraph' Metagraph -- a taxid or accession into metagraph_map_reference_fasta
+        //
+        // so the calls are split and extracted separately, then re-merged. Sending them all
+        // through one extractor would quietly produce no reference for the other family's
+        // ids (an unmatched grep, an absent optional output, a species silently gone),
+        // even though both FASTAs happen to be builds of the same RVDB release today.
+        index_new_meta_ch
+            .branch { _meta, call ->
+                seqidx_ch:    call.reference_source == 'seqidx'
+                metagraph_ch: call.reference_source == 'metagraph'
+                unknown_ch:   true
+            }
+            .set { index_new_by_source_ch }
+
+        // branch drops anything no arm matched, so the third arm exists purely to turn a
+        // new/typo'd reference_source into a loud failure instead of a species that
+        // vanishes between the classifier and the report.
+        index_new_by_source_ch.unknown_ch
+            .map { meta, call ->
+                error("${meta.id}: sequence-index call for '${call.species_name}' has " +
+                      "reference_source '${call.reference_source}', which MAPPING has no " +
+                      "reference FASTA for. Add an arm to the branch above (and an " +
+                      "extractor) or fix parse_species_calls() in " +
+                      "subworkflows/classifying_index.nf.")
             }
 
         // Gated even though CLASSIFYING_INDEX already emits nothing when the feature is
@@ -184,13 +216,25 @@ workflow MAPPING {
         // the reference FASTA on every default run, and every run would then require
         // msweep_map_reference_fasta to exist.
         if (params.call_consensus_for_new_species) {
-            // The same reference FASTA the calling method's own map-QC indexed, re-tagged
-            // here with the same positional SEQIDX_<n> ids -- a deterministic pass over the
-            // same file, which is what makes the record ids the classifier reported valid
-            // to grep for. Costs one extra pass over that FASTA per run.
+            // The same reference FASTA the Themisto2 index was built from, re-tagged here
+            // with the same positional SEQIDX_<n> ids -- a deterministic pass over the same
+            // file, which is what makes the record ids the classifier reported valid to
+            // grep for. Costs one extra pass over that FASTA per run.
             INDEX_REFERENCE_FASTA(Channel.fromPath(params.msweep_map_reference_fasta))
 
-            EXTRACT_REFERENCE_RECORD(index_new_meta_ch, INDEX_REFERENCE_FASTA.out.fasta.first())
+            EXTRACT_REFERENCE_RECORD(
+                index_new_by_source_ch.seqidx_ch.map { meta, call -> [meta, call.reference_record] },
+                INDEX_REFERENCE_FASTA.out.fasta.first()
+            )
+
+            // metagraph_record_pattern() builds the grep pattern in Groovy rather than in
+            // the process's shell -- see modules/metagraph_reference_subset.nf.
+            EXTRACT_METAGRAPH_REFERENCE_RECORD(
+                index_new_by_source_ch.metagraph_ch.map { meta, call ->
+                    [meta, metagraph_record_pattern(call.reference_record)]
+                },
+                Channel.fromPath(params.metagraph_map_reference_fasta).first()
+            )
 
             // Deliberately no cross-sample de-duplication: a species found new in many
             // samples gets its reference extracted once per sample rather than once per
@@ -200,6 +244,7 @@ workflow MAPPING {
                 .map { meta, r1, r2 -> [meta.id, r1, r2] } // meta.id == sample_id pre-classifier
 
             EXTRACT_REFERENCE_RECORD.out.subset_fasta
+                .mix(EXTRACT_METAGRAPH_REFERENCE_RECORD.out.subset_fasta)
                 .map { meta, ref_fa -> [meta.sample_id, meta, ref_fa] }
                 .combine(reads_by_sample_ch, by: 0)
                 .map { _sample_id, meta, ref_fa, r1, r2 -> [meta, [r1, r2], ref_fa] }
@@ -222,7 +267,49 @@ workflow MAPPING {
 
         GENERATE_CONSENSUS(sample_taxid_ch)
 
+        // --- breadth gate on sequence-index-only species -------------------------------
+        // The consensus alignment is the first (and now only) time these species' reads
+        // are mapped, so this is the earliest point their breadth of coverage can be
+        // judged -- hence a filter after GENERATE_CONSENSUS rather than a threshold in the
+        // classifier. Below params.new_species_min_breadth_pct the species is dropped
+        // completely: no consensus published, no Nextclade, no subtyping, no report row.
+        // The wasted work is the consensus itself, which is the price of not mapping every
+        // real call twice.
+        //
+        // WHICH breadth: percent_non_n_bases, the share of the consensus that is a real
+        // base rather than N. `samtools mpileup -aa` (modules/run_ivar.nf) emits every
+        // reference position including zero-coverage ones, and `ivar consensus -n N` pads
+        // those with N, so the consensus is exactly reference-length and this figure is
+        // genome breadth at iVar's minimum depth (params.ivar_polish_min_depth, 10x) over
+        // the whole reference. It is deliberately NOT depth>=1 breadth, which the QC JSON
+        // does not carry (bin/qc.py buckets depth in steps of 5 from 0, so "positions with
+        // any coverage" is not among them) and which would be the wrong gate anyway: the
+        // index noise this is meant to reject sits at 3-14% breadth and 0.09-0.46x mean
+        // depth, so at 10% a depth>=1 threshold would admit the top of that range while a
+        // 10x one cannot.
+        //
+        // Kraken2-side consensuses pass through untouched -- they are gated by Kraken2's
+        // own read-count selection upstream, and retro-fitting a breadth threshold onto
+        // them would silently change what the pipeline has always reported.
         GENERATE_CONSENSUS.out.filtered_consensus_ch
+            .map { meta, bam, bam_idx, consensus, qc_json ->
+                def json_map = new groovy.json.JsonSlurper().parse(new File(qc_json.toString()))
+                def breadth = (json_map['percent_non_n_bases'] ?: 0) as Double
+                // Recorded on meta for every consensus, both classifiers', so the report
+                // shows the number the gate was applied to (or would have been).
+                [meta + [consensus_breadth_pct: breadth], bam, bam_idx, consensus, qc_json]
+            }
+            .filter { meta, _bam, _bam_idx, _consensus, _qc_json ->
+                if (meta.discovered_by != 'sequence_index') return true
+                if (meta.consensus_breadth_pct >= params.new_species_min_breadth_pct) return true
+                log.info("Dropping sequence-index-only species '${meta.species_name}' for " +
+                         "${meta.sample_id}: consensus breadth ${meta.consensus_breadth_pct}% " +
+                         "< new_species_min_breadth_pct (${params.new_species_min_breadth_pct}%)")
+                return false
+            }
+            .set { consensus_ch }
+
+        consensus_ch
             .map { meta, _bam, _bam_idx, consensus, _qc_json -> [meta.id, meta, consensus] }
             .set { consensus_fa_ch }
 
@@ -254,7 +341,7 @@ workflow MAPPING {
         }
 
         // add report info to out qc metric channel and branch for SCOV2 subtyping
-        GENERATE_CONSENSUS.out.filtered_consensus_ch
+        consensus_ch
             .map { meta, _bam, _bam_idx, consensus, _qc -> [meta.id, meta, consensus] }
             .join(sample_report_with_join_key_ch)
             .map { _id, meta, fasta, report ->
@@ -279,11 +366,11 @@ workflow MAPPING {
             .map { meta, _fasta -> [meta.id, meta] }
             .set { report_in_ch }
 
-        GENERATE_CONSENSUS.out.filtered_consensus_ch
+        consensus_ch
             .map { meta, _bam, _bam_idx, _consensus, qc_json -> [meta.id, qc_json] }
             .set { qc_json_simplified_ch }
 
-        GENERATE_CONSENSUS.out.filtered_consensus_ch
+        consensus_ch
             .map { meta, bam, bam_idx, consensus, _qc_json -> [meta, [bam, bam_idx, consensus]] }
             .set { aln_publish_ch }
 
@@ -299,4 +386,34 @@ workflow MAPPING {
         publish_nc_files(publish_nextclade_outputs_ch)
         publish_per_sample_json(GENERATE_CLASSIFICATION_REPORT.out.publish_seq_level_ch)
         publish_run_files(GENERATE_CLASSIFICATION_REPORT.out.publish_run_level_summaries_ch)
+}
+
+// The Groovy half of a rule that also exists in Python: bin/call_metagraph_species.py's
+// build_record_id_pattern(). Metagraph reports a species' reference either as a bare taxid
+// (for 'kraken:taxid|<taxid>|...'-shaped index labels) or as a complete accession, and the
+// two need different anchoring to grep out of metagraph_map_reference_fasta:
+//
+//   taxid     anchored on the fixed 'kraken:taxid|<taxid>|' prefix every such header
+//             shares, so taxid 13000336 cannot match a header for 130003360;
+//   accession anchored to the start of the header and required to be followed by
+//             whitespace or end-of-line, so it cannot match a longer accession that has it
+//             as a prefix.
+//
+// Kept here rather than in the process's shell because the pattern would otherwise have to
+// survive Nextflow's string interpolation and then the shell's quoting on its way to
+// seqkit; the Python side is the same rule for the file-of-patterns path that
+// EXTRACT_METAGRAPH_REFERENCE_SUBSET still uses. Change one, change the other.
+def metagraph_record_pattern(record_id) {
+    def id = record_id.toString().trim()
+    if (id ==~ /^[0-9]+$/) {
+        return "^kraken:taxid\\|${id}\\|".toString()
+    }
+    // Metacharacters escaped one by one rather than wrapped in a \Q...\E literal span:
+    // seqkit's regex engine is Go's, which does accept \Q...\E, but this cannot be
+    // exercised without seqkit installed, and an accession's '.' silently acting as a
+    // wildcard (matching a near-identical accession) is a worse failure than none. The
+    // class below is the set Python's re.escape would touch in this input; '.' is the only
+    // one accessions actually contain.
+    def escaped = id.replaceAll(/([.^$*+?()\[\]{}|\\])/, '\\\\$1')
+    return "^${escaped}(\\s|\$)".toString()
 }

@@ -9,25 +9,22 @@
 // flag on) one row carries every enabled method's counts.
 //
 // What this classifier produces is CALLS, not consensus sequences: per sample, the species
-// each method found, the reference record it was validated against, and the supporting
-// counts. subworkflows/mapping.nf takes it from there -- preferring Kraken2's calls where
+// each method found, the reference record its own index points at for that species, and
+// the read-hit count supporting it. subworkflows/mapping.nf takes it from there -- preferring Kraken2's calls where
 // the two classifiers agree, and building consensus for the genuinely new ones.
 //
-// It does map reads, though, and it is worth being precise about which mapping happens
-// where, because there are two kinds and they serve different purposes:
+// It maps NO reads. Species are called on read-hit counts alone (themisto_align_min_hits
+// / metagraph_align_min_hits). The map-QC step that used to run here -- bowtie2 the reads
+// against each called species' reference, then samtools coverage for breadth -- was
+// removed: it meant a surviving species got mapped twice, once to measure breadth and
+// again for consensus. Breadth is now measured once, downstream, from the consensus
+// alignment MAPPING performs anyway, and MAPPING applies the breadth threshold there (see
+// params.new_species_min_breadth_pct). THEMISTO_MAP_QC.nf / METAGRAPH_MAP_QC.nf are kept
+// but unused.
 //
-//   - VALIDATION mapping, here, inside each method's map-QC step (THEMISTO_MAP_QC /
-//     METAGRAPH_MAP_QC): bowtie2 the sample's reads against the candidate references,
-//     then samtools coverage. This is where breadth_pct comes from, and breadth is the
-//     evidence new_species_min_breadth_pct thresholds on -- it is what separates a real
-//     call at ~99% breadth from index noise at 3-14%. A species cannot be judged worth a
-//     consensus without it, so this mapping is load-bearing, not incidental.
-//   - CONSENSUS mapping, in mapping.nf: the pipeline's own aligner (params.read_aligner)
-//     plus iVar, against the one reference chosen for that species.
-//
-// So surviving species really are mapped twice, by different aligners for different
-// reasons. What moved out of this file was consensus-reference resolution and consensus
-// generation -- not all mapping.
+// The consequence to be aware of: calls leaving here are hit-count-only, so they are
+// less filtered than they used to be. Index noise that breadth would have rejected now
+// reaches MAPPING and is rejected after its consensus alignment instead.
 include {VIRAL_THEMISTO_MSWEEP} from '../workflows/VIRAL_THEMISTO_MSWEEP.nf'
 include {VIRAL_METAGRAPH_ALIGN} from '../workflows/VIRAL_METAGRAPH_ALIGN.nf'
 include {VIRAL_METAGRAPH_QUERY} from '../workflows/VIRAL_METAGRAPH_QUERY.nf'
@@ -43,12 +40,11 @@ workflow CLASSIFYING_INDEX {
         sequence_index_sample_ch = preprocessed_3tuple_ch
             .map { meta, _r1, _r2 -> [meta.id, meta] }
 
-        // -- Themisto2 pseudoalignment + mSWEEP abundance, then breadth-of-coverage
-        // validation of the low-abundance calls.
+        // -- Themisto2 pseudoalignment, species called from read-hit counts.
         //
         // THE LANE'S DEFAULT METHOD (run_themisto defaults true). Species are called
         // directly from Themisto2 pseudoalignment read-hit counts (CALL_THEMISTO_SPECIES)
-        // and validated by THEMISTO_MAP_QC -- no probabilistic model involved. mSWEEP's
+        // -- no probabilistic model and no validation mapping involved. mSWEEP's
         // abundance estimate is an optional add-on *inside* this arm, gated by run_msweep
         // (default false) inside VIRAL_THEMISTO_MSWEEP itself; see nextflow.config's note
         // on run_msweep's changed meaning.
@@ -58,11 +54,6 @@ workflow CLASSIFYING_INDEX {
             themisto_counts_ch = VIRAL_THEMISTO_MSWEEP.out.species_hits
                 .map { meta, tsv -> [meta.id, count_species_hits(tsv, 'themisto')] }
 
-            // themisto_map_qc is Channel.empty() when themisto_align_run_map_qc is off,
-            // and drops samples with nothing above themisto_align_min_hits; joined with
-            // remainder below rather than losing those samples from the report.
-            themisto_mapqc_counts_ch = VIRAL_THEMISTO_MSWEEP.out.themisto_map_qc
-                .map { meta, tsv -> [meta.id, count_map_qc_breadth(tsv, 'themisto')] }
 
             // Both of these are Channel.empty() unless run_msweep is set (see
             // ../workflows/VIRAL_THEMISTO_MSWEEP.nf), so they need no gate of their own --
@@ -71,35 +62,32 @@ workflow CLASSIFYING_INDEX {
             msweep_counts_ch = VIRAL_THEMISTO_MSWEEP.out.abundances
                 .map { meta, abundances, _probs -> [meta.id, count_msweep_abundances(abundances)] }
 
-            // Kept as its own variable so the new-species block below can consume it
+            // Kept as its own variable so the species-calls block below can consume it
             // without touching VIRAL_THEMISTO_MSWEEP.out, which is undefined unless the
-            // subworkflow was actually invoked.
-            themisto_map_qc_ch = VIRAL_THEMISTO_MSWEEP.out.themisto_map_qc
+            // subworkflow was actually invoked. Optional per sample: unwritten when
+            // nothing cleared min-hits.
+            themisto_hits_ch     = VIRAL_THEMISTO_MSWEEP.out.species_hits
+            themisto_labels_ch   = VIRAL_THEMISTO_MSWEEP.out.index_label_map
         } else {
-            themisto_counts_ch       = Channel.empty()
-            themisto_mapqc_counts_ch = Channel.empty()
-            msweep_counts_ch         = Channel.empty()
-            themisto_map_qc_ch       = Channel.empty()
+            themisto_counts_ch   = Channel.empty()
+            msweep_counts_ch     = Channel.empty()
+            themisto_hits_ch     = Channel.empty()
+            themisto_labels_ch   = Channel.empty()
         }
 
-        // -- Sequence-to-graph alignment via Metagraph (metagraph align), then its own
-        // map-QC validation.
+        // -- Sequence-to-graph alignment via Metagraph (metagraph align).
         if (params.run_metagraph_align) {
             VIRAL_METAGRAPH_ALIGN(preprocessed_3tuple_ch)
 
             metagraph_align_counts_ch = VIRAL_METAGRAPH_ALIGN.out.species_hits
                 .map { meta, tsv -> [meta.id, count_species_hits(tsv, 'metagraph_align')] }
 
-            // map_qc drops samples with nothing above metagraph_align_min_hits, same
-            // reasoning as mSWEEP's map_qc above.
-            metagraph_align_mapqc_counts_ch = VIRAL_METAGRAPH_ALIGN.out.map_qc
-                .map { meta, tsv -> [meta.id, count_map_qc_breadth(tsv, 'metagraph_align')] }
-
-            metagraph_align_map_qc_ch = VIRAL_METAGRAPH_ALIGN.out.map_qc
+            metagraph_align_hits_ch   = VIRAL_METAGRAPH_ALIGN.out.species_hits
+            metagraph_align_labels_ch = VIRAL_METAGRAPH_ALIGN.out.index_label_map
         } else {
             metagraph_align_counts_ch = Channel.empty()
-            metagraph_align_mapqc_counts_ch = Channel.empty()
-            metagraph_align_map_qc_ch = Channel.empty()
+            metagraph_align_hits_ch   = Channel.empty()
+            metagraph_align_labels_ch = Channel.empty()
         }
 
         // -- Pseudoalignment via Metagraph (metagraph query --query-mode labels), same
@@ -113,42 +101,45 @@ workflow CLASSIFYING_INDEX {
             metagraph_query_counts_ch = VIRAL_METAGRAPH_QUERY.out.species_hits
                 .map { meta, tsv -> [meta.id, count_species_hits(tsv, 'metagraph_query')] }
 
-            metagraph_query_mapqc_counts_ch = VIRAL_METAGRAPH_QUERY.out.map_qc
-                .map { meta, tsv -> [meta.id, count_map_qc_breadth(tsv, 'metagraph_query')] }
-
-            metagraph_query_map_qc_ch = VIRAL_METAGRAPH_QUERY.out.map_qc
+            metagraph_query_hits_ch   = VIRAL_METAGRAPH_QUERY.out.species_hits
+            metagraph_query_labels_ch = VIRAL_METAGRAPH_QUERY.out.index_label_map
         } else {
             metagraph_query_counts_ch = Channel.empty()
-            metagraph_query_mapqc_counts_ch = Channel.empty()
-            metagraph_query_map_qc_ch = Channel.empty()
+            metagraph_query_hits_ch   = Channel.empty()
+            metagraph_query_labels_ch = Channel.empty()
         }
 
         // -- Species calls handed to MAPPING (opt-in): every species a sequence-index
-        // method called with real breadth of coverage, plus the reference record that
-        // method validated it against and its read-hit count.
+        // method called on read-hit count alone, plus the reference record the index
+        // points at for it.
         //
-        // Read straight out of each method's map-QC table, which already exists -- the
-        // validation mapping that produced breadth_pct ran inside the method's own arm
-        // above (see this file's header on the two kinds of mapping). Nothing extra is
-        // computed here; this block only reshapes those tables into calls. MAPPING then
-        // decides which of these species are actually new (Kraken2's calls win) and does
-        // the consensus-reference resolution and consensus mapping for just those.
+        // Built from two files the species-calling step already writes -- species_hits.tsv
+        // (species, hit_count, provisional_call) and index_label_map.tsv
+        // (record_id -> species) -- joined per sample. No mapping and no breadth here:
+        // hit count is the whole calling criterion now, and breadth is measured downstream
+        // by MAPPING off the consensus alignment (see this file's header).
+        //
+        // Both files are per-sample and index_label_map is optional (unwritten when
+        // nothing cleared min-hits), so join() -- 1:1 per sample -- naturally drops
+        // samples with no calls, which is correct: there is nothing to hand over for them.
         if (params.call_consensus_for_new_species) {
-            // Parse each enabled method's own already-computed map-QC table. These consume
-            // the *_map_qc_ch variables set in each method's if/else above, NOT
-            // VIRAL_*.out.map_qc directly: a subworkflow that was never invoked has no
-            // .out at all, so reaching for it aborts the run with "Access to
+            // These consume the *_hits_ch/*_labels_ch variables set in each method's
+            // if/else above, NOT VIRAL_*.out directly: a subworkflow that was never invoked
+            // has no .out at all, so reaching for it aborts the run with "Access to
             // 'VIRAL_METAGRAPH_ALIGN.out' is undefined" the moment this feature is enabled
-            // with any subset of the three methods. flatMap over an empty channel emits
+            // with any subset of the three methods. An empty channel simply contributes
             // nothing, which is what "that method is off" should mean here.
-            themisto_calls_ch = themisto_map_qc_ch
-                .flatMap { meta, tsv -> parse_species_calls(tsv, 'themisto').collect { call -> [meta.id, call] } }
+            themisto_calls_ch = themisto_hits_ch
+                .join(themisto_labels_ch)
+                .flatMap { meta, hits, labels -> parse_species_calls(hits, labels, 'themisto').collect { call -> [meta.id, call] } }
 
-            metagraph_align_calls_ch = metagraph_align_map_qc_ch
-                .flatMap { meta, tsv -> parse_species_calls(tsv, 'metagraph_align').collect { call -> [meta.id, call] } }
+            metagraph_align_calls_ch = metagraph_align_hits_ch
+                .join(metagraph_align_labels_ch)
+                .flatMap { meta, hits, labels -> parse_species_calls(hits, labels, 'metagraph_align').collect { call -> [meta.id, call] } }
 
-            metagraph_query_calls_ch = metagraph_query_map_qc_ch
-                .flatMap { meta, tsv -> parse_species_calls(tsv, 'metagraph_query').collect { call -> [meta.id, call] } }
+            metagraph_query_calls_ch = metagraph_query_hits_ch
+                .join(metagraph_query_labels_ch)
+                .flatMap { meta, hits, labels -> parse_species_calls(hits, labels, 'metagraph_query').collect { call -> [meta.id, call] } }
 
             // One call per (sample, species). .unique() streams -- it emits each
             // non-duplicate immediately as it passes, it does not need to see the whole
@@ -159,19 +150,20 @@ workflow CLASSIFYING_INDEX {
             // both methods called, is whichever arrives first -- task completion order, so
             // not reproducible run to run. Harmless on the defaults (only run_themisto is
             // on, so there is nothing to race), and the species itself is unaffected --
-            // only the record and counts reported for it. If a multi-method run ever needs
+            // only the record and count reported for it. If a multi-method run ever needs
             // determinism here, rank by method instead of by arrival.
             //
-            // No mSWEEP calls: mSWEEP now estimates abundance only and produces no breadth
-            // table to threshold on (see ../workflows/VIRAL_THEMISTO_MSWEEP.nf).
+            // No mSWEEP calls: mSWEEP estimates abundance only and calls no species (see
+            // ../workflows/VIRAL_THEMISTO_MSWEEP.nf).
             species_calls_ch = themisto_calls_ch
                 .mix(metagraph_align_calls_ch, metagraph_query_calls_ch)
                 .unique { sample_id, call -> [sample_id, call.species_name.trim().toLowerCase()] }
 
-            // Counts what this classifier can honestly measure: species it called above the
-            // breadth threshold and reported to MAPPING, BEFORE MAPPING drops the ones
-            // Kraken2 already found. For the post-filter truth, count
-            // classification-report rows carrying `discovered_by: 'sequence_index'`.
+            // Counts what this classifier can honestly measure: species it called on hit
+            // count and reported to MAPPING, BEFORE MAPPING drops the ones Kraken2 already
+            // found and before MAPPING's post-consensus breadth gate. For what actually
+            // survived, count classification-report rows carrying
+            // `discovered_by: 'sequence_index'`.
             new_species_counts_ch = species_calls_ch
                 .map { sample_id, _call -> [sample_id, 1] }
                 .groupTuple()
@@ -183,18 +175,18 @@ workflow CLASSIFYING_INDEX {
 
         sequence_index_sample_ch
             .join(themisto_counts_ch, remainder: true)
-            .join(themisto_mapqc_counts_ch, remainder: true)
             .join(msweep_counts_ch, remainder: true)
             .join(metagraph_align_counts_ch, remainder: true)
-            .join(metagraph_align_mapqc_counts_ch, remainder: true)
             .join(metagraph_query_counts_ch, remainder: true)
-            .join(metagraph_query_mapqc_counts_ch, remainder: true)
             .join(new_species_counts_ch, remainder: true)
-            .map { id, meta, t_counts, t_qc_counts, m_counts, mga_counts, mga_qc_counts, mgq_counts, mgq_qc_counts, ns_counts ->
-                def new_meta = meta + (t_counts ?: EMPTY_THEMISTO_COUNTS) + (t_qc_counts ?: EMPTY_THEMISTO_MAPQC_COUNTS) +
+            // Parameter count matches the tuple width: five joins onto the backbone, so
+            // six values after the key. The three *_mapqc_* slots that used to sit in here
+            // went with map-QC -- breadth is no longer measured at this stage.
+            .map { id, meta, t_counts, m_counts, mga_counts, mgq_counts, ns_counts ->
+                def new_meta = meta + (t_counts ?: EMPTY_THEMISTO_COUNTS) +
                     (m_counts ?: EMPTY_MSWEEP_COUNTS) +
-                    (mga_counts ?: EMPTY_METAGRAPH_ALIGN_COUNTS) + (mga_qc_counts ?: EMPTY_METAGRAPH_ALIGN_MAPQC_COUNTS) +
-                    (mgq_counts ?: EMPTY_METAGRAPH_QUERY_COUNTS) + (mgq_qc_counts ?: EMPTY_METAGRAPH_QUERY_MAPQC_COUNTS) +
+                    (mga_counts ?: EMPTY_METAGRAPH_ALIGN_COUNTS) +
+                    (mgq_counts ?: EMPTY_METAGRAPH_QUERY_COUNTS) +
                     (ns_counts ?: EMPTY_NEW_SPECIES_COUNTS)
                 [id, new_meta]
             }
@@ -208,10 +200,14 @@ workflow CLASSIFYING_INDEX {
 
     emit:
         // Handover to subworkflows/mapping.nf: one entry per (sample, species) this lane
-        // called above the breadth threshold, as [sample_id, call] where call is a Map of
-        // species_name, reference_record (a SEQIDX_<n> token from the method's own map-QC
-        // table, the id INDEX_REFERENCE_FASTA mints and seqkit grep matches), hit_count,
-        // breadth_pct and method.
+        // called on read-hit count, as [sample_id, call] where call is a Map of
+        // species_name, reference_record, reference_source, hit_count and method.
+        //
+        // reference_source ('seqidx' or 'metagraph') says which reference FASTA
+        // reference_record indexes into -- the two families of method report ids in
+        // different namespaces (see parse_species_calls()), and MAPPING extracts from the
+        // matching file. There is no breadth here: MAPPING measures it from its own
+        // consensus alignment and applies params.new_species_min_breadth_pct there.
         //
         // Note this is NOT the shape classifying_kraken2.nf hands over -- that one emits
         // reads-plus-reference ready for consensus, because SORT_READS_BY_REF resolves its
@@ -221,7 +217,7 @@ workflow CLASSIFYING_INDEX {
         //
         // Channel.empty() unless --call_consensus_for_new_species is set, so MAPPING can
         // consume it unconditionally.
-        species_calls_ch // [sample_id, [species_name:, reference_record:, hit_count:, breadth_pct:, method:]]
+        species_calls_ch // [sample_id, [species_name:, reference_record:, reference_source:, hit_count:, method:]]
 }
 
 // --- rvi_integration_1: sample-level count helpers for the mapping report ---
@@ -231,29 +227,23 @@ workflow CLASSIFYING_INDEX {
 // min-abundance/min-hits threshold). Named constants (not inline [:]) so every sample
 // still gets the same report columns regardless of which method(s) actually ran for it.
 EMPTY_THEMISTO_COUNTS = [themisto_n_species_considered: 0, themisto_n_species_called: 0]
-EMPTY_THEMISTO_MAPQC_COUNTS = [themisto_mapqc_n_species: 0, themisto_mapqc_max_breadth_pct: 0.0]
 EMPTY_MSWEEP_COUNTS = [msweep_n_groups: 0, msweep_top_group: '', msweep_top_abundance: 0.0]
-// One pair per Metagraph method (align, query) -- both call count_species_hits()/
-// count_map_qc_breadth() with a distinct prefix, since both methods' counts can merge
-// into the same per-sample meta and would otherwise collide on field name.
+// One per Metagraph method (align, query) -- both call count_species_hits() with a
+// distinct prefix, since both methods' counts can merge into the same per-sample meta and
+// would otherwise collide on field name.
 EMPTY_METAGRAPH_ALIGN_COUNTS = [metagraph_align_n_species_considered: 0, metagraph_align_n_species_called: 0]
-EMPTY_METAGRAPH_ALIGN_MAPQC_COUNTS = [metagraph_align_mapqc_n_species: 0, metagraph_align_mapqc_max_breadth_pct: 0.0]
 EMPTY_METAGRAPH_QUERY_COUNTS = [metagraph_query_n_species_considered: 0, metagraph_query_n_species_called: 0]
-EMPTY_METAGRAPH_QUERY_MAPQC_COUNTS = [metagraph_query_mapqc_n_species: 0, metagraph_query_mapqc_max_breadth_pct: 0.0]
 // New-species candidates (--call_consensus_for_new_species): how many species a
-// sequence-index method called with real breadth and got a reference resolved for, i.e.
-// how many were handed to MAPPING as consensus candidates -- 0 whenever the feature is
-// off, or on but nothing cleared the threshold for this sample. Whether MAPPING then
-// kept them (Kraken2 hadn't already found them) is not visible from here, by design:
-// see the counts block above.
+// sequence-index method called on read-hit count and has a reference record for, i.e. how
+// many were handed to MAPPING as consensus candidates -- 0 whenever the feature is off, or
+// on but nothing cleared min-hits for this sample. Whether MAPPING then kept them
+// (Kraken2 hadn't already found them, and the consensus cleared
+// new_species_min_breadth_pct) is not visible from here, by design: see the counts block
+// above.
 EMPTY_NEW_SPECIES_COUNTS = [new_species_candidates_n: 0]
 
 def empty_species_hits_counts(prefix) {
     return prefix == 'metagraph_align' ? EMPTY_METAGRAPH_ALIGN_COUNTS : EMPTY_METAGRAPH_QUERY_COUNTS
-}
-
-def empty_map_qc_counts(prefix) {
-    return prefix == 'metagraph_align' ? EMPTY_METAGRAPH_ALIGN_MAPQC_COUNTS : EMPTY_METAGRAPH_QUERY_MAPQC_COUNTS
 }
 
 def count_msweep_abundances(txt) {
@@ -307,77 +297,88 @@ def count_species_hits(tsv, prefix) {
     return ["${prefix}_n_species_considered": n_considered, "${prefix}_n_species_called": n_called]
 }
 
-def count_map_qc_breadth(tsv, prefix) {
-    // <sample>_metagraph_map_qc.tsv (bin/aggregate_metagraph_coverage.py): sample_id,
-    // species, hit_count, reference_accession, reference_length, query_length,
-    // covered_bases, breadth_pct, mean_depth, meanbaseq, meanmapq, reads_mapped. Same
-    // prefix reasoning as count_species_hits() above.
-    if (tsv == null || !tsv.exists()) return empty_map_qc_counts(prefix)
-    def lines = tsv.readLines()
-    if (lines.size() < 2) return empty_map_qc_counts(prefix)
-    def header = lines[0].split('\t')
-    def breadth_idx = header.findIndexOf { String col -> col == 'breadth_pct' }
-    def breadths = lines[1..-1].collect { String line ->
-        def cols = line.split('\t')
-        if (breadth_idx < 0 || breadth_idx >= cols.size()) return 0.0
-        try { return cols[breadth_idx] as Double } catch (NumberFormatException ignored) { return 0.0 }
-    }
-    return [
-        "${prefix}_mapqc_n_species":       lines.size() - 1,
-        "${prefix}_mapqc_max_breadth_pct": breadths ? breadths.max() : 0.0
-    ]
-}
 
 
-def parse_species_calls(tsv, method) {
-    // A method's own *_map_qc.tsv -- one row per species that method validated by mapping
-    // reads against a single chosen reference record. Returns one call Map per row whose
-    // breadth_pct clears new_species_min_breadth_pct, carrying everything MAPPING needs to
-    // map that species without re-deriving anything: the species name (original case), the
-    // reference record, and the supporting counts.
+def parse_species_calls(hits_tsv, label_map_tsv, method) {
+    // The two files a method's species-calling step already writes, joined into one call
+    // per species MAPPING should consider for consensus:
     //
-    // The reference column is named differently by the two aggregators that write these
-    // tables -- `reference_record` (bin/aggregate_themisto_coverage.py) vs
-    // `reference_accession` (bin/aggregate_metagraph_coverage.py) -- for the same 4th
-    // column holding the same SEQIDX_<n> token. Both spellings are accepted; a table with
-    // neither fails loudly rather than silently reporting species with no reference, since
-    // MAPPING cannot map those and the sample would just quietly lose them.
-    if (tsv == null || !tsv.exists()) return []
-    def lines = tsv.readLines()
+    //   hits_tsv      <sample>_species_hits.tsv -- sample_id, species, hit_count,
+    //                 provisional_call. provisional_call is `hit_count >= min_hits`
+    //                 rendered by Python's str(bool), so "True"/"False", not lowercase.
+    //   label_map_tsv <sample>_index_label_map.tsv -- headerless "<record_id>\t<species>",
+    //                 written only for the species that cleared min_hits. This is the
+    //                 "ideal reference" per call.
+    //
+    // Hit count is the entire calling criterion here: the map-QC step that used to measure
+    // breadth for these species is gone, so there is no breadth_pct to threshold on yet.
+    // MAPPING applies params.new_species_min_breadth_pct after its consensus alignment
+    // instead -- see this file's header and subworkflows/mapping.nf.
+    //
+    // Species are matched between the two files on the name as written, which is the same
+    // string in both (both come from one display_name()/species key in the same Python
+    // loop), normalized only for whitespace/case so a trailing-space difference cannot
+    // silently drop a call.
+    //
+    // reference_record is only meaningful against the reference FASTA the calling method's
+    // own index was built from, and the two families of method disagree about that:
+    // Themisto2 reports positional SEQIDX_<n> ids into params.msweep_map_reference_fasta,
+    // Metagraph reports a bare taxid or an accession into
+    // params.metagraph_map_reference_fasta. reference_source carries that distinction to
+    // MAPPING, which needs it to extract the record from the right file.
+    if (hits_tsv == null || !hits_tsv.exists()) return []
+    if (label_map_tsv == null || !label_map_tsv.exists()) return []
+
+    def record_by_species = [:]
+    label_map_tsv.readLines().each { String line ->
+        def trimmed = line.trim()
+        if (!trimmed) return
+        def cols = trimmed.split('\t')
+        if (cols.size() < 2) return
+        // First writer of a species wins, matching how the calling scripts de-duplicate.
+        def key = cols[1].trim().toLowerCase()
+        if (!record_by_species.containsKey(key)) record_by_species[key] = cols[0].trim()
+    }
+
+    def lines = hits_tsv.readLines()
     if (lines.size() < 2) return []
     def header = lines[0].split('\t')
     def species_idx = header.findIndexOf { String col -> col == 'species' }
-    def breadth_idx = header.findIndexOf { String col -> col == 'breadth_pct' }
     def hits_idx    = header.findIndexOf { String col -> col == 'hit_count' }
-    def record_idx  = header.findIndexOf { String col -> col == 'reference_record' }
-    if (record_idx < 0) {
-        record_idx = header.findIndexOf { String col -> col == 'reference_accession' }
+    def called_idx  = header.findIndexOf { String col -> col == 'provisional_call' }
+    if (species_idx < 0 || hits_idx < 0 || called_idx < 0) {
+        error("species-hits table ${hits_tsv} is missing one of the species/hit_count/" +
+              "provisional_call columns (header: ${header}). bin/call_themisto_species.py " +
+              "or bin/call_metagraph_species.py changed its output -- update " +
+              "parse_species_calls() in subworkflows/classifying_index.nf.")
     }
-    if (species_idx < 0 || breadth_idx < 0) return []
-    if (record_idx < 0) {
-        error("map-QC table ${tsv} has neither a reference_record nor a reference_accession " +
-              "column (header: ${header}). One of bin/aggregate_{themisto,metagraph}_coverage.py " +
-              "changed its output -- update parse_species_calls() in " +
-              "subworkflows/classifying_index.nf.")
-    }
-    def max_idx = [species_idx, breadth_idx, record_idx].max()
+
+    def source = method == 'themisto' ? 'seqidx' : 'metagraph'
+    def max_idx = [species_idx, hits_idx, called_idx].max()
     def calls = []
-    lines[1..-1].each { line ->
+    lines[1..-1].each { String line ->
         def cols = line.split('\t')
         if (max_idx >= cols.size()) return
-        try {
-            def breadth = cols[breadth_idx] as Double
-            if (breadth <= params.new_species_min_breadth_pct) return
-            calls << [
-                species_name:     cols[species_idx],
-                reference_record: cols[record_idx],
-                breadth_pct:      breadth,
-                hit_count:        (hits_idx >= 0 && hits_idx < cols.size()) ? cols[hits_idx] : '',
-                method:           method,
-            ]
-        } catch (NumberFormatException ignored) {
-            // header or malformed row -- skipped
+        if (cols[called_idx].trim() != 'True') return
+        def species_name = cols[species_idx].trim()
+        def record = record_by_species[species_name.toLowerCase()]
+        if (record == null) {
+            // The label map is written from the same called_species list, so a called
+            // species with no record means the two files disagree -- except for Metagraph,
+            // which legitimately drops a species whose best-hit record another species
+            // already claimed (see call_metagraph_species.py's seen_record_ids). Skipped
+            // either way: MAPPING has no reference to map it against.
+            log.warn("${method}: called species '${species_name}' has no reference record in " +
+                     "${label_map_tsv.name}; not offered to MAPPING for consensus")
+            return
         }
+        calls << [
+            species_name:     species_name,
+            reference_record: record,
+            reference_source: source,
+            hit_count:        cols[hits_idx].trim(),
+            method:           method,
+        ]
     }
     return calls
 }

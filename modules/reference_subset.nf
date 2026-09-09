@@ -101,6 +101,13 @@ process EXTRACT_REFERENCE_RECORD {
     script:
     """
     seqkit grep -p "${record_id}" ${indexed_reference_fasta} > ${meta.id}_subset.fasta
+
+    # An id that matched nothing still leaves a 0-byte FASTA behind, since `>` creates the
+    # file either way. Remove it so the optional output is genuinely absent and this
+    # species is dropped, rather than reaching GENERATE_CONSENSUS with no reference.
+    if [ ! -s ${meta.id}_subset.fasta ]; then
+        rm -f ${meta.id}_subset.fasta
+    fi
     """
 }
 

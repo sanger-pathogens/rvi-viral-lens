@@ -2,6 +2,22 @@
 
 /*
 ========================================================================================
+    UNUSED (rvi_integration_1). Nothing invokes this subworkflow: sequence-index species
+    are called on read-hit counts alone, and the breadth figure this used to produce is
+    now measured downstream from the consensus alignment subworkflows/mapping.nf performs
+    anyway (params.new_species_min_breadth_pct is applied there). Keeping a validation
+    mapping here meant every real call was mapped twice, by two different aligners.
+
+    Kept, not deleted, because it is the only thing that can measure breadth for a species
+    BEFORE deciding to spend a consensus on it. Restore it if that ordering ever matters --
+    e.g. if index noise volume makes the discarded consensuses expensive, or if breadth is
+    wanted for calls that never get a consensus at all (ones Kraken2 already found). Its
+    params are still defined in nextflow.config, marked UNUSED.
+========================================================================================
+*/
+
+/*
+========================================================================================
     metagraph-align species-call validation sub-workflow
     ------------------------
     For every species CALL_METAGRAPH_SPECIES calls above metagraph_align_min_hits, map the

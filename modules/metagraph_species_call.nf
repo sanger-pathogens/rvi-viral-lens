@@ -5,9 +5,11 @@
 // reference record (a taxid, or a bare accession for the few non-taxid labels — see
 // call_metagraph_species.py). Species keyed by taxid get relabeled with their names_dmp
 // scientific name (strain-level, not species-level, for this index) in place of the raw
-// alignment label. Unlike mSWEEP's mapping validation, no positional species-labels
-// indirection is needed here: that record can be extracted straight from the reference
-// FASTA in metagraph_map_qc.nf.
+// alignment label. Unlike mSWEEP, no positional species-labels indirection is needed
+// here: that record can be extracted straight from metagraph_map_reference_fasta by
+// subworkflows/mapping.nf (see EXTRACT_METAGRAPH_REFERENCE_RECORD). NB it is a *different*
+// FASTA from the Themisto2 side's -- the two report record ids in different namespaces,
+// which is what mapping.nf's reference_source branch exists to keep straight.
 
 params.script_src_path = "${projectDir}/bin/"
 

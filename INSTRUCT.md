@@ -849,8 +849,14 @@ consensus, so it should decide what gets one.
   nothing else. This also removed the wasted work the first step created, where references
   were resolved for species about to be discarded as already-known.
 
-  **Be precise about "no mapping" here — an earlier version of this file got it wrong.**
-  `CLASSIFYING_INDEX` *does* map reads: its map-QC step (`THEMISTO_MAP_QC` /
+  **SUPERSEDED — the paragraph below described the state of one commit only.** Map-QC was
+  removed in the next round, so `CLASSIFYING_INDEX` now maps nothing and its calls carry no
+  breadth at all; the threshold moved after `GENERATE_CONSENSUS`. See "Map-QC removed from
+  both classifiers" below for what replaced this. Kept here because the distinction it
+  draws — VALIDATION vs CONSENSUS mapping — is what the removal traded away, and is the
+  thing to re-read before restoring either `*_MAP_QC` subworkflow.
+
+  `CLASSIFYING_INDEX` *did* map reads: its map-QC step (`THEMISTO_MAP_QC` /
   `METAGRAPH_MAP_QC`) runs `INDEX_REFERENCE_FASTA` → `EXTRACT_REFERENCE_SUBSET` →
   `BOWTIE_INDEX` → `BOWTIE2SAMTOOLS` → `SAMTOOLS_COVERAGE`, which is exactly where the
   `breadth_pct` it reports comes from. That mapping is load-bearing, not incidental:
@@ -1278,8 +1284,9 @@ reports, MAPPING maps" below):
   - `identified_species_ch` — `[sample_id, [normalized_species, ...]]`.
 - `CLASSIFYING_INDEX` hands over calls only, no reads and no extracted reference:
   - `species_calls_ch` — `[sample_id, call]`, `call` being a Map of `species_name`,
-    `reference_record` (a `SEQIDX_<n>` token from that method's own map-QC table),
-    `hit_count`, `breadth_pct`, `method`.
+    `reference_record`, `reference_source`, `hit_count`, `method`. (This shape changed
+    again when map-QC was removed — see "Map-QC removed" below. It used to carry
+    `breadth_pct` and no `reference_source`.)
 
 `MAPPING` builds the consensus-ready shape for the index side itself, then `mix()`es.
 
@@ -1334,6 +1341,114 @@ previous commit had two (`grep -c initial_alignment dag.mmd`: 2 → 1). **Nothin
 run for real** — and note that the same caveat as the cross-classifier feature itself
 applies: only a sample where Kraken2 and a sequence index genuinely disagree exercises the
 handover at all, so a normal run proves only that the Kraken2 side still works.
+
+## Map-QC removed from both classifiers; the breadth gate moved after consensus
+
+Requested directly: *"i want to remove classifiers map-QC, only rely on hit counts. for
+consensus calls index-only identified species after mapping, only do if breadth_pct > 10%
+by default but parametrise"*.
+
+**What map-QC was.** Each sequence-index method used to follow its species call with a
+validation mapping: `INDEX_REFERENCE_FASTA`/`EXTRACT_*_REFERENCE_SUBSET` → `BOWTIE_INDEX` →
+`BOWTIE2SAMTOOLS` → `SAMTOOLS_COVERAGE` → `AGGREGATE_*_COVERAGE`, producing a per-species
+`breadth_pct`. `parse_species_calls()` then thresholded on that breadth to decide which
+species were worth handing to `MAPPING`. A species that survived was therefore mapped
+**twice** — bowtie2 for breadth, then `params.read_aligner` for consensus.
+
+**What it is now.** Species are called on read-hit count alone
+(`themisto_align_min_hits` / `metagraph_align_min_hits`). `parse_species_calls()` takes a
+third argument and joins the two files the calling step already writes:
+
+| file | schema | role |
+|---|---|---|
+| `<sample>_species_hits.tsv` | `sample_id, species, hit_count, provisional_call` | which species, how many hits; `provisional_call` is Python `str(bool)` → `"True"`/`"False"` |
+| `<sample>_index_label_map.tsv` | headerless `<record_id>\t<species>` | the "ideal reference" per call — written only for species clearing min-hits |
+
+so no reference resolution was lost with map-QC: the label map already named the record.
+Species are matched between the two on name, whitespace- and case-normalized. A called
+species with no record is skipped with a `log.warn` — legitimate for Metagraph, which drops
+a species whose best-hit record another species already claimed
+(`seen_record_ids` in `call_metagraph_species.py`).
+
+`workflows/THEMISTO_MAP_QC.nf` and `workflows/METAGRAPH_MAP_QC.nf` are **kept but
+unused**, with an `UNUSED` banner naming the two situations that would bring them back;
+their params in `nextflow.config` are marked the same way (`themisto_align_run_map_qc`,
+`metagraph_align_run_map_qc`, `*_map_bowtie_threads`).
+
+**The breadth gate, and the one honest compromise in it.** Nothing maps these reads before
+`GENERATE_CONSENSUS` any more, so the threshold has to be applied *after* it, in
+`subworkflows/mapping.nf`. Below `params.new_species_min_breadth_pct` (default 10.0) a
+sequence-index-**only** species is dropped completely — no published consensus, no
+Nextclade, no subtyping, no report row — and a `log.info` line says so. Kraken2-side
+consensuses pass through untouched, deliberately: they are gated by Kraken2's own read-count
+selection, and retro-fitting breadth onto them would silently change what the pipeline has
+always reported.
+
+**Which breadth**, and why it is not the same number map-QC produced: the QC JSON's
+`percent_non_n_bases`. It is genome breadth at iVar's minimum depth
+(`ivar_polish_min_depth`, 10x) over the full reference length — valid because
+`samtools mpileup -aa` (`modules/run_ivar.nf`) emits every reference position including
+zero-coverage ones and `ivar consensus -n N` pads them with N, so the consensus is exactly
+reference-length. True depth>=1 breadth is **not available**: `bin/qc.py` buckets depth in
+steps of 5 from 0 (`range(0, 101, 5)`), so "positions with any coverage" is not among the
+recorded thresholds. That is arguably the better gate anyway — the index noise this exists
+to reject sits at 3-14% breadth / 0.09-0.46x mean depth (measured, see the Themisto2
+section above), so a 10% threshold on depth>=1 breadth would admit the top of that range
+while a 10x one cannot. `consensus_breadth_pct` is recorded on the meta of **every**
+consensus, both classifiers', so the report shows the number the gate was applied to.
+
+The cost of this ordering is that a noise call's consensus is computed and then thrown
+away. That is the trade for not mapping every real call twice. If discarded consensuses
+ever become the expensive part, restoring `THEMISTO_MAP_QC` is the fix — which is why it
+is still in the tree.
+
+**A pre-existing bug this exposed and fixed.** `MAPPING` extracted every sequence-index
+reference from `params.msweep_map_reference_fasta` via `EXTRACT_REFERENCE_RECORD`
+(`seqkit grep -p SEQIDX_<n>`). But the two index families report record ids in **different
+namespaces**: Themisto2 gives positional `SEQIDX_<n>` into `msweep_map_reference_fasta`,
+Metagraph gives a bare taxid or an accession into `metagraph_map_reference_fasta` (a
+*different* file — `C-RVDBv32.0.renamed.fasta` vs `C-RVDBv32.0.fasta`). A Metagraph-called
+species' grep therefore matched nothing, the optional output was absent, and the species
+vanished silently between classifier and report. Fixed by carrying `reference_source`
+(`'seqidx'` / `'metagraph'`) on the call, `branch`ing on it in `MAPPING`, and adding
+`EXTRACT_METAGRAPH_REFERENCE_RECORD` (`modules/metagraph_reference_subset.nf`) for the
+Metagraph side. The branch has a third `unknown_ch: true` arm that `error()`s — `branch`
+silently drops what no arm matched, which is exactly the failure mode being fixed.
+
+Two related details:
+
+- The grep pattern for a Metagraph record is built in Groovy
+  (`metagraph_record_pattern()` in `mapping.nf`), not in the process's shell: it is the
+  same rule as `build_record_id_pattern()` in `bin/call_metagraph_species.py` (taxid →
+  anchored on the fixed `kraken:taxid|<taxid>|` prefix; accession → anchored to header
+  start and required to be followed by whitespace/EOL), and a regex surviving both
+  Nextflow's interpolation and the shell's quoting is not worth the risk. Metacharacters
+  are escaped individually rather than wrapped in `\Q...\E` — seqkit's engine is Go's,
+  which does accept `\Q...\E`, but that cannot be exercised without seqkit installed,
+  and an accession's `.` silently acting as a wildcard is a worse failure than none.
+- Both `EXTRACT_*_REFERENCE_RECORD` processes now `rm` a zero-byte output. `>` creates the
+  file whether or not the grep matched, which defeated `optional: true` and sent an empty
+  FASTA into `GENERATE_CONSENSUS`.
+
+**Verification** (all local, no farm access this round):
+
+- `-preview` across five flag combinations — defaults; `--do_sequence_index`;
+  `+ --call_consensus_for_new_species`; `+` all three methods `+ --run_msweep`;
+  `+ --do_assembly --do_abundance` — all resolving.
+- `-with-dag` process counts: **zero** `*_MAP_QC` nodes; with the new-species feature on,
+  exactly one `INDEX_REFERENCE_FASTA` (was two — map-QC's own pass plus `MAPPING`'s) and
+  both extractors present. With the feature off, `INDEX_REFERENCE_FASTA` no longer runs at
+  all. `grep -c initial_alignment dag.mmd` still 1, so the centralization held.
+- `parse_species_calls()` and `metagraph_record_pattern()` exercised against fixture TSVs
+  in a standalone `.nf` harness: `provisional_call == 'False'` excluded; a called species
+  absent from the label map excluded with the expected `log.warn`; `SEQIDX_41`/`SEQIDX_902`
+  and taxid `2697049`/accession `OZ031634.1` all producing the right record and pattern
+  (`^kraken:taxid\|2697049\|`, `^OZ031634\.1(\s|$)`); missing/empty inputs → `[]`.
+- The breadth filter exercised on a stand-in channel: Kraken2-side row kept regardless,
+  7.4% dropped, 96.2% kept, exactly-10.0% kept (`>=`, not `>`).
+- **Not run for real.** `nf-test` could not run either — no JRE this agent can reach
+  (`nextflow` works, `java -version` does not) — but no existing test covers `mapping.nf`
+  or the parser, and `GENERATE_CONSENSUS` itself is untouched, so its snapshot is unaffected.
 
 ## Your remaining work, roughly in priority/dependency order
 
