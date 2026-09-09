@@ -8,25 +8,19 @@
 // a sample report row exists even if only one method ran for it, or (with more than one
 // flag on) one row carries every enabled method's counts.
 //
-// Like classifying_kraken2.nf, this classifier does NOT generate consensus sequences
-// itself: for species it calls that Kraken2 missed it resolves a reference and hands
-// them to subworkflows/mapping.nf in the same two shapes classifying_kraken2.nf uses
-// (see this file's emit block). That is what gets them Nextclade, SARS-CoV-2 subtyping
-// and a classification-report row, rather than the bare published consensus this
-// subworkflow used to produce from its own private GENERATE_CONSENSUS call.
+// This classifier CALLS AND REPORTS ONLY. It does no reference extraction, no read
+// mapping and no consensus generation: it emits the species each method called, the
+// reference record that method validated each one against, and the supporting hit
+// counts, and subworkflows/mapping.nf takes it from there -- preferring Kraken2's calls
+// where the two classifiers agree, and mapping the genuinely new ones itself. Doing the
+// reference/read work here as well was the previous arrangement, and meant resolving
+// references for species that were about to be discarded as already-known.
 include {VIRAL_THEMISTO_MSWEEP} from '../workflows/VIRAL_THEMISTO_MSWEEP.nf'
 include {VIRAL_METAGRAPH_ALIGN} from '../workflows/VIRAL_METAGRAPH_ALIGN.nf'
 include {VIRAL_METAGRAPH_QUERY} from '../workflows/VIRAL_METAGRAPH_QUERY.nf'
 include {GENERATE_MAPPING_REPORT} from '../workflows/GENERATE_MAPPING_REPORT.nf'
 include {publish_lane_json as publish_mapping_lane_json} from '../modules/publish_lane_report.nf'
 include {publish_run_files as publish_mapping_run_files} from '../modules/publish_lite.nf'
-// -- new-species reference resolution (rvi_integration_1, opt-in via
-// --call_consensus_for_new_species): when a sequence-index method calls a species above
-// new_species_min_breadth_pct breadth that CLASSIFYING_KRAKEN2 did NOT already find for
-// that sample, resolve its reference record so MAPPING can consensus it like any
-// Kraken2-found taxid.
-include {INDEX_REFERENCE_FASTA; EXTRACT_REFERENCE_SUBSET} from '../modules/reference_subset.nf'
-include {SELECT_REFERENCE_RECORD_BY_NAME} from '../modules/select_reference_record_by_name.nf'
 
 workflow CLASSIFYING_INDEX {
     take:
@@ -116,150 +110,60 @@ workflow CLASSIFYING_INDEX {
             metagraph_query_map_qc_ch = Channel.empty()
         }
 
-        // -- New-species reference resolution (opt-in): species a sequence-index method
-        // called with real breadth of coverage that the Kraken2 pass never found for that
-        // sample. See subworkflows/classifying_kraken2.nf's identified_species_ch header
-        // comment for why this compares by free-text species name (the only thing Kraken2
-        // taxids and the Themisto2/Metagraph reference indexes' own labels have in common)
-        // and why the per-sample "already identified" set needs no batch-wide wait.
+        // -- Species calls handed to MAPPING (opt-in): every species a sequence-index
+        // method called with real breadth of coverage, plus the reference record that
+        // method validated it against and its read-hit count.
+        //
+        // Reporting ONLY. This classifier does no reference extraction and no read
+        // mapping: MAPPING decides which of these species are actually new (Kraken2's
+        // calls win) and resolves/maps just those. See MAPPING's own comment for why the
+        // filter lives there.
         if (params.call_consensus_for_new_species) {
-            // Union every method's own already-computed map_qc breadth table, filtered to
-            // real hits (breadth_pct > new_species_min_breadth_pct). These consume the
-            // *_map_qc_ch variables set in each method's if/else above, NOT
+            // Parse each enabled method's own already-computed map-QC table. These consume
+            // the *_map_qc_ch variables set in each method's if/else above, NOT
             // VIRAL_*.out.map_qc directly: a subworkflow that was never invoked has no
             // .out at all, so reaching for it aborts the run with "Access to
             // 'VIRAL_METAGRAPH_ALIGN.out' is undefined" the moment this feature is enabled
             // with any subset of the three methods. flatMap over an empty channel emits
             // nothing, which is what "that method is off" should mean here.
-            // Themisto's own map_qc table uses the same species/breadth_pct schema as the
-            // Metagraph ones (bin/aggregate_themisto_coverage.py), so the same parser and
-            // 'species' column apply.
-            themisto_candidates_ch = themisto_map_qc_ch
-                .flatMap { meta, tsv -> parse_new_species_candidates(tsv, 'species').collect { name -> [meta.id, name] } }
+            themisto_calls_ch = themisto_map_qc_ch
+                .flatMap { meta, tsv -> parse_species_calls(tsv, 'themisto').collect { call -> [meta.id, call] } }
 
-            metagraph_align_candidates_ch = metagraph_align_map_qc_ch
-                .flatMap { meta, tsv -> parse_new_species_candidates(tsv, 'species').collect { name -> [meta.id, name] } }
+            metagraph_align_calls_ch = metagraph_align_map_qc_ch
+                .flatMap { meta, tsv -> parse_species_calls(tsv, 'metagraph_align').collect { call -> [meta.id, call] } }
 
-            metagraph_query_candidates_ch = metagraph_query_map_qc_ch
-                .flatMap { meta, tsv -> parse_new_species_candidates(tsv, 'species').collect { name -> [meta.id, name] } }
+            metagraph_query_calls_ch = metagraph_query_map_qc_ch
+                .flatMap { meta, tsv -> parse_species_calls(tsv, 'metagraph_query').collect { call -> [meta.id, call] } }
 
-            // .unique() streams -- it emits each non-duplicate immediately as it passes,
-            // it does not need to see the whole channel close first (unlike groupTuple()).
-            // No mSWEEP candidates: mSWEEP now estimates abundance only and produces no
-            // breadth table to threshold on (see ../workflows/VIRAL_THEMISTO_MSWEEP.nf).
-            candidate_new_species_ch = themisto_candidates_ch
-                .mix(metagraph_align_candidates_ch, metagraph_query_candidates_ch)
-                .unique { sample_id, name -> [sample_id, name.trim().toLowerCase()] }
-
-            // NOT filtered against what Kraken2 already found -- that check lives in
-            // subworkflows/mapping.nf now, at the point where a consensus actually gets
-            // spent, so this classifier knows nothing about the other one. Everything
-            // clearing the breadth threshold is emitted as a candidate; MAPPING drops the
-            // ones it has already covered. See MAPPING's own comment for the reasoning
-            // and for the cost of resolving references before that filter runs.
-            new_species_ch = candidate_new_species_ch
-
-            // Build the synthetic per-(sample,species) meta MAPPING needs. Two things to
-            // know about it:
+            // One call per (sample, species). .unique() streams -- it emits each
+            // non-duplicate immediately as it passes, it does not need to see the whole
+            // channel close first (unlike groupTuple()).
             //
-            // `taxid`/`selected_taxid` are a filesystem-safe slug of the species name, NOT
-            // a real Kraken taxid -- there isn't one, these species were never
-            // Kraken2-sorted. They still have to be *something*, since `id` (and therefore
-            // every publish path and report join key) is built from them, exactly as
-            // "<sample_id>.<taxid>" is on the Kraken2 side.
+            // CAVEAT with more than one method enabled: which method's row wins here, and
+            // therefore which reference record and hit count get attributed to a species
+            // both methods called, is whichever arrives first -- task completion order, so
+            // not reproducible run to run. Harmless on the defaults (only run_themisto is
+            // on, so there is nothing to race), and the species itself is unaffected --
+            // only the record and counts reported for it. If a multi-method run ever needs
+            // determinism here, rank by method instead of by arrival.
             //
-            // The descriptive fields mirror bin/k2r_report.py's pre-report columns
-            // (sample_id, virus, virus_name, selected_taxid, ref_selected, sample_subtype,
-            // flu_segment, virus_subtype, parent_selected, num_reads, report_name), because
-            // MAPPING carries this same map through as the base of its Nextclade/report
-            // meta for whichever classifier produced it. Fields this classifier genuinely
-            // has no equivalent for are left empty rather than faked:
-            //   - virus:      Kraken2's source species taxid; no numeric taxid here
-            //   - num_reads:  Kraken2's per-taxon read count. The read-hit/breadth figures
-            //                 these methods do produce live in their own per-method report
-            //                 (GENERATE_MAPPING_REPORT), not in this column.
-            //   - flu_segment/virus_subtype/sample_subtype: filled by k2r_report.py's
-            //                 influenza-specific parsing, which never ran for these.
-            // `ref_selected` matters most: MAPPING branches SARS-CoV-2 subtyping on it, so
-            // a SARS-CoV-2 infection Kraken2 missed but a sequence index caught now gets
-            // subtyped too.
-            new_species_meta_ch = new_species_ch
-                .map { sample_id, species_name ->
-                    def slug = species_name.replaceAll(/[^A-Za-z0-9]+/, '_').replaceAll(/^_+|_+$/, '')
-                    def meta = [
-                        id: "${sample_id}.${slug}".toString(),
-                        sample_id: sample_id,
-                        taxid: slug,
-                        selected_taxid: slug,
-                        species_name: species_name,
-                        discovered_by: 'sequence_index',
-                        virus: '',
-                        virus_name: species_name,
-                        ref_selected: species_name,
-                        report_name: species_name,
-                        sample_subtype: '',
-                        flu_segment: '',
-                        virus_subtype: '',
-                        parent_selected: false,
-                        num_reads: '',
-                        // The Kraken2 side gets this from get_taxid_reference_files; here the
-                        // reference is one record picked out of the sequence index's own
-                        // FASTA by species name, so the species name is the honest label.
-                        reference_header: species_name,
-                    ]
-                    [meta, species_name]
-                }
+            // No mSWEEP calls: mSWEEP now estimates abundance only and produces no breadth
+            // table to threshold on (see ../workflows/VIRAL_THEMISTO_MSWEEP.nf).
+            species_calls_ch = themisto_calls_ch
+                .mix(metagraph_align_calls_ch, metagraph_query_calls_ch)
+                .unique { sample_id, call -> [sample_id, call.species_name.trim().toLowerCase()] }
 
-            // Same reference (msweep_ref_groups/msweep_map_reference_fasta) mSWEEP's own
-            // map_qc already indexes, reused regardless of run_msweep -- both params always
-            // have real defaults (see nextflow.config).
-            INDEX_REFERENCE_FASTA(Channel.fromPath(params.msweep_map_reference_fasta))
-            new_species_indexed_reference_ch = INDEX_REFERENCE_FASTA.out.fasta.first()
-            new_species_sequence_lengths_ch  = INDEX_REFERENCE_FASTA.out.lengths.first()
-            new_species_labels_ch            = Channel.fromPath(params.msweep_ref_groups).first()
-
-            SELECT_REFERENCE_RECORD_BY_NAME(new_species_meta_ch, new_species_labels_ch, new_species_sequence_lengths_ch)
-            EXTRACT_REFERENCE_SUBSET(SELECT_REFERENCE_RECORD_BY_NAME.out.record_id, new_species_indexed_reference_ch)
-
-            // Deliberately no cross-sample de-duplication here: a species found "new" in
-            // many samples gets its reference extracted once per sample rather than once
-            // per run -- keeps everything scoped per-sample (no batch-wide wait) at the
-            // cost of some redundant extraction work.
-            reads_by_sample_ch = preprocessed_3tuple_ch
-                .map { meta, r1, r2 -> [meta.id, r1, r2] } // meta.id == sample_id here (pre-lane)
-
-            // The handover to MAPPING: same tuple(meta, [read_1, read_2], reference_fasta)
-            // shape CLASSIFYING_KRAKEN2 emits, so MAPPING can mix() the two without caring
-            // which classifier a given (sample, reference) pair came from.
-            EXTRACT_REFERENCE_SUBSET.out.subset_fasta
-                .map { meta, ref_fa -> [meta.sample_id, meta, ref_fa] }
-                .combine(reads_by_sample_ch, by: 0)
-                .map { _sample_id, meta, ref_fa, r1, r2 -> [meta, [r1, r2], ref_fa] }
-                .set { new_species_sample_taxid_ch }
-
-            // Keyed the same way CLASSIFYING_KRAKEN2 keys its own report rows: by the
-            // matching consensus's meta.id, which for these is "<sample_id>.<slug>".
-            new_species_report_ch = new_species_sample_taxid_ch
-                .map { meta, _reads, _ref_fa -> [meta.id, meta] }
-
-            // Counts CANDIDATES handed to MAPPING -- species that cleared the breadth
-            // threshold and got a reference record resolved. Renamed from
-            // new_species_consensus_n, which is no longer what this can honestly measure:
-            // this classifier no longer knows which candidates were actually new (MAPPING
-            // filters against Kraken2's findings) nor which got a completed consensus
-            // (also MAPPING). For the post-filter truth, count rows in the classification
-            // report carrying `discovered_by: 'sequence_index'` -- that field is already
-            // on the meta MAPPING dumps per consensus. Safe to rename: the lane reports
-            // take their columns from the union of meta keys (bin/write_lane_summary.py),
-            // so there is no fixed schema to break.
-            new_species_counts_ch = EXTRACT_REFERENCE_SUBSET.out.subset_fasta
-                .map { meta, _ref_fa -> [meta.sample_id, 1] }
+            // Counts what this classifier can honestly measure: species it called above the
+            // breadth threshold and reported to MAPPING, BEFORE MAPPING drops the ones
+            // Kraken2 already found. For the post-filter truth, count
+            // classification-report rows carrying `discovered_by: 'sequence_index'`.
+            new_species_counts_ch = species_calls_ch
+                .map { sample_id, _call -> [sample_id, 1] }
                 .groupTuple()
                 .map { sample_id, ones -> [sample_id, [new_species_candidates_n: ones.size()]] }
         } else {
+            species_calls_ch = Channel.empty()
             new_species_counts_ch = Channel.empty()
-            new_species_sample_taxid_ch = Channel.empty()
-            new_species_report_ch = Channel.empty()
         }
 
         sequence_index_sample_ch
@@ -288,12 +192,21 @@ workflow CLASSIFYING_INDEX {
         publish_mapping_run_files(GENERATE_MAPPING_REPORT.out.publish_run_level_summaries_ch)
 
     emit:
-        // Handover to subworkflows/mapping.nf -- identical shapes to
-        // subworkflows/classifying_kraken2.nf's. Both are Channel.empty() unless
-        // --call_consensus_for_new_species is set, so MAPPING can consume them
-        // unconditionally.
-        sample_taxid_ch = new_species_sample_taxid_ch          // tuple (meta, [read_1, read_2], reference_fasta)
-        sample_report_with_join_key_ch = new_species_report_ch // [join_key, report_meta]
+        // Handover to subworkflows/mapping.nf: one entry per (sample, species) this lane
+        // called above the breadth threshold, as [sample_id, call] where call is a Map of
+        // species_name, reference_record (a SEQIDX_<n> token from the method's own map-QC
+        // table, the id INDEX_REFERENCE_FASTA mints and seqkit grep matches), hit_count,
+        // breadth_pct and method.
+        //
+        // Note this is NOT the shape classifying_kraken2.nf hands over -- that one emits
+        // reads-plus-reference ready for consensus, because SORT_READS_BY_REF resolves its
+        // own references upstream. The asymmetry is deliberate: it is what lets MAPPING
+        // resolve references only for species that survive its filter. MAPPING builds the
+        // consensus-ready shape for this side itself.
+        //
+        // Channel.empty() unless --call_consensus_for_new_species is set, so MAPPING can
+        // consume it unconditionally.
+        species_calls_ch // [sample_id, [species_name:, reference_record:, hit_count:, breadth_pct:, method:]]
 }
 
 // --- rvi_integration_1: sample-level count helpers for the mapping report ---
@@ -401,29 +314,55 @@ def count_map_qc_breadth(tsv, prefix) {
 }
 
 
-def parse_new_species_candidates(tsv, species_col) {
-    // A method's own *_map_qc.tsv (msweep_map_qc.tsv: species_label; metagraph_map_qc.tsv,
-    // both align and query: species) -- one row per species that method already validated
-    // by mapping. Returns the species names (original case, for reference-record lookup)
-    // whose breadth_pct clears new_species_min_breadth_pct.
+def parse_species_calls(tsv, method) {
+    // A method's own *_map_qc.tsv -- one row per species that method validated by mapping
+    // reads against a single chosen reference record. Returns one call Map per row whose
+    // breadth_pct clears new_species_min_breadth_pct, carrying everything MAPPING needs to
+    // map that species without re-deriving anything: the species name (original case), the
+    // reference record, and the supporting counts.
+    //
+    // The reference column is named differently by the two aggregators that write these
+    // tables -- `reference_record` (bin/aggregate_themisto_coverage.py) vs
+    // `reference_accession` (bin/aggregate_metagraph_coverage.py) -- for the same 4th
+    // column holding the same SEQIDX_<n> token. Both spellings are accepted; a table with
+    // neither fails loudly rather than silently reporting species with no reference, since
+    // MAPPING cannot map those and the sample would just quietly lose them.
     if (tsv == null || !tsv.exists()) return []
     def lines = tsv.readLines()
     if (lines.size() < 2) return []
     def header = lines[0].split('\t')
-    def species_idx = header.findIndexOf { String col -> col == species_col }
+    def species_idx = header.findIndexOf { String col -> col == 'species' }
     def breadth_idx = header.findIndexOf { String col -> col == 'breadth_pct' }
+    def hits_idx    = header.findIndexOf { String col -> col == 'hit_count' }
+    def record_idx  = header.findIndexOf { String col -> col == 'reference_record' }
+    if (record_idx < 0) {
+        record_idx = header.findIndexOf { String col -> col == 'reference_accession' }
+    }
     if (species_idx < 0 || breadth_idx < 0) return []
-    def candidates = []
+    if (record_idx < 0) {
+        error("map-QC table ${tsv} has neither a reference_record nor a reference_accession " +
+              "column (header: ${header}). One of bin/aggregate_{themisto,metagraph}_coverage.py " +
+              "changed its output -- update parse_species_calls() in " +
+              "subworkflows/classifying_index.nf.")
+    }
+    def max_idx = [species_idx, breadth_idx, record_idx].max()
+    def calls = []
     lines[1..-1].each { line ->
         def cols = line.split('\t')
-        if (species_idx >= cols.size() || breadth_idx >= cols.size()) return
+        if (max_idx >= cols.size()) return
         try {
-            if ((cols[breadth_idx] as Double) > params.new_species_min_breadth_pct) {
-                candidates << cols[species_idx]
-            }
+            def breadth = cols[breadth_idx] as Double
+            if (breadth <= params.new_species_min_breadth_pct) return
+            calls << [
+                species_name:     cols[species_idx],
+                reference_record: cols[record_idx],
+                breadth_pct:      breadth,
+                hit_count:        (hits_idx >= 0 && hits_idx < cols.size()) ? cols[hits_idx] : '',
+                method:           method,
+            ]
         } catch (NumberFormatException ignored) {
             // header or malformed row -- skipped
         }
     }
-    return candidates
+    return calls
 }

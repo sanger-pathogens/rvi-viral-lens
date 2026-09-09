@@ -77,6 +77,33 @@ process INDEX_REFERENCE_FASTA {
     """
 }
 
+// Single-record variant of EXTRACT_REFERENCE_SUBSET, taking the record id as a VALUE
+// rather than a file of ids. Used by subworkflows/mapping.nf for sequence-index species:
+// the calling method's own map-QC table already names the one reference record it
+// validated that species against (a SEQIDX_<n> token, same id space INDEX_REFERENCE_FASTA
+// mints), so there is nothing to write to a file first -- seqkit grep -p matches the
+// sequence ID directly.
+process EXTRACT_REFERENCE_RECORD {
+    tag "${meta.id}"
+    label 'cpu_2'
+    label 'mem_4'
+    label 'time_queue_from_normal'
+
+    container 'quay.io/biocontainers/seqkit:2.10.0--h9ee0642_0'
+
+    input:
+    tuple val(meta), val(record_id)
+    path(indexed_reference_fasta)
+
+    output:
+    tuple val(meta), path("${meta.id}_subset.fasta"), emit: subset_fasta, optional: true
+
+    script:
+    """
+    seqkit grep -p "${record_id}" ${indexed_reference_fasta} > ${meta.id}_subset.fasta
+    """
+}
+
 process EXTRACT_REFERENCE_SUBSET {
     tag "${meta.id}"
     label 'cpu_2'

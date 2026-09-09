@@ -6,12 +6,19 @@
 //   subworkflows/classifying_kraken2.nf  Kraken2 + Kraken2Ref taxid selection
 //   subworkflows/classifying_index.nf    Themisto2/Metagraph species calls Kraken2 missed
 //
-// Both hand over the same two channel shapes (see either file's emit block), so this
-// runs one consensus/Nextclade/subtyping/report pass over the union rather than each
-// classifier growing its own parallel copy of it. That union is why a species only
-// Themisto2/Metagraph found now also gets Nextclade, SARS-CoV-2 subtyping and a row in
-// the classification report -- previously its consensus was published on its own with
-// none of that.
+// One consensus/Nextclade/subtyping/report pass runs over the union of both, rather than
+// each classifier growing its own parallel copy of it. That union is why a species only
+// Themisto2/Metagraph found also gets Nextclade, SARS-CoV-2 subtyping and a row in the
+// classification report -- it once had its consensus published on its own with none of
+// that.
+//
+// The two classifiers hand over DIFFERENT shapes, deliberately:
+//   - CLASSIFYING_KRAKEN2 arrives consensus-ready (reads + reference), because
+//     SORT_READS_BY_REF resolves its references as part of classifying;
+//   - CLASSIFYING_INDEX arrives as species calls plus the reference record each was
+//     validated against, and no reads. Resolving those references is this subworkflow's
+//     job, done only for the calls that survive the "Kraken2 already found it" filter.
+include {INDEX_REFERENCE_FASTA; EXTRACT_REFERENCE_RECORD} from '../modules/reference_subset.nf'
 include {GENERATE_CONSENSUS} from '../workflows/GENERATE_CONSENSUS.nf'
 include {SCOV2_SUBTYPING} from '../workflows/SCOV2_SUBTYPING.nf'
 include {GENERATE_CLASSIFICATION_REPORT} from '../workflows/GENERATE_CLASSIFICATION_REPORT.nf'
@@ -26,98 +33,181 @@ workflow MAPPING {
     (GENERATE_CONSENSUS), optionally runs Nextclade and SARS-CoV-2
     subtyping, and writes the final per-sample classification report.
 
-    Reference selection itself happens upstream, in whichever
-    classifier produced the input -- this subworkflow is deliberately
-    agnostic about which one that was.
+    Also decides which species are worth a consensus at all: where
+    both classifiers found the same species for a sample, Kraken2's
+    call and reference win, and only the species Kraken2 missed are
+    resolved and mapped off the sequence indexes' calls.
     -----------------------------------------------------------------
     # Inputs
 
-    Two channels per classifier, both already in their final shape:
+    From CLASSIFYING_KRAKEN2, consensus-ready:
 
-    - **sample_taxid_ch**: tuple(meta, [read_1, read_2], reference_fasta).
-      meta carries `id` ("<sample_id>.<taxid>"), `sample_id`, `taxid` and
-      `reference_header`.
-    - **report_with_join_key_ch**: [join_key, report_meta], join_key ==
-      the matching consensus's meta.id. report_meta holds the
-      per-(sample, reference) descriptive fields the classification
-      report writes out (sample_id, virus_name, ref_selected, ...).
+    - **kraken2_sample_taxid_ch**: tuple(meta, [read_1, read_2],
+      reference_fasta). meta carries `id` ("<sample_id>.<taxid>"),
+      `sample_id`, `taxid` and `reference_header`.
+    - **kraken2_report_ch**: [join_key, report_meta], join_key == the
+      matching consensus's meta.id. report_meta holds the per-(sample,
+      reference) descriptive fields the classification report writes
+      out (sample_id, virus_name, ref_selected, ...).
+    - **identified_species_ch**: [sample_id, [species, ...]],
+      normalized -- what Kraken2 already found, i.e. what the
+      sequence-index side gets filtered against.
 
-    Pass Channel.empty() for a classifier that isn't running.
+    From CLASSIFYING_INDEX, calls only (Channel.empty() when it didn't
+    run):
+
+    - **index_species_calls_ch**: [sample_id, call], call being a Map
+      of species_name, reference_record, hit_count, breadth_pct and
+      method.
+
+    Plus **reads_ch**, tuple(meta, read_1, read_2) per sample, needed
+    to map the index-side species this subworkflow resolves itself.
     -----------------------------------------------------------------
     */
 
     take:
-        kraken2_sample_taxid_ch // tuple (meta, [read_1, read_2], reference_fasta) -- CLASSIFYING_KRAKEN2
-        kraken2_report_ch       // [join_key, report_meta]                         -- CLASSIFYING_KRAKEN2
-        index_sample_taxid_ch   // tuple (meta, [read_1, read_2], reference_fasta) -- CLASSIFYING_INDEX, or Channel.empty()
-        index_report_ch         // [join_key, report_meta]                         -- CLASSIFYING_INDEX, or Channel.empty()
-        identified_species_ch   // [sample_id, [normalized_species_name, ...]]     -- CLASSIFYING_KRAKEN2
+        kraken2_sample_taxid_ch  // tuple (meta, [read_1, read_2], reference_fasta) -- CLASSIFYING_KRAKEN2
+        kraken2_report_ch        // [join_key, report_meta]                         -- CLASSIFYING_KRAKEN2
+        index_species_calls_ch   // [sample_id, call]                               -- CLASSIFYING_INDEX, or Channel.empty()
+        identified_species_ch    // [sample_id, [normalized_species_name, ...]]     -- CLASSIFYING_KRAKEN2
+        reads_ch                 // tuple (meta, read_1, read_2) -- preprocessed, one per sample
 
     main:
-        // --- "one consensus per (sample, species)" is enforced HERE ---------------
-        // Deliberately in MAPPING rather than in the classifier that produces the
-        // candidates. MAPPING is what actually spends a consensus on a species, so the
-        // invariant holds structurally for anything that reaches it, instead of resting
-        // on each classifier remembering to filter itself -- and a classifier needing to
-        // know what a *different* classifier found was an odd coupling to begin with.
-        // CLASSIFYING_INDEX consequently emits every species it called above the breadth
-        // threshold and knows nothing about Kraken2.
+        // --- Kraken2's calls win; sequence-index species are mapped only if new --------
+        // CLASSIFYING_INDEX reports species and the ideal reference record for each, but
+        // does no mapping of its own, so both halves of "prefer Kraken2, map what it
+        // missed" are decided here, where the consensus actually gets spent:
         //
-        // The cost of moving it here: CLASSIFYING_INDEX resolves a reference record for
-        // every candidate, including ones dropped just below. That is wasted
-        // SELECT_REFERENCE_RECORD_BY_NAME + EXTRACT_REFERENCE_SUBSET work, and on a
-        // sample where a method calls several species and Kraken2 already found most of
-        // them, most of that work is wasted. The clean fix if it ever matters is to move
-        // reference resolution in here too, behind this filter -- at the price of the
-        // symmetric "both classifiers hand over identical shapes" interface, since the
-        // Kraken2 side resolves its own references upstream inside SORT_READS_BY_REF.
+        //   1. drop index calls for species Kraken2 already found for that sample --
+        //      Kraken2's own reference selection is kept in preference to the index's;
+        //   2. resolve a reference and pair reads for whatever survives, so it reaches
+        //      GENERATE_CONSENSUS in exactly the shape the Kraken2 side arrives in.
         //
-        // Complete the "already identified" side over the samples that actually have
-        // index candidates: exactly one entry each, empty list where CLASSIFYING_KRAKEN2
-        // produced no pre-report for that sample (its emit only covers samples with a
-        // non-empty one, and a sample Kraken2 found nothing in is exactly the
-        // interesting case here). remainder:true fills those with null. The third shape
-        // it yields -- a sample Kraken2 found species in but no index method called
-        // anything for, [key, null, list] -- is dropped: there is nothing to filter.
-        identified_by_sample_ch = index_sample_taxid_ch
-            .map { meta, _reads, _ref_fa -> [meta.sample_id, meta.sample_id] }
+        // Resolving references only after step 1 is the point of doing it here: the
+        // previous arrangement resolved them up in the classifier, i.e. also for species
+        // that were about to be discarded as already-known.
+        //
+        // Complete the "already identified" side over the samples that actually have index
+        // calls: exactly one entry each, empty list where CLASSIFYING_KRAKEN2 produced no
+        // pre-report for that sample (its emit only covers samples with a non-empty one,
+        // and a sample Kraken2 found nothing in is exactly the interesting case here).
+        // remainder:true fills those with null. The third shape it yields -- a sample
+        // Kraken2 found species in but no index method called anything for,
+        // [key, null, list] -- is dropped: there is nothing to filter.
+        identified_by_sample_ch = index_species_calls_ch
+            .map { sample_id, _call -> [sample_id, sample_id] }
             .unique()
             .join(identified_species_ch, remainder: true)
-            .filter { _sample_id, has_candidates, _identified -> has_candidates != null }
-            .map { sample_id, _has_candidates, identified -> [sample_id, identified ?: []] }
+            .filter { _sample_id, has_calls, _identified -> has_calls != null }
+            .map { sample_id, _has_calls, identified -> [sample_id, identified ?: []] }
 
-        // combine(by: 0), NOT join: many candidates per sample against one
-        // identified-species list, and join() pairs keys one-to-one instead of
-        // broadcasting. That was the bug fixed in 4973f35 -- moving the filter here must
-        // not reintroduce it.
-        index_sample_taxid_ch
-            .map { meta, reads, ref_fa -> [meta.sample_id, meta, reads, ref_fa] }
+        // combine(by: 0), NOT join: many calls per sample against one identified-species
+        // list, and join() pairs keys one-to-one instead of broadcasting -- the bug fixed
+        // in 4973f35, which this must not reintroduce. Note the trailing throwaway
+        // parameter on the .map: combine() leaves the joined element on the tuple, and a
+        // closure's parameter count has to match the tuple's width.
+        index_new_calls_ch = index_species_calls_ch
             .combine(identified_by_sample_ch, by: 0)
-            .filter { _sample_id, meta, _reads, _ref_fa, identified ->
-                !identified.contains(meta.species_name.trim().toLowerCase())
+            .filter { _sample_id, call, identified ->
+                !identified.contains(call.species_name.trim().toLowerCase())
             }
-            // The trailing _identified matters: combine() left it on the tuple and this
-            // closure's parameter count has to match the tuple's width, or Nextflow
-            // aborts with "Invalid method invocation `call` with arguments ...".
-            .map { _sample_id, meta, reads, ref_fa, _identified -> [meta, reads, ref_fa] }
-            .set { index_new_sample_taxid_ch }
+            .map { sample_id, call, _identified -> [sample_id, call] }
 
-        // Same predicate over the report side. Filtered independently rather than
-        // semi-joined against the surviving taxid channel: both carry sample_id and
-        // species_name, and the predicate is pure, so both necessarily reach the same
-        // verdict for a given (sample, species).
-        index_report_ch
-            .map { join_key, report_meta -> [report_meta.sample_id, join_key, report_meta] }
-            .combine(identified_by_sample_ch, by: 0)
-            .filter { _sample_id, _join_key, report_meta, identified ->
-                !identified.contains(report_meta.species_name.trim().toLowerCase())
+        // Build the synthetic per-(sample, species) meta. Three things to know:
+        //
+        // `taxid`/`selected_taxid` are a filesystem-safe slug of the species name, NOT a
+        // real Kraken taxid -- there isn't one, these species were never Kraken2-sorted.
+        // They still have to be *something*, since `id` (and therefore every publish path
+        // and report join key) is built from them, exactly as "<sample_id>.<taxid>" is on
+        // the Kraken2 side.
+        //
+        // The descriptive fields mirror bin/k2r_report.py's pre-report columns (sample_id,
+        // virus, virus_name, selected_taxid, ref_selected, sample_subtype, flu_segment,
+        // virus_subtype, parent_selected, num_reads, report_name), because this map is
+        // carried through as the base of the Nextclade/report meta for either classifier.
+        // Fields the sequence-index side has no honest equivalent for are left empty
+        // rather than faked: `virus` (Kraken2's source species taxid) and
+        // `flu_segment`/`virus_subtype`/`sample_subtype` (k2r_report.py's
+        // influenza-specific parsing, which never ran for these). `num_reads` is empty
+        // too: Kraken2's per-taxon read count is not the same measurement as a
+        // pseudoalignment hit count, so the index's own figures go in their own fields.
+        //
+        // `ref_selected` matters most: SARS-CoV-2 subtyping branches on it below, so a
+        // SARS-CoV-2 infection Kraken2 missed but a sequence index caught gets subtyped.
+        //
+        // discovered_by / discovered_by_method / index_* record that this species came
+        // from a sequence index and what supported it. They ride along into the
+        // classification report (which dumps meta per consensus), which is therefore where
+        // to see what the sequence indexes actually contributed.
+        index_new_meta_ch = index_new_calls_ch
+            .map { sample_id, call ->
+                def slug = call.species_name.replaceAll(/[^A-Za-z0-9]+/, '_').replaceAll(/^_+|_+$/, '')
+                def meta = [
+                    id: "${sample_id}.${slug}".toString(),
+                    sample_id: sample_id,
+                    taxid: slug,
+                    selected_taxid: slug,
+                    species_name: call.species_name,
+                    virus: '',
+                    virus_name: call.species_name,
+                    ref_selected: call.species_name,
+                    report_name: call.species_name,
+                    sample_subtype: '',
+                    flu_segment: '',
+                    virus_subtype: '',
+                    parent_selected: false,
+                    num_reads: '',
+                    // The Kraken2 side gets this from get_taxid_reference_files; here the
+                    // reference is the single record the calling method validated the
+                    // species against, so the species name is the honest label.
+                    reference_header: call.species_name,
+                    discovered_by: 'sequence_index',
+                    discovered_by_method: call.method,
+                    index_reference_record: call.reference_record,
+                    index_hit_count: call.hit_count,
+                    index_breadth_pct: call.breadth_pct,
+                ]
+                [meta, call.reference_record]
             }
-            .map { _sample_id, join_key, report_meta, _identified -> [join_key, report_meta] }
-            .set { index_new_report_ch }
 
-        // The union both classifiers feed. mix() (not join/combine) because these are
-        // disjoint sets of (sample, reference) pairs, not two views of the same one --
-        // disjoint because of the filter immediately above, not by assumption.
+        // Gated even though CLASSIFYING_INDEX already emits nothing when the feature is
+        // off: without this, INDEX_REFERENCE_FASTA would still run its (mem_16) pass over
+        // the reference FASTA on every default run, and every run would then require
+        // msweep_map_reference_fasta to exist.
+        if (params.call_consensus_for_new_species) {
+            // The same reference FASTA the calling method's own map-QC indexed, re-tagged
+            // here with the same positional SEQIDX_<n> ids -- a deterministic pass over the
+            // same file, which is what makes the record ids the classifier reported valid
+            // to grep for. Costs one extra pass over that FASTA per run.
+            INDEX_REFERENCE_FASTA(Channel.fromPath(params.msweep_map_reference_fasta))
+
+            EXTRACT_REFERENCE_RECORD(index_new_meta_ch, INDEX_REFERENCE_FASTA.out.fasta.first())
+
+            // Deliberately no cross-sample de-duplication: a species found new in many
+            // samples gets its reference extracted once per sample rather than once per
+            // run -- keeps everything scoped per-sample (no batch-wide wait) at the cost of
+            // some redundant extraction.
+            reads_by_sample_ch = reads_ch
+                .map { meta, r1, r2 -> [meta.id, r1, r2] } // meta.id == sample_id pre-classifier
+
+            EXTRACT_REFERENCE_RECORD.out.subset_fasta
+                .map { meta, ref_fa -> [meta.sample_id, meta, ref_fa] }
+                .combine(reads_by_sample_ch, by: 0)
+                .map { _sample_id, meta, ref_fa, r1, r2 -> [meta, [r1, r2], ref_fa] }
+                .set { index_new_sample_taxid_ch }
+
+            // Keyed the same way CLASSIFYING_KRAKEN2 keys its report rows: by the matching
+            // consensus's meta.id.
+            index_new_report_ch = index_new_sample_taxid_ch
+                .map { meta, _reads, _ref_fa -> [meta.id, meta] }
+        } else {
+            index_new_sample_taxid_ch = Channel.empty()
+            index_new_report_ch = Channel.empty()
+        }
+
+        // The union both classifiers feed. mix() (not join/combine) because post-filter
+        // these are disjoint sets of (sample, reference) pairs rather than two views of the
+        // same pair -- disjoint because of the filter above, not by assumption.
         sample_taxid_ch = kraken2_sample_taxid_ch.mix(index_new_sample_taxid_ch)
         sample_report_with_join_key_ch = kraken2_report_ch.mix(index_new_report_ch)
 

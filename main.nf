@@ -189,23 +189,23 @@ workflow {
     // off. Empty channels are what "that classifier didn't run" should mean here.
     if (params.do_sequence_index) {
         CLASSIFYING_INDEX(preprocessed_3tuple_ch)
-        index_sample_taxid_ch = CLASSIFYING_INDEX.out.sample_taxid_ch
-        index_report_ch = CLASSIFYING_INDEX.out.sample_report_with_join_key_ch
+        index_species_calls_ch = CLASSIFYING_INDEX.out.species_calls_ch
     } else {
-        index_sample_taxid_ch = Channel.empty()
-        index_report_ch = Channel.empty()
+        index_species_calls_ch = Channel.empty()
     }
 
     // === 5 - Consensus, lineage calling and classification report ===
-    // One pass over both classifiers' output (see subworkflows/mapping.nf), which also
-    // owns the "don't consensus a species twice for a sample" filter --
-    // identified_species_ch is what it filters the sequence-index side against.
+    // One pass over both classifiers' findings (see subworkflows/mapping.nf). MAPPING also
+    // decides what is worth a consensus: Kraken2's calls and references win where the two
+    // classifiers agree (identified_species_ch is what the index side is filtered
+    // against), and only the species Kraken2 missed get resolved and mapped off the
+    // index's calls -- which is why MAPPING needs the reads as well.
     MAPPING(
         CLASSIFYING_KRAKEN2.out.sample_taxid_ch,
         CLASSIFYING_KRAKEN2.out.sample_report_with_join_key_ch,
-        index_sample_taxid_ch,
-        index_report_ch,
-        CLASSIFYING_KRAKEN2.out.identified_species_ch
+        index_species_calls_ch,
+        CLASSIFYING_KRAKEN2.out.identified_species_ch,
+        preprocessed_3tuple_ch
     )
 
     // === 6 - Abundance estimation (rvi_integration_1, opt-in) ===

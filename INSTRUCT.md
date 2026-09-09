@@ -605,8 +605,8 @@ helpers, own PUBLISH calls):
   `SEQUENCE_INDEX`): the three mapping methods (Themisto2/mSWEEP, Metagraph align,
   Metagraph query) → `GENERATE_MAPPING_REPORT`, plus the
   `count_msweep_*()`/`count_metagraph_*()` helpers and `EMPTY_*_COUNTS` constants
-  referenced in item 3 above. Its new-species block hands over to `MAPPING` rather than
-  generating consensus itself.
+  referenced in item 3 above. **Calls and reports only** — no reference extraction, no read
+  mapping, no consensus; it hands species calls to `MAPPING`.
 - `subworkflows/assembly.nf` — `ASSEMBLY`: `ASSEMBLE_META` → `GENOMAD_CLASSIFY` →
   `VRHYME_BIN`/`CHECKV_QC` → `VCONTACT3_RUN` → `GENERATE_ASSEMBLY_REPORT`, plus the
   `count_genomad_summary()`/`count_vrhyme_membership()`/`count_checkv_quality()`/
@@ -834,24 +834,47 @@ resolves a reference record for every species a sequence-index method calls with
 sample and consensuses the rest. Off by default — the cross-classifier dependency is
 `MAPPING` taking `CLASSIFYING_KRAKEN2.out.identified_species_ch` as a fifth input.
 
-**Where the species-level check lives, and why it moved there.** It was originally inside
-`CLASSIFYING_INDEX` (filtering before handing over); it is now in `MAPPING`, at the point
-where a consensus actually gets spent. Two reasons: the invariant "one consensus per
-(sample, species)" then holds structurally for anything reaching `MAPPING` rather than
-resting on each classifier filtering itself, and a classifier no longer needs to know what
-a *different* classifier found — `CLASSIFYING_INDEX` is now independent of Kraken2
-entirely. The trade-off, noted in `MAPPING`'s own comment: references get resolved for
-candidates that are then dropped, so on a sample where a method calls several species that
-Kraken2 already found, most of that `SELECT_REFERENCE_RECORD_BY_NAME` +
-`EXTRACT_REFERENCE_SUBSET` work is wasted. If that cost ever matters, move reference
-resolution into `MAPPING` behind the filter too — at the price of the symmetric "both
-classifiers hand over identical shapes" interface, since the Kraken2 side resolves its own
-references upstream inside `SORT_READS_BY_REF`.
+**Classifier reports, MAPPING maps — the division of labour, arrived at in two steps.**
+Originally `CLASSIFYING_INDEX` did the filtering, the reference resolution AND the read
+pairing itself. Both moved out, for the same reason each time: `MAPPING` is what spends a
+consensus, so it should decide what gets one.
+
+- The species-level filter moved first. The invariant "one consensus per (sample, species)"
+  now holds structurally for anything reaching `MAPPING`, rather than resting on each
+  classifier remembering to filter itself, and a classifier no longer needs to know what a
+  *different* classifier found.
+- Reference resolution and read pairing followed. `CLASSIFYING_INDEX` is now
+  reporting-only: it emits species + the reference record its own map-QC already picked +
+  hit counts, and nothing else. This also removed the wasted work the first step created,
+  where references were resolved for species about to be discarded as already-known.
+
+So: `MAPPING` prefers Kraken2's species and references where both classifiers agree, and
+resolves + maps only the species Kraken2 missed. `SELECT_REFERENCE_RECORD_BY_NAME` fell
+out of use as a result and is marked UNUSED rather than deleted — see its header for the
+two situations that would bring it back.
+
+**Two costs of this arrangement, both deliberate:**
+
+- `MAPPING` runs its own `INDEX_REFERENCE_FASTA` pass over the reference FASTA, so the
+  `SEQIDX_<n>` ids the classifier reported are valid to grep. The map-QC step inside the
+  classifier already made one such pass over the same file, so an enabled run makes two
+  (verified: lane off → 0 passes, lane on but feature off → 1, feature on → 2). Reusing
+  the classifier's indexed output instead would mean plumbing it through `CLASSIFYING_INDEX`
+  → `MAPPING`, which is undefined whenever the lane is off; a self-contained `MAPPING` was
+  judged worth one extra pass.
+- `params.call_consensus_for_new_species` is checked in *both* subworkflows. Redundant on
+  paper — the classifier already emits nothing when it is off — but without the check in
+  `MAPPING` that `INDEX_REFERENCE_FASTA` pass would run on every default run, and every run
+  would require `msweep_map_reference_fasta` to exist.
 
 Consequence for the sequence-index report: its `new_species_consensus_n` column is now
-`new_species_candidates_n`, counting what the classifier can honestly know (candidates
-handed over, pre-filter). For the post-filter truth, count classification-report rows
-carrying `discovered_by: 'sequence_index'`.
+`new_species_candidates_n`, counting what the classifier can honestly know (species called
+above the breadth threshold and reported, pre-filter). The post-filter truth is in the
+classification report, whose per-consensus meta now carries `discovered_by:
+'sequence_index'`, `discovered_by_method` (which of the three methods called it), plus
+`index_reference_record`, `index_hit_count` and `index_breadth_pct` — so what a sequence
+index actually contributed, and on what evidence, is visible per consensus rather than only
+as a per-sample count.
 
 **Restructured since it was first written (see "Classifier/consensus split" below).** It
 originally ran its *own* `GENERATE_CONSENSUS` call inside the sequence-index lane and
@@ -1227,14 +1250,24 @@ Now split at the consensus boundary:
 | `subworkflows/classifying_index.nf` | `CLASSIFYING_INDEX` | the three sequence-index methods + their own per-method report; resolves references for new species |
 | `subworkflows/mapping.nf` | `MAPPING` | `GENERATE_CONSENSUS` → Nextclade → SCOV2 → `GENERATE_CLASSIFICATION_REPORT`, for **both** classifiers |
 
-**The shared interface — this is the part to preserve if you touch any of the three.** Both
-classifiers emit exactly two channels, and `MAPPING` `mix()`es each pair:
+**The interface between the three — the part to preserve if you touch any of them.** The two
+classifiers hand over DIFFERENT shapes, deliberately (this changed once; see "Classifier
+reports, MAPPING maps" below):
 
-- `sample_taxid_ch` — `tuple(meta, [read_1, read_2], reference_fasta)`. `meta` carries
-  `id` (`"<sample_id>.<taxid>"`), `sample_id`, `taxid`, `reference_header`.
-- `sample_report_with_join_key_ch` — `[join_key, report_meta]`, where `join_key` equals the
-  matching consensus's `meta.id`. `report_meta` holds the descriptive per-(sample,
-  reference) fields the classification report writes out.
+- `CLASSIFYING_KRAKEN2` arrives consensus-ready, because `SORT_READS_BY_REF` resolves its
+  references as part of classifying:
+  - `sample_taxid_ch` — `tuple(meta, [read_1, read_2], reference_fasta)`. `meta` carries
+    `id` (`"<sample_id>.<taxid>"`), `sample_id`, `taxid`, `reference_header`.
+  - `sample_report_with_join_key_ch` — `[join_key, report_meta]`, `join_key` equal to the
+    matching consensus's `meta.id`. `report_meta` holds the descriptive per-(sample,
+    reference) fields the classification report writes out.
+  - `identified_species_ch` — `[sample_id, [normalized_species, ...]]`.
+- `CLASSIFYING_INDEX` hands over calls only, no reads and no extracted reference:
+  - `species_calls_ch` — `[sample_id, call]`, `call` being a Map of `species_name`,
+    `reference_record` (a `SEQIDX_<n>` token from that method's own map-QC table),
+    `hit_count`, `breadth_pct`, `method`.
+
+`MAPPING` builds the consensus-ready shape for the index side itself, then `mix()`es.
 
 `MAPPING` takes a fifth input, `CLASSIFYING_KRAKEN2.out.identified_species_ch`, and uses
 it to drop sequence-index candidates for species Kraken2 already found *before* mixing —

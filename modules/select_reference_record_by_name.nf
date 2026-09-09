@@ -1,9 +1,16 @@
-// Reference-sequence selection for one already-known species name (used by the
-// sequence-index lane's new-species-consensus feature, subworkflows/classifying_index.nf,
-// to resolve a reference for a species mSWEEP/Metagraph called but Kraken2 didn't).
-// Same "longest sequence per label" rule as reference_subset.nf's
-// SELECT_REFERENCE_RECORDS, minus its abundance-threshold gating -- the caller already
-// knows exactly which species it wants.
+// Reference-sequence selection for one already-known species name: the "longest sequence
+// per label" rule from reference_subset.nf's SELECT_REFERENCE_RECORDS, minus its
+// abundance-threshold gating, for a caller that already knows which species it wants.
+//
+// UNUSED since the classifier/mapping split moved reference resolution into
+// subworkflows/mapping.nf. That resolution now reuses the reference record the calling
+// method's own map-QC table already names (EXTRACT_REFERENCE_RECORD in
+// reference_subset.nf), so nothing needs to re-derive one from the species name. Kept, not
+// deleted, for two reasons: it is the only deterministic species -> record rule in the
+// codebase (seeded longest-sequence, independent of which method called the species),
+// which is the fix if the multi-method non-determinism noted in
+// subworkflows/classifying_index.nf ever matters; and it is the way to resolve a reference
+// for a species that was never map-QC'd at all.
 
 params.script_src_path = "${projectDir}/bin/"
 
