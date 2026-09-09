@@ -38,10 +38,10 @@ The pipeline takes as input (a) a manifest containing  **fastq pairs file** path
 
 0. **Preprocessing** (Optional): An optional preprocessing workflow (activated by `--do_preprocessing true`). This remove adapters (via `trimmomatic`), tandem repeats (via `TRF`) and human reads (via `sra-human-scrubber`) from the input fastq files. Each of those steps can be set on/off (`--run_trimmomatic`, `--run_trf`, `--run_hrr`).
 
-1. **Classify Reads and select references**: `kraken2` is initially used to classify the reads in the input fastq, using the input Kraken database. The resulting Kraken2 report is used to select partition the reads into groups, each associated with a selected reference sequence that will be used to guide the reconstruction of the viral genome. 
+1. **Classify Reads and select references** (`subworkflows/classifying_kraken2.nf`): `kraken2` is initially used to classify the reads in the input fastq, using the input Kraken database. The resulting Kraken2 report is used to select partition the reads into groups, each associated with a selected reference sequence that will be used to guide the reconstruction of the viral genome. 
 
-2. **Generate Consensus**: The reads sets produced in the previous step are aligned to their respective references (via `bwa`
-or minimap2), with the resulting pileup being provided to `ivar` to determine the sequence by consensus (in either one or two rounds). 
+2. **Generate Consensus** (`subworkflows/mapping.nf`): The reads sets produced in the previous step are aligned to their respective references (via `bwa`
+or minimap2), with the resulting pileup being provided to `ivar` to determine the sequence by consensus (in either one or two rounds). This step is deliberately *shared*: reads can reach it from either classifier — Kraken2 (step 1) or, when `--call_consensus_for_new_species true`, the sequence-index methods for species Kraken2 missed (`subworkflows/classifying_index.nf`). Both hand over the same channel shapes, so steps 2-4 run once over the union rather than once per classifier.
 
 3. **NextClade analysis**: (Optional) NextClade is run on the resulting viral genomes.
 

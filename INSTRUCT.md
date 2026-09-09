@@ -8,12 +8,16 @@ method of item 3), updated through `d0760aa` after a farm-less round ported Meta
 sequence-to-graph alignment (item 3's second method), updated through `0241641` after a
 third, also farm-less round added Metagraph pseudoalignment (item 3's third and last
 method), updated through `1536267` after a fourth, still farm-less round built the
-entire abundance estimation lane (item 4), updated again through `71c15cb` (`HEAD` at
-the time of this edit) after a fifth round wired up wider input handling (item 5).
-**Every round since the first has had no `singularity`/reference-data/network access at
-all** — items 3, 4, and 5 are all fully wired and DSL-checked, but only item 1 and
-Themisto2/mSWEEP have actually executed. `git log` is the source of truth if it's since
-moved further.
+entire abundance estimation lane (item 4), updated through `71c15cb` after a fifth round
+wired up wider input handling (item 5), and updated again after a farm-less round split
+`MAPPING` at the consensus boundary so both classifiers share it (see
+"Classifier/consensus split" below — `84d292b`, `HEAD` at the time of this edit).
+
+Note the rounds have alternated between farm-capable and farm-less sessions, and the
+sections below are written per round rather than merged — where two sections disagree,
+the later one wins and says so explicitly. Items 3, 4 and 5 have since been farm-run (see
+"FARM-RUN ROUND"); the classifier/consensus split has not. `git log` is the source of
+truth if it's since moved further.
 
 Read this whole file before touching anything. It front-loads facts (repo layout, remotes,
 commit hashes, file conventions) discovered the hard way in the prior session, specifically
@@ -588,14 +592,21 @@ Reorganized so each lane is its own `take:`/`main:` subworkflow file under the n
 `viral-lens/subworkflows/` directory, self-contained (own includes, own `count_*()`
 helpers, own PUBLISH calls):
 
-- `subworkflows/mapping.nf` — `MAPPING`: `SORT_READS_BY_REF` → `GENERATE_CONSENSUS` →
-  Nextclade → SCOV2 subtyping → `GENERATE_CLASSIFICATION_REPORT`. Mirrors the still-frozen
-  `mapping_pipeline_main.nf` lane byte-for-byte in logic, just as a callable subworkflow
-  instead of a standalone entry point.
-- `subworkflows/sequence_index.nf` — `SEQUENCE_INDEX`: the three mapping methods
-  (Themisto2/mSWEEP, Metagraph align, Metagraph query) → `GENERATE_MAPPING_REPORT`, plus
-  the `count_msweep_*()`/`count_metagraph_*()` helpers and `EMPTY_*_COUNTS` constants
-  referenced in item 3 above.
+- `subworkflows/classifying_kraken2.nf` — `CLASSIFYING_KRAKEN2`: `SORT_READS_BY_REF`
+  (Kraken2 + Kraken2Ref taxid selection and reference resolution), stopping short of
+  consensus. Also owns `identified_species_ch`. **Split out of `mapping.nf` later than
+  the rest of this reorganization — see "Classifier/consensus split" below.**
+- `subworkflows/mapping.nf` — `MAPPING`: `GENERATE_CONSENSUS` → Nextclade → SCOV2
+  subtyping → `GENERATE_CLASSIFICATION_REPORT`, driven by *either* classifier. Originally
+  this file held the Kraken2 half too, mirroring the still-frozen
+  `mapping_pipeline_main.nf` lane byte-for-byte; that half is now
+  `classifying_kraken2.nf`.
+- `subworkflows/classifying_index.nf` — `CLASSIFYING_INDEX` (was `sequence_index.nf` /
+  `SEQUENCE_INDEX`): the three mapping methods (Themisto2/mSWEEP, Metagraph align,
+  Metagraph query) → `GENERATE_MAPPING_REPORT`, plus the
+  `count_msweep_*()`/`count_metagraph_*()` helpers and `EMPTY_*_COUNTS` constants
+  referenced in item 3 above. Its new-species block hands over to `MAPPING` rather than
+  generating consensus itself.
 - `subworkflows/assembly.nf` — `ASSEMBLY`: `ASSEMBLE_META` → `GENOMAD_CLASSIFY` →
   `VRHYME_BIN`/`CHECKV_QC` → `VCONTACT3_RUN` → `GENERATE_ASSEMBLY_REPORT`, plus the
   `count_genomad_summary()`/`count_vrhyme_membership()`/`count_checkv_quality()`/
@@ -604,13 +615,14 @@ helpers, own PUBLISH calls):
   `ABUNDANCE_ESTIMATION` → `GENERATE_ABUNDANCE_REPORT`, plus `count_bracken_species()` and
   `EMPTY_BRACKEN_COUNTS`, referenced in item 4 above.
 
-`main.nf` itself is now ~290 lines: the log banner, `--do_mixed_input`/`parse_mnf()` input
+`main.nf` itself is now ~300 lines: the log banner, `--do_mixed_input`/`parse_mnf()` input
 handling, the `PREPROCESSING` call, and one gated call per lane
-(`MAPPING(preprocessed_3tuple_ch)` unconditionally, `ASSEMBLY`/`SEQUENCE_INDEX`/`ABUNDANCE`
-behind their existing `params.do_*` flags). No process, channel-shape, or param-gating
-logic changed — this was a pure move, verified by grepping `main.nf` for direct calls to
-any of the moved processes (`SORT_READS_BY_REF(`, `ASSEMBLE_META(`, `KRAKEN2BRACKEN(`,
-etc.) and confirming none remain.
+(`CLASSIFYING_KRAKEN2` and `MAPPING` unconditionally,
+`ASSEMBLY`/`CLASSIFYING_INDEX`/`ABUNDANCE` behind their existing `params.do_*` flags). At
+the time of *this* reorganization no process, channel-shape, or param-gating logic changed
+— it was a pure move, verified by grepping `main.nf` for direct calls to any of the moved
+processes (`SORT_READS_BY_REF(`, `ASSEMBLE_META(`, `KRAKEN2BRACKEN(`, etc.) and confirming
+none remain. The classifier/consensus split below came afterwards and did change wiring.
 
 One real (behavior-neutral) simplification made along the way: previously, when
 `params.do_preprocessing` was `false`, the taxid-mapping lane's input
@@ -804,24 +816,32 @@ up above that threshold, which no DSL/`-preview` check can exercise at all. The 
 current plan is to farm-test the assembly lane without this step first and add it back
 later only if a real run actually needs it.
 
-## SEQUENCE_INDEX -> MAPPING cross-lane: consensus for species Kraken2 missed — DSL-checked only, needs a real overlap/disagreement case to prove anything
+## CLASSIFYING_INDEX -> MAPPING cross-classifier: consensus for species Kraken2 missed — DSL-checked only, needs a real overlap/disagreement case to prove anything
 
 **Not farm-verified, and can't be meaningfully checked with `-preview`** — the entire
 point of this feature is behavior that only shows up when a real sample has a species
-Kraken2 misses but mSWEEP/Metagraph catch with real breadth. A DSL/`-preview` check only
+Kraken2 misses but Themisto2/Metagraph catch with real breadth. A DSL/`-preview` check only
 proves the wiring resolves, not that the logic is right. **Your first real run after
 pulling this should specifically include (or synthesize) a sample where Kraken2 and a
 sequence-index method disagree** — e.g. a species just below `min_reads_for_taxid` or
-outside the Kraken2 db, but present in the mSWEEP/Metagraph reference index with decent
+outside the Kraken2 db, but present in the Themisto2/Metagraph reference index with decent
 depth.
 
-**What it does**: when `--call_consensus_for_new_species true`, `SEQUENCE_INDEX` now also
-runs `GENERATE_CONSENSUS` (the same process `MAPPING` uses) for any species a
-sequence-index method (mSWEEP or either Metagraph method) calls with `breadth_pct` above
-`new_species_min_breadth_pct` (default 10.0) that `MAPPING`'s Kraken2/`SORT_READS_BY_REF`
-pass did **not** already find for that sample. Off by default — this is a new cross-lane
-dependency (`SEQUENCE_INDEX` now takes `MAPPING.out.identified_species_ch` as a second
+**What it does**: when `--call_consensus_for_new_species true`, `CLASSIFYING_INDEX`
+resolves a reference record for any species a sequence-index method calls with
+`breadth_pct` above `new_species_min_breadth_pct` (default 10.0) that
+`CLASSIFYING_KRAKEN2` did **not** already find for that sample, and hands it to `MAPPING`
+for consensus. Off by default — this is a new cross-classifier dependency
+(`CLASSIFYING_INDEX` takes `CLASSIFYING_KRAKEN2.out.identified_species_ch` as a second
 input).
+
+**Restructured since it was first written (see "Classifier/consensus split" below).** It
+originally ran its *own* `GENERATE_CONSENSUS` call inside the sequence-index lane and
+published a bare consensus — no Nextclade, no SARS-CoV-2 subtyping, no classification
+report row. Now both classifiers hand over to one shared `MAPPING`, so a species only a
+sequence index found gets the same treatment as a Kraken2-found taxid. The
+species-identity reconciliation described below is unchanged by that move; only where the
+consensus runs changed.
 
 **Species-identity reconciliation**: Kraken2 taxids and the mSWEEP/Metagraph RVDB-index
 labels are unrelated numbering schemes with no shared numeric ID, so comparison is by
@@ -861,7 +881,7 @@ invent one.
 ## New-species consensus: it also crashed unless ALL THREE methods were enabled
 
 Second, independent bug in the same feature, found the moment it was first run with a
-method subset. `subworkflows/sequence_index.nf`'s new-species block reached directly into
+method subset. `subworkflows/classifying_index.nf`'s new-species block reached directly into
 `VIRAL_METAGRAPH_ALIGN.out.map_qc` / `VIRAL_METAGRAPH_QUERY.out.map_qc`, past the
 `if (params.run_*)` guards. A subworkflow that was never invoked has no `.out`, so
 `--call_consensus_for_new_species true --run_msweep true` (no Metagraph) aborted in 19
@@ -955,9 +975,10 @@ this feature's mSWEEP-sourced candidates too.
 tests/test_data/test_manifests/test_input_manifest.csv --db_path
 tests/test_data/test_kraken_databases/minimal` — `Success: true`; confirmed via
 `-with-dag` (the live progress display truncates too aggressively to show every process
-name) that `SEQUENCE_INDEX:SELECT_REFERENCE_RECORD_BY_NAME`,
-`SEQUENCE_INDEX:INDEX_REFERENCE_FASTA`, `SEQUENCE_INDEX:EXTRACT_REFERENCE_SUBSET`, and the
-full `SEQUENCE_INDEX:GENERATE_CONSENSUS:*` process chain all appear correctly in the
+name) that `CLASSIFYING_INDEX:SELECT_REFERENCE_RECORD_BY_NAME`,
+`CLASSIFYING_INDEX:INDEX_REFERENCE_FASTA`, `CLASSIFYING_INDEX:EXTRACT_REFERENCE_SUBSET` and
+the `MAPPING:GENERATE_CONSENSUS:*` process chain (one invocation, shared with the Kraken2
+classifier since the split below) all appear correctly in the
 resolved DAG, alongside `MAPPING`'s own separate copy of the same `GENERATE_CONSENSUS`
 processes. **None of this has executed against real data or a real species
 disagreement** — the whole point of this feature is unverifiable without one.
@@ -1149,6 +1170,71 @@ additionally surfacing 7 sarbecovirus relatives at 3-14% breadth / 0.09-0.46x de
 the breadth/depth columns separate cleanly from the 99.96% / 43.9x true call. Themisto is
 the more sensitive caller; the map-QC table is what makes that sensitivity usable.
 
+## Classifier/consensus split: one shared MAPPING for both classifiers — DSL-checked only
+
+Requested directly by the user, and a genuine wiring change rather than a move (unlike the
+earlier `subworkflows/` reorganization). `MAPPING` was doing two separable jobs: Kraken2
+taxid classification, then consensus + Nextclade + subtyping + classification report. Only
+the first is Kraken2-specific, but the sequence-index lane needed the second — so it had
+grown its own private `GENERATE_CONSENSUS` call and published a bare consensus with none
+of the downstream treatment.
+
+Now split at the consensus boundary:
+
+| file | workflow | does |
+|---|---|---|
+| `subworkflows/classifying_kraken2.nf` | `CLASSIFYING_KRAKEN2` | `SORT_READS_BY_REF` (Kraken2 + Kraken2Ref), owns `identified_species_ch` |
+| `subworkflows/classifying_index.nf` | `CLASSIFYING_INDEX` | the three sequence-index methods + their own per-method report; resolves references for new species |
+| `subworkflows/mapping.nf` | `MAPPING` | `GENERATE_CONSENSUS` → Nextclade → SCOV2 → `GENERATE_CLASSIFICATION_REPORT`, for **both** classifiers |
+
+**The shared interface — this is the part to preserve if you touch any of the three.** Both
+classifiers emit exactly two channels, and `MAPPING` `mix()`es each pair:
+
+- `sample_taxid_ch` — `tuple(meta, [read_1, read_2], reference_fasta)`. `meta` carries
+  `id` (`"<sample_id>.<taxid>"`), `sample_id`, `taxid`, `reference_header`.
+- `sample_report_with_join_key_ch` — `[join_key, report_meta]`, where `join_key` equals the
+  matching consensus's `meta.id`. `report_meta` holds the descriptive per-(sample,
+  reference) fields the classification report writes out.
+
+`mix()` and not `join`/`combine` because the two sets are disjoint by construction:
+`CLASSIFYING_INDEX` only ever emits species `CLASSIFYING_KRAKEN2` did *not* find. A
+classifier that isn't running passes `Channel.empty()` — `main.nf` does this explicitly in
+an `else` branch rather than reaching for `CLASSIFYING_INDEX.out.*`, which is undefined
+when the subworkflow was never invoked (the same trap already documented for
+`VIRAL_METAGRAPH_ALIGN.out`).
+
+**What actually changes behaviorally**: a species only Themisto2/Metagraph found now gets
+Nextclade, SARS-CoV-2 subtyping and a classification-report row. Subtyping in particular
+works because its synthetic `report_meta` carries `ref_selected` (set to the species name),
+which is what `MAPPING` branches on — so a SARS-CoV-2 infection Kraken2 missed but a
+sequence index caught gets subtyped like any other.
+
+**Two smaller things that fell out of it**, both worth knowing before editing:
+
+- `CLASSIFYING_INDEX`'s synthetic meta now mirrors `bin/k2r_report.py`'s pre-report columns,
+  because `MAPPING` uses that map as the base of its report meta regardless of which
+  classifier produced it. Fields this classifier has no honest equivalent for (`virus`,
+  `num_reads`, `flu_segment`, `virus_subtype`, `sample_subtype`) are deliberately left
+  empty — don't "fill them in" with sequence-index figures that mean something different.
+- `sample_report_with_join_key_ch`'s rows now carry `id` as a field, not only as the tuple
+  key. `MAPPING`'s Nextclade input uses the row as its meta base and downstream
+  per-consensus JSON keying expects `meta.id`. The old code got this from a *second*,
+  near-duplicate construction of the same channel off `sample_pre_report_ch`; that
+  duplication is now collapsed into one channel used for both purposes.
+- `new_species_consensus_n` in the sequence-index report now counts "new species handed to
+  `MAPPING` with a resolved reference" rather than "consensuses that completed" — the
+  completion outcome now lives in `MAPPING`/the classification report and isn't visible
+  from the classifier. Same column name, slightly looser meaning.
+
+**Verification**: `-preview` across four flag combinations (baseline; `--do_sequence_index`;
+`+ --call_consensus_for_new_species`; `+ --do_assembly --do_abundance`), all resolving. The
+centralization itself was confirmed empirically rather than by inspection: a `-with-dag`
+export with the handover enabled has **one** `GENERATE_CONSENSUS` invocation where the
+previous commit had two (`grep -c initial_alignment dag.mmd`: 2 → 1). **Nothing has been
+run for real** — and note that the same caveat as the cross-classifier feature itself
+applies: only a sample where Kraken2 and a sequence index genuinely disagree exercises the
+handover at all, so a normal run proves only that the Kraken2 side still works.
+
 ## Your remaining work, roughly in priority/dependency order
 
 ### 1. Prove the assembly lane actually runs -- DONE, see above
@@ -1294,7 +1380,7 @@ that same chain rather than building a second report path — that was the whole
 restructuring it earlier this round. The helpers that populate the meta
 (`count_msweep_abundances()`, `count_msweep_map_qc()`, `count_metagraph_species_hits()`,
 `count_metagraph_map_qc()` — the last two now take a `prefix` arg so align's and query's
-counts don't collide) are at the bottom of `subworkflows/sequence_index.nf` (moved out of
+counts don't collide) are at the bottom of `subworkflows/classifying_index.nf` (moved out of
 `main.nf` — see "main.nf split into subworkflows/" below), each
 paired with a named `EMPTY_*_COUNTS` constant for the "this method didn't run, or ran but
 produced no optional output for this sample" case — every `.join(..., remainder: true)`
