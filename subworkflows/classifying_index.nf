@@ -152,14 +152,32 @@ workflow CLASSIFYING_INDEX {
                 .mix(metagraph_align_candidates_ch, metagraph_query_candidates_ch)
                 .unique { sample_id, name -> [sample_id, name.trim().toLowerCase()] }
 
+            // Complete the "already identified" side before broadcasting it: exactly one
+            // entry per sample in this lane, holding an empty list for samples
+            // CLASSIFYING_KRAKEN2 produced no pre-report for (e.g. every fastq filtered as
+            // empty upstream) -- treated as "nothing already identified", not as "drop
+            // everything". This join IS cardinality-safe: one element per sample on each
+            // side, so remainder:true only fills in genuinely absent samples.
+            identified_by_sample_ch = sequence_index_sample_ch
+                .join(identified_species_ch, remainder: true)
+                .map { sample_id, _meta, identified -> [sample_id, identified ?: []] }
+
             // Drop anything CLASSIFYING_KRAKEN2 already found for that sample.
-            // remainder:true so a sample with no Kraken2 entry at all (e.g. every fastq
-            // filtered as empty upstream) still passes its candidates through -- treated
-            // as "nothing already identified", not as "drop everything".
+            //
+            // combine(by: 0), NOT join: there are MANY candidates per sample and exactly
+            // ONE identified-species list, and Nextflow's join() pairs matching keys
+            // one-to-one rather than broadcasting the single right-hand element across
+            // them. Joining here checked only the first candidate per sample; every later
+            // one got a null right-hand side (via remainder:true) and passed through
+            // unchecked, so a sample where a method called several species -- the normal
+            // case, Themisto2 called 9 on one real sample -- had all but one of them
+            // treated as new regardless of what Kraken2 had already found. Verified with a
+            // standalone two-operator comparison before changing it; combine(by: 0)
+            // broadcasts, which is the semantics this filter always needed.
             candidate_new_species_ch
                 .map { sample_id, name -> [sample_id, name, name.trim().toLowerCase()] }
-                .join(identified_species_ch, remainder: true)
-                .filter { _sample_id, _name, name_norm, identified -> !(identified != null && identified.contains(name_norm)) }
+                .combine(identified_by_sample_ch, by: 0)
+                .filter { _sample_id, _name, name_norm, identified -> !identified.contains(name_norm) }
                 .map { sample_id, name, _name_norm, _identified -> [sample_id, name] }
                 .set { new_species_ch }
 
