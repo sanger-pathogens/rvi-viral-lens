@@ -18,9 +18,15 @@ include {MIXED_INPUT} from "./rvi_toolbox/subworkflows/mixed_input.nf"
 // Each lane is its own subworkflow under subworkflows/, self-contained (including
 // its own sample-level report-count helpers and PUBLISH calls). main.nf just wires
 // preprocessed reads into whichever lanes are enabled.
+//
+// The exception is consensus generation, which is deliberately NOT per-lane: two
+// classifiers can find a species worth a consensus (Kraken2, and the sequence
+// indexes for species Kraken2 missed), and both hand over to the one shared MAPPING
+// subworkflow rather than each running its own consensus/Nextclade/report pass.
+include {CLASSIFYING_KRAKEN2} from './subworkflows/classifying_kraken2.nf'
+include {CLASSIFYING_INDEX} from './subworkflows/classifying_index.nf'
 include {MAPPING} from './subworkflows/mapping.nf'
 include {ASSEMBLY} from './subworkflows/assembly.nf'
-include {SEQUENCE_INDEX} from './subworkflows/sequence_index.nf'
 include {ABUNDANCE} from './subworkflows/abundance.nf'
 
 // Main entry-point workflow
@@ -49,7 +55,7 @@ workflow {
     --default_error_strategy   : ${params.default_error_strategy}
     --max_attempts             : ${params.max_attempts}
 
-  --> MAPPING workflow parameters (subworkflows/mapping.nf: taxid mapping, consensus, Nextclade, SCOV2 subtyping):
+  --> CLASSIFYING_KRAKEN2 + MAPPING workflow parameters (subworkflows/classifying_kraken2.nf: taxid classification; subworkflows/mapping.nf: consensus, Nextclade, SCOV2 subtyping, classification report):
     --manifest                    : ${params.manifest}
     --db_path                     : ${params.db_path}
     --db_library_fa_path          : ${params.db_library_fa_path}
@@ -80,7 +86,7 @@ workflow {
     --metaspades_subsample_limit  : ${params.metaspades_subsample_limit}
     --vrhyme_min_scaffold_length  : ${params.vrhyme_min_scaffold_length}
 
-  --> SEQUENCE_INDEX workflow parameters (subworkflows/sequence_index.nf; only used if --do_sequence_index true):
+  --> CLASSIFYING_INDEX workflow parameters (subworkflows/classifying_index.nf; only used if --do_sequence_index true):
     --run_themisto                : ${params.run_themisto}
     --run_metagraph_align         : ${params.run_metagraph_align}
     --run_metagraph_query         : ${params.run_metagraph_query}
@@ -164,23 +170,42 @@ workflow {
     }
 
     // ==========================
-    // === 2 - Map to taxid, generate consensus, classify (see subworkflows/mapping.nf)
-    MAPPING(preprocessed_3tuple_ch)
+    // === 2 - Classify reads by Kraken2 taxid (see subworkflows/classifying_kraken2.nf)
+    CLASSIFYING_KRAKEN2(preprocessed_3tuple_ch)
 
     // === 3 - De novo assembly + viral binning (rvi_integration_1, opt-in) ===
     if (params.do_assembly) {
         ASSEMBLY(preprocessed_3tuple_ch)
     }
 
-    // === 4 - Map reads to sequence indexes (rvi_integration_1, opt-in) ===
-    // MAPPING.out.identified_species_ch is always available (MAPPING runs
-    // unconditionally above) -- SEQUENCE_INDEX uses it to tell which of its own species
-    // calls are genuinely new (see subworkflows/mapping.nf / sequence_index.nf).
+    // === 4 - Classify reads against sequence indexes (rvi_integration_1, opt-in) ===
+    // CLASSIFYING_KRAKEN2.out.identified_species_ch is always available (that
+    // subworkflow runs unconditionally above) -- CLASSIFYING_INDEX uses it to tell which
+    // of its own species calls are genuinely new.
+    //
+    // The else branch matters: a subworkflow that was never invoked has no .out at all,
+    // so handing MAPPING `CLASSIFYING_INDEX.out.*` directly would abort the run with
+    // "Access to 'CLASSIFYING_INDEX.out' is undefined" whenever --do_sequence_index is
+    // off. Empty channels are what "that classifier didn't run" should mean here.
     if (params.do_sequence_index) {
-        SEQUENCE_INDEX(preprocessed_3tuple_ch, MAPPING.out.identified_species_ch)
+        CLASSIFYING_INDEX(preprocessed_3tuple_ch, CLASSIFYING_KRAKEN2.out.identified_species_ch)
+        index_sample_taxid_ch = CLASSIFYING_INDEX.out.sample_taxid_ch
+        index_report_ch = CLASSIFYING_INDEX.out.sample_report_with_join_key_ch
+    } else {
+        index_sample_taxid_ch = Channel.empty()
+        index_report_ch = Channel.empty()
     }
 
-    // === 5 - Abundance estimation (rvi_integration_1, opt-in) ===
+    // === 5 - Consensus, lineage calling and classification report ===
+    // One pass over both classifiers' output (see subworkflows/mapping.nf).
+    MAPPING(
+        CLASSIFYING_KRAKEN2.out.sample_taxid_ch,
+        CLASSIFYING_KRAKEN2.out.sample_report_with_join_key_ch,
+        index_sample_taxid_ch,
+        index_report_ch
+    )
+
+    // === 6 - Abundance estimation (rvi_integration_1, opt-in) ===
     if (params.do_abundance) {
         ABUNDANCE(preprocessed_3tuple_ch)
     }

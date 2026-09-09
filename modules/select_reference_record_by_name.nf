@@ -1,5 +1,5 @@
 // Reference-sequence selection for one already-known species name (used by the
-// sequence-index lane's new-species-consensus feature, subworkflows/sequence_index.nf,
+// sequence-index lane's new-species-consensus feature, subworkflows/classifying_index.nf,
 // to resolve a reference for a species mSWEEP/Metagraph called but Kraken2 didn't).
 // Same "longest sequence per label" rule as reference_subset.nf's
 // SELECT_REFERENCE_RECORDS, minus its abundance-threshold gating -- the caller already

@@ -1,7 +1,17 @@
-// --- map reads to taxid, generate consensus, classify (rvi_integration_1) ---
-// Extracted unchanged from main.nf's inline body (was mirrored by
-// mapping_pipeline_main.nf, the legacy standalone entry-point for this lane).
-include {SORT_READS_BY_REF} from '../workflows/SORT_READS_BY_REF.nf'
+// --- consensus generation, lineage calling and classification reporting --------
+// The shared half of what mapping.nf used to do end to end: everything from
+// GENERATE_CONSENSUS onward. The Kraken2 half moved to
+// subworkflows/classifying_kraken2.nf, and this is now driven by EITHER classifier:
+//
+//   subworkflows/classifying_kraken2.nf  Kraken2 + Kraken2Ref taxid selection
+//   subworkflows/classifying_index.nf    Themisto2/Metagraph species calls Kraken2 missed
+//
+// Both hand over the same two channel shapes (see either file's emit block), so this
+// runs one consensus/Nextclade/subtyping/report pass over the union rather than each
+// classifier growing its own parallel copy of it. That union is why a species only
+// Themisto2/Metagraph found now also gets Nextclade, SARS-CoV-2 subtyping and a row in
+// the classification report -- previously its consensus was published on its own with
+// none of that.
 include {GENERATE_CONSENSUS} from '../workflows/GENERATE_CONSENSUS.nf'
 include {SCOV2_SUBTYPING} from '../workflows/SCOV2_SUBTYPING.nf'
 include {GENERATE_CLASSIFICATION_REPORT} from '../workflows/GENERATE_CLASSIFICATION_REPORT.nf'
@@ -12,37 +22,56 @@ include {publish_run_files} from '../modules/publish_lite.nf'
 workflow MAPPING {
     /*
     -----------------------------------------------------------------
-    Maps preprocessed reads to a per-sample reference taxid
-    (SORT_READS_BY_REF), generates a consensus sequence
+    Generates a consensus sequence per (sample, reference) pair
     (GENERATE_CONSENSUS), optionally runs Nextclade and SARS-CoV-2
     subtyping, and writes the final per-sample classification report.
+
+    Reference selection itself happens upstream, in whichever
+    classifier produced the input -- this subworkflow is deliberately
+    agnostic about which one that was.
+    -----------------------------------------------------------------
+    # Inputs
+
+    Two channels per classifier, both already in their final shape:
+
+    - **sample_taxid_ch**: tuple(meta, [read_1, read_2], reference_fasta).
+      meta carries `id` ("<sample_id>.<taxid>"), `sample_id`, `taxid` and
+      `reference_header`.
+    - **report_with_join_key_ch**: [join_key, report_meta], join_key ==
+      the matching consensus's meta.id. report_meta holds the
+      per-(sample, reference) descriptive fields the classification
+      report writes out (sample_id, virus_name, ref_selected, ...).
+
+    Pass Channel.empty() for a classifier that isn't running.
     -----------------------------------------------------------------
     */
 
     take:
-        preprocessed_3tuple_ch // tuple (meta, read1, read2)
+        kraken2_sample_taxid_ch // tuple (meta, [read_1, read_2], reference_fasta) -- CLASSIFYING_KRAKEN2
+        kraken2_report_ch       // [join_key, report_meta]                         -- CLASSIFYING_KRAKEN2
+        index_sample_taxid_ch   // tuple (meta, [read_1, read_2], reference_fasta) -- CLASSIFYING_INDEX, or Channel.empty()
+        index_report_ch         // [join_key, report_meta]                         -- CLASSIFYING_INDEX, or Channel.empty()
 
     main:
-        // reconstruct the tuple(meta, [read1, read2]) shape SORT_READS_BY_REF expects
-        preprocessed_3tuple_ch
-            .map { meta, read1, read2 -> [meta, [read1, read2]] }
-            .set { sort_reads_in_ch }
+        // The union both classifiers feed. mix() (not join/combine) because these are
+        // disjoint sets of (sample, reference) pairs, not two views of the same one:
+        // CLASSIFYING_INDEX only ever emits species CLASSIFYING_KRAKEN2 did NOT find.
+        sample_taxid_ch = kraken2_sample_taxid_ch.mix(index_sample_taxid_ch)
+        sample_report_with_join_key_ch = kraken2_report_ch.mix(index_report_ch)
 
-        SORT_READS_BY_REF(sort_reads_in_ch)
-        GENERATE_CONSENSUS(SORT_READS_BY_REF.out.sample_taxid_ch)
+        GENERATE_CONSENSUS(sample_taxid_ch)
 
         GENERATE_CONSENSUS.out.filtered_consensus_ch
             .map { meta, _bam, _bam_idx, consensus, _qc_json -> [meta.id, meta, consensus] }
             .set { consensus_fa_ch }
 
-        SORT_READS_BY_REF.out.sample_pre_report_ch
-            .map { meta ->
-                def new_meta = meta + [id: "${meta.sample_id}.${meta.selected_taxid}"]
-                [new_meta.id, new_meta]
-            }
+        // Nextclade's input meta is the report row (descriptive fields) widened with the
+        // two fields only the consensus side knows: which reference record was used, and
+        // the taxid the consensus was actually built against.
+        sample_report_with_join_key_ch
             .combine(consensus_fa_ch, by: 0)
-            .map { _id, pre_report_meta, fa_meta, fa ->
-                def final_meta = pre_report_meta + [reference_header: "${fa_meta.reference_header}", taxid: "${fa_meta.taxid}"]
+            .map { _id, report_meta, fa_meta, fa ->
+                def final_meta = report_meta + [reference_header: "${fa_meta.reference_header}", taxid: "${fa_meta.taxid}"]
                 [final_meta, fa]
             }
             .set { nextclade_In_ch }
@@ -62,11 +91,6 @@ workflow MAPPING {
                 .map { meta, json, _tarball -> [meta.id, json] }
                 .set { per_consensus_nextclade_json_ch }
         }
-
-        // branching output from generate_consensus for viral specific subtyping
-        SORT_READS_BY_REF.out.sample_pre_report_ch
-            .map { it -> ["${it.sample_id}.${it.selected_taxid}".toString(), it] }
-            .set { sample_report_with_join_key_ch }
 
         // add report info to out qc metric channel and branch for SCOV2 subtyping
         GENERATE_CONSENSUS.out.filtered_consensus_ch
@@ -114,77 +138,4 @@ workflow MAPPING {
         publish_nc_files(publish_nextclade_outputs_ch)
         publish_per_sample_json(GENERATE_CLASSIFICATION_REPORT.out.publish_seq_level_ch)
         publish_run_files(GENERATE_CLASSIFICATION_REPORT.out.publish_run_level_summaries_ch)
-
-        // --- rvi_integration_1: per-sample "species already identified by MAPPING" ---
-        // Consumed by SEQUENCE_INDEX to decide which of its own species calls are
-        // genuinely new. Built straight off SORT_READS_BY_REF's raw per-sample
-        // pre-report FILE (one element per sample, available as soon as THAT sample's
-        // Kraken2/k2r pass finishes) rather than the exploded sample_pre_report_ch +
-        // groupTuple() -- groupTuple() can't emit a group until its whole upstream
-        // channel closes, which would mean waiting for every sample in the run, not
-        // just this one.
-        //
-        // Match on virus_name, NOT ref_selected. Both are free-text names lifted from the
-        // Kraken2 report by bin/k2r_report.py, but they sit at different ranks and only
-        // virus_name shares a vocabulary with the sequence-index methods'
-        // species_label/species fields:
-        //   virus_name   <- kraken2ref's source_taxid, rank S      e.g. "Betacoronavirus pandemicum"
-        //   ref_selected <- the selected reference, rank S1/S2/S3  e.g. "Severe acute
-        //                                                          respiratory syndrome coronavirus 2"
-        // mSWEEP/Metagraph label the RVDB index with ICTV species binomials, so comparing
-        // against ref_selected alone never matched: every species MAPPING had already
-        // found looked "new", and the feature called a redundant consensus for it rather
-        // than a new-species one. Proven on the farm -- see INSTRUCT.md's
-        // "new-species consensus: matched on the wrong column" section.
-        //
-        // virus_name is reliably species rank: kraken2ref decomposes species -> below-species
-        // by construction, and its decomposed JSON carries the rank code in its own `source`
-        // field ('S' for all 68 reference selections across the 10 samples run so far).
-        //
-        // ref_selected is still folded into the same set, as a widening rather than a
-        // replacement: a candidate whose label happens to match a strain-level reference
-        // Kraken2 already selected is also genuinely already covered, so suppressing it is
-        // correct too. Adding it can only ever suppress a candidate, never invent one.
-        SORT_READS_BY_REF.out.raw_sample_pre_report_ch
-            .filter { it -> it.size() > 1 } // mirror SORT_READS_BY_REF's own empty-file guard
-            .map { report_file ->
-                def lines = report_file.readLines()
-                def header = lines[0].split('\t')
-                def sample_id_idx    = header.findIndexOf { String col -> col == 'sample_id' }
-                def virus_name_idx   = header.findIndexOf { String col -> col == 'virus_name' }
-                def ref_selected_idx = header.findIndexOf { String col -> col == 'ref_selected' }
-                // Fail loudly rather than silently mis-matching: Groovy's row[-1] returns the
-                // LAST field, so a renamed/removed column would quietly compare against
-                // report_name instead of erroring.
-                if (sample_id_idx < 0 || virus_name_idx < 0 || ref_selected_idx < 0) {
-                    error("pre-report ${report_file} lacks one of the sample_id/virus_name/" +
-                          "ref_selected columns (header: ${header}). bin/k2r_report.py's output " +
-                          "format has changed -- update identified_species_ch in subworkflows/mapping.nf.")
-                }
-                // split('\t') drops trailing empty fields, so a row is only usable if it
-                // actually reaches the columns being read.
-                def max_idx = [sample_id_idx, virus_name_idx, ref_selected_idx].max()
-                def rows = lines[1..-1]
-                    .collect { line -> line.split('\t') }
-                    .findAll { row -> row.size() > max_idx }
-                if (!rows) {
-                    // Not reachable via bin/k2r_report.py today: a sample with nothing
-                    // selected yields a column-less 1-byte file, already dropped by the
-                    // filter above, and any real row carries all 11 columns. Fail loudly
-                    // instead of letting rows[0] throw an opaque IndexOutOfBounds.
-                    error("pre-report ${report_file} has a header but no parseable data rows " +
-                          "(need >${max_idx} tab-separated fields). Check bin/k2r_report.py's output.")
-                }
-                def sample_id = rows[0][sample_id_idx]
-                def species = rows
-                    .collectMany { row -> [row[virus_name_idx], row[ref_selected_idx]] }
-                    .collect { name -> name.trim().toLowerCase() }
-                    .findAll { name -> name }
-                    .unique()
-                [sample_id, species]
-            }
-            .set { identified_species_ch }
-
-    emit:
-        identified_species_ch // [sample_id, [normalized_species_name, ...]]
 }

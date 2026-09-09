@@ -1,32 +1,37 @@
-// --- map reads to sequence indexes (rvi_integration_1) ----------------------
-// Extracted unchanged from main.nf's inline body. Up to three methods run in
-// parallel off the same preprocessed reads (not downstream of one another),
-// each independently gated, all feeding ONE GENERATE_MAPPING_REPORT call --
+// --- classify reads against pre-built sequence indexes (rvi_integration_1) ----
+// The sequence-index counterpart to subworkflows/classifying_kraken2.nf: up to three
+// methods run in parallel off the same preprocessed reads (not downstream of one
+// another), each independently gated, all feeding ONE GENERATE_MAPPING_REPORT call --
 // see INSTRUCT.md item 3: "feed its per-sample counts into the same
 // mapping_report_prep_ch rather than building a second report path".
-// sequence_index_sample_ch is the join backbone (every sample that reaches
-// this lane) so a sample report row exists even if only one method ran for
-// it, or (with more than one flag on) one row carries every enabled method's
-// counts.
+// sequence_index_sample_ch is the join backbone (every sample that reaches this lane) so
+// a sample report row exists even if only one method ran for it, or (with more than one
+// flag on) one row carries every enabled method's counts.
+//
+// Like classifying_kraken2.nf, this classifier does NOT generate consensus sequences
+// itself: for species it calls that Kraken2 missed it resolves a reference and hands
+// them to subworkflows/mapping.nf in the same two shapes classifying_kraken2.nf uses
+// (see this file's emit block). That is what gets them Nextclade, SARS-CoV-2 subtyping
+// and a classification-report row, rather than the bare published consensus this
+// subworkflow used to produce from its own private GENERATE_CONSENSUS call.
 include {VIRAL_THEMISTO_MSWEEP} from '../workflows/VIRAL_THEMISTO_MSWEEP.nf'
 include {VIRAL_METAGRAPH_ALIGN} from '../workflows/VIRAL_METAGRAPH_ALIGN.nf'
 include {VIRAL_METAGRAPH_QUERY} from '../workflows/VIRAL_METAGRAPH_QUERY.nf'
 include {GENERATE_MAPPING_REPORT} from '../workflows/GENERATE_MAPPING_REPORT.nf'
 include {publish_lane_json as publish_mapping_lane_json} from '../modules/publish_lane_report.nf'
 include {publish_run_files as publish_mapping_run_files} from '../modules/publish_lite.nf'
-// -- new-species consensus (rvi_integration_1, opt-in via --call_consensus_for_new_species):
-// when a sequence-index method calls a species above new_species_min_breadth_pct breadth
-// that MAPPING's Kraken2/SORT_READS_BY_REF did NOT already find for that sample, run it
-// through GENERATE_CONSENSUS too, same as any Kraken2-found taxid.
+// -- new-species reference resolution (rvi_integration_1, opt-in via
+// --call_consensus_for_new_species): when a sequence-index method calls a species above
+// new_species_min_breadth_pct breadth that CLASSIFYING_KRAKEN2 did NOT already find for
+// that sample, resolve its reference record so MAPPING can consensus it like any
+// Kraken2-found taxid.
 include {INDEX_REFERENCE_FASTA; EXTRACT_REFERENCE_SUBSET} from '../modules/reference_subset.nf'
 include {SELECT_REFERENCE_RECORD_BY_NAME} from '../modules/select_reference_record_by_name.nf'
-include {GENERATE_CONSENSUS} from '../workflows/GENERATE_CONSENSUS.nf'
-include {publish_consensus_files as publish_new_species_consensus_files} from '../modules/publish_lite.nf'
 
-workflow SEQUENCE_INDEX {
+workflow CLASSIFYING_INDEX {
     take:
         preprocessed_3tuple_ch  // tuple (meta, read1, read2)
-        identified_species_ch   // [sample_id, [normalized_species_name, ...]] -- MAPPING.out.identified_species_ch
+        identified_species_ch   // [sample_id, [normalized_species_name, ...]] -- CLASSIFYING_KRAKEN2.out.identified_species_ch
 
     main:
         sequence_index_sample_ch = preprocessed_3tuple_ch
@@ -112,12 +117,12 @@ workflow SEQUENCE_INDEX {
             metagraph_query_map_qc_ch = Channel.empty()
         }
 
-        // -- New-species consensus (opt-in): species a sequence-index method called with
-        // real breadth of coverage that MAPPING's Kraken2 pass never found for that
-        // sample. See subworkflows/mapping.nf's identified_species_ch header comment for
-        // why this compares by free-text species name (the only thing Kraken2 taxids and
-        // the mSWEEP/Metagraph reference indexes' own labels have in common) and why the
-        // per-sample "already identified" set needs no batch-wide wait.
+        // -- New-species reference resolution (opt-in): species a sequence-index method
+        // called with real breadth of coverage that the Kraken2 pass never found for that
+        // sample. See subworkflows/classifying_kraken2.nf's identified_species_ch header
+        // comment for why this compares by free-text species name (the only thing Kraken2
+        // taxids and the Themisto2/Metagraph reference indexes' own labels have in common)
+        // and why the per-sample "already identified" set needs no batch-wide wait.
         if (params.call_consensus_for_new_species) {
             // Union every method's own already-computed map_qc breadth table, filtered to
             // real hits (breadth_pct > new_species_min_breadth_pct). These consume the
@@ -147,10 +152,10 @@ workflow SEQUENCE_INDEX {
                 .mix(metagraph_align_candidates_ch, metagraph_query_candidates_ch)
                 .unique { sample_id, name -> [sample_id, name.trim().toLowerCase()] }
 
-            // Drop anything MAPPING already found for that sample. remainder:true so a
-            // sample with no MAPPING entry at all (e.g. every fastq filtered as empty
-            // upstream) still passes its candidates through -- treated as "nothing
-            // already identified", not as "drop everything".
+            // Drop anything CLASSIFYING_KRAKEN2 already found for that sample.
+            // remainder:true so a sample with no Kraken2 entry at all (e.g. every fastq
+            // filtered as empty upstream) still passes its candidates through -- treated
+            // as "nothing already identified", not as "drop everything".
             candidate_new_species_ch
                 .map { sample_id, name -> [sample_id, name, name.trim().toLowerCase()] }
                 .join(identified_species_ch, remainder: true)
@@ -158,18 +163,53 @@ workflow SEQUENCE_INDEX {
                 .map { sample_id, name, _name_norm, _identified -> [sample_id, name] }
                 .set { new_species_ch }
 
-            // Build the synthetic per-(sample,species) meta GENERATE_CONSENSUS/its publish
-            // step need: taxid here is a filesystem-safe slug of the species name, NOT a
-            // real Kraken taxid -- there isn't one, these species were never Kraken2-sorted.
+            // Build the synthetic per-(sample,species) meta MAPPING needs. Two things to
+            // know about it:
+            //
+            // `taxid`/`selected_taxid` are a filesystem-safe slug of the species name, NOT
+            // a real Kraken taxid -- there isn't one, these species were never
+            // Kraken2-sorted. They still have to be *something*, since `id` (and therefore
+            // every publish path and report join key) is built from them, exactly as
+            // "<sample_id>.<taxid>" is on the Kraken2 side.
+            //
+            // The descriptive fields mirror bin/k2r_report.py's pre-report columns
+            // (sample_id, virus, virus_name, selected_taxid, ref_selected, sample_subtype,
+            // flu_segment, virus_subtype, parent_selected, num_reads, report_name), because
+            // MAPPING carries this same map through as the base of its Nextclade/report
+            // meta for whichever classifier produced it. Fields this classifier genuinely
+            // has no equivalent for are left empty rather than faked:
+            //   - virus:      Kraken2's source species taxid; no numeric taxid here
+            //   - num_reads:  Kraken2's per-taxon read count. The read-hit/breadth figures
+            //                 these methods do produce live in their own per-method report
+            //                 (GENERATE_MAPPING_REPORT), not in this column.
+            //   - flu_segment/virus_subtype/sample_subtype: filled by k2r_report.py's
+            //                 influenza-specific parsing, which never ran for these.
+            // `ref_selected` matters most: MAPPING branches SARS-CoV-2 subtyping on it, so
+            // a SARS-CoV-2 infection Kraken2 missed but a sequence index caught now gets
+            // subtyped too.
             new_species_meta_ch = new_species_ch
                 .map { sample_id, species_name ->
                     def slug = species_name.replaceAll(/[^A-Za-z0-9]+/, '_').replaceAll(/^_+|_+$/, '')
                     def meta = [
-                        id: "${sample_id}.${slug}",
+                        id: "${sample_id}.${slug}".toString(),
                         sample_id: sample_id,
                         taxid: slug,
+                        selected_taxid: slug,
                         species_name: species_name,
                         discovered_by: 'sequence_index',
+                        virus: '',
+                        virus_name: species_name,
+                        ref_selected: species_name,
+                        report_name: species_name,
+                        sample_subtype: '',
+                        flu_segment: '',
+                        virus_subtype: '',
+                        parent_selected: false,
+                        num_reads: '',
+                        // The Kraken2 side gets this from get_taxid_reference_files; here the
+                        // reference is one record picked out of the sequence index's own
+                        // FASTA by species name, so the species name is the honest label.
+                        reference_header: species_name,
                     ]
                     [meta, species_name]
                 }
@@ -192,26 +232,35 @@ workflow SEQUENCE_INDEX {
             reads_by_sample_ch = preprocessed_3tuple_ch
                 .map { meta, r1, r2 -> [meta.id, r1, r2] } // meta.id == sample_id here (pre-lane)
 
+            // The handover to MAPPING: same tuple(meta, [read_1, read_2], reference_fasta)
+            // shape CLASSIFYING_KRAKEN2 emits, so MAPPING can mix() the two without caring
+            // which classifier a given (sample, reference) pair came from.
             EXTRACT_REFERENCE_SUBSET.out.subset_fasta
                 .map { meta, ref_fa -> [meta.sample_id, meta, ref_fa] }
                 .combine(reads_by_sample_ch, by: 0)
                 .map { _sample_id, meta, ref_fa, r1, r2 -> [meta, [r1, r2], ref_fa] }
-                .set { new_species_consensus_in_ch }
+                .set { new_species_sample_taxid_ch }
 
-            GENERATE_CONSENSUS(new_species_consensus_in_ch)
+            // Keyed the same way CLASSIFYING_KRAKEN2 keys its own report rows: by the
+            // matching consensus's meta.id, which for these is "<sample_id>.<slug>".
+            new_species_report_ch = new_species_sample_taxid_ch
+                .map { meta, _reads, _ref_fa -> [meta.id, meta] }
 
-            GENERATE_CONSENSUS.out.filtered_consensus_ch
-                .map { meta, bam, bam_idx, consensus, _qc_json -> [meta, [bam, bam_idx, consensus]] }
-                .set { new_species_aln_publish_ch }
-
-            publish_new_species_consensus_files(new_species_aln_publish_ch)
-
-            new_species_counts_ch = GENERATE_CONSENSUS.out.filtered_consensus_ch
-                .map { meta, _bam, _bam_idx, _consensus, _qc_json -> [meta.sample_id, 1] }
+            // Counts "new species handed to MAPPING for consensus", i.e. candidates that
+            // cleared the breadth threshold, weren't already Kraken2-identified, AND got a
+            // reference record resolved. Slightly looser than the figure this reported
+            // before the classifier/consensus split (which counted consensuses
+            // GENERATE_CONSENSUS actually completed) -- that outcome now lives in MAPPING,
+            // in the classification report, and isn't visible from here. Column name kept
+            // for continuity of this report's schema.
+            new_species_counts_ch = EXTRACT_REFERENCE_SUBSET.out.subset_fasta
+                .map { meta, _ref_fa -> [meta.sample_id, 1] }
                 .groupTuple()
                 .map { sample_id, ones -> [sample_id, [new_species_consensus_n: ones.size()]] }
         } else {
             new_species_counts_ch = Channel.empty()
+            new_species_sample_taxid_ch = Channel.empty()
+            new_species_report_ch = Channel.empty()
         }
 
         sequence_index_sample_ch
@@ -238,6 +287,14 @@ workflow SEQUENCE_INDEX {
         // PUBLISH (mapping/sequence-index lane)
         publish_mapping_lane_json(GENERATE_MAPPING_REPORT.out.publish_seq_level_ch)
         publish_mapping_run_files(GENERATE_MAPPING_REPORT.out.publish_run_level_summaries_ch)
+
+    emit:
+        // Handover to subworkflows/mapping.nf -- identical shapes to
+        // subworkflows/classifying_kraken2.nf's. Both are Channel.empty() unless
+        // --call_consensus_for_new_species is set, so MAPPING can consume them
+        // unconditionally.
+        sample_taxid_ch = new_species_sample_taxid_ch          // tuple (meta, [read_1, read_2], reference_fasta)
+        sample_report_with_join_key_ch = new_species_report_ch // [join_key, report_meta]
 }
 
 // --- rvi_integration_1: sample-level count helpers for the mapping report ---
@@ -257,7 +314,7 @@ EMPTY_METAGRAPH_ALIGN_MAPQC_COUNTS = [metagraph_align_mapqc_n_species: 0, metagr
 EMPTY_METAGRAPH_QUERY_COUNTS = [metagraph_query_n_species_considered: 0, metagraph_query_n_species_called: 0]
 EMPTY_METAGRAPH_QUERY_MAPQC_COUNTS = [metagraph_query_mapqc_n_species: 0, metagraph_query_mapqc_max_breadth_pct: 0.0]
 // New-species consensus (--call_consensus_for_new_species): how many species a
-// sequence-index method called, with real breadth, that MAPPING's Kraken2 pass didn't
+// sequence-index method called, with real breadth, that CLASSIFYING_KRAKEN2 didn't
 // already find for that sample -- 0 whenever the feature is off, or on but nothing new
 // was found for this sample.
 EMPTY_NEW_SPECIES_COUNTS = [new_species_consensus_n: 0]
