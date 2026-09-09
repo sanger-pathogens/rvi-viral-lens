@@ -962,6 +962,118 @@ resolved DAG, alongside `MAPPING`'s own separate copy of the same `GENERATE_CONS
 processes. **None of this has executed against real data or a real species
 disagreement** — the whole point of this feature is unverifiable without one.
 
+## Themisto2 is now the sequence-index lane's DEFAULT method (ported, farm-run)
+
+Ported from `eu1/rvi_toolbox.git`'s `feature_msweep_map` branch (NB: `feature_msweep_map`,
+not `feature-msweep`) as viral-lens-owned files, same as every other lane here. This is
+the restructuring an earlier round flagged as "the eventual intent (flagged by the user,
+not yet built)": species called directly from Themisto2 pseudoalignment read-hit counts,
+with mSWEEP demoted to an optional add-on.
+
+**That earlier round's claim that the hit-count caller "doesn't exist anywhere" was wrong.**
+It checked `feature_mGEMS` and `msweep_map_sourmash_ref` but not `feature_msweep_map`,
+which has both `bin/call_themisto_species.py` and the whole surrounding subworkflow. This
+was a port, not a build.
+
+New files: `workflows/VIRAL_THEMISTO_MSWEEP.nf` (from `subworkflows/themisto2-msweep.nf`),
+`workflows/THEMISTO_MAP_QC.nf` (from `subworkflows/themisto_map_qc.nf`),
+`modules/themisto_species_call.nf`, `modules/themisto_coverage.nf`,
+`bin/call_themisto_species.py`, `bin/aggregate_themisto_coverage.py`. Differences from
+upstream are confined to paths (`results_dir`->`outdir`, publish under
+`<outdir>/<sample>/sequenceindex/`, `bin/` not `rvi_toolbox/bin/`, viral-lens's
+`workflows/`+`modules/` include layout) -- each ported file's header says so. Everything
+else (`themisto2.nf`, `msweep.nf`, `cleanup.nf`, `reference_subset.nf`, `bowtie.nf`,
+`samtools_coverage.nf`) was already in viral-lens and is reused unchanged.
+`workflows/VIRAL_MSWEEP.nf` was **deleted** -- fully superseded.
+
+Gotcha that cost a round of DAG checks: upstream's `themisto2-msweep.nf` starts with a
+blank line before its shebang, and Groovy rejects a shebang on line 2 ("Shebang comment
+should appear at the first line"). Strip leading blank lines when porting by `git show`.
+
+### Method selection
+
+`run_themisto` (**default true**) is the only method flag defaulting true.
+
+| want | flags |
+|---|---|
+| Themisto only (default) | `--do_sequence_index true` |
+| Themisto + mSWEEP estimate | `+ --run_msweep true` |
+| Metagraph only | `+ --run_themisto false --run_metagraph_align/query true` |
+| both | `+ --run_metagraph_align/query true` |
+
+**`run_msweep` changed meaning.** It used to be the Themisto2/mSWEEP method's on/off
+switch; it is now an add-on *inside* the Themisto arm ("also run mSWEEP's probabilistic
+abundance estimate + its `MSWEEP_MAP_QC` validation"). Species calling no longer needs
+mSWEEP at all. Benign for existing commands: `--run_msweep true` still yields the same
+`msweep/`+`msweep_map/` output, and now additionally yields `themisto_hits/`+`themisto_map/`.
+
+The two prefix-parameterised report helpers were renamed
+`count_metagraph_species_hits`->`count_species_hits` and
+`count_metagraph_map_qc`->`count_map_qc_breadth` (with `empty_*` to match): all three
+read-hit methods emit a byte-identical `species_hits`/`map_qc` schema, so the metagraph
+names were misleading. New report columns: `themisto_n_species_considered/called`,
+`themisto_mapqc_n_species/max_breadth_pct`.
+
+### Verification
+
+Gating verified by `-with-dag` on all four combinations (the truncating progress display
+is useless for this -- processes appear in the DAG file as `v<n>([NAME])` and subworkflow
+scopes as `subgraph NAME`): default has `THEMISTO_PSEUDOALIGN`/`CALL_THEMISTO_SPECIES`/
+`THEMISTO_MAP_QC` and no mSWEEP or Metagraph; `--run_msweep` adds `MSWEEP`+`MSWEEP_MAP_QC`;
+`--run_themisto false` removes the arm entirely; both-on has both.
+
+**Real farm run** (`nf_runs/themisto_real/`, `--do_sequence_index true`, single sample):
+`Success: true`, 5m03s. MAPPING lane unchanged (same 8 taxid rows). Report:
+`themisto_n_species_considered=20, called=10, mapqc_n_species=10,
+mapqc_max_breadth_pct=99.9632`, every mSWEEP/Metagraph column at its `EMPTY_*` default.
+
+**Genuine improvement over mSWEEP's reference choice:** on the same sample mSWEEP's
+`MSWEEP_MAP_QC` gave SARS-CoV-2 **29.79%** breadth, because `SELECT_REFERENCE_RECORDS`
+picks the *longest* sequence for the label. Themisto's hit-driven pick (the *most-hit*
+record) gives **99.96%** breadth at 43.9x depth. That difference is the point of the
+restructuring.
+
+### Reference-index label quality limits the calls -- READ BEFORE TRUSTING SPECIES NAMES
+
+The port is mechanically correct (SEQIDX->label positional alignment re-verified by hand
+against `rvdb_clustered_virome_species_labels.txt`: line 464646 == "Betacoronavirus
+pandemicum", 741451 == "Alphainfluenzavirus influenzae", and one line either side differs,
+so there is no off-by-one). The *species names* are only as good as the index's labels,
+and on this sample two real defects showed up:
+
+- **7500 of 1321608 label lines (0.57%) are the literal string `NA`.** They aggregate into
+  one pseudo-species "NA", which on this sample got 11021 hits and **89.79% breadth** --
+  the second-highest call. Its actual reference record (`SEQIDX_1320074`) is
+  `PZ169745.1 Severe acute respiratory syndrome coronavirus 2 isolate .../2022`: real
+  SARS-CoV-2 signal wearing a useless label, not a spurious hit.
+- **At least one record is mislabelled in RVDB/GenBank itself.** `SEQIDX_741451`, labelled
+  `Alphainfluenzavirus influenzae`, is
+  `OZ387637.1 Influenza A virus (A/Michigan/45/2015(H1N1)) ... chromosome: MN908947.3` --
+  29903 bp, and MN908947.3 *is the SARS-CoV-2 reference accession*. So the "influenza" call
+  (6103 hits, 21.05% breadth) is SARS-CoV-2 reads hitting a SARS-CoV-2 genome deposited
+  under an influenza name. **Themisto did not actually detect this sample's influenza** --
+  do not report that as a win; Kraken2/MAPPING is what finds the real H1N1, as 7 segments.
+
+The remaining 7 calls (Bat coronavirus, Sarbecovirus sp., RacCS203/224/264, RpYN06,
+Horseshoe bat sarbecovirus) sit at 3-14% breadth: sarbecovirus cross-mapping, correctly
+separated from the 99.96% true call by the breadth validation. That is `THEMISTO_MAP_QC`
+doing its job.
+
+**Consequence for `--call_consensus_for_new_species`, which is worth settling before the
+two features are used together.** With the 10.0 default `new_species_min_breadth_pct`,
+three of Themisto's calls clear the bar without matching anything MAPPING found, so they
+would each get a new-species consensus: `NA` (89.79%), `Bat coronavirus` (14.08%),
+`Betacoronavirus sp. RpYN06` (11.06%). All three are artifacts -- a missing label and two
+cross-mapping relatives. Options, none yet chosen: skip `NA` labels in
+`bin/call_themisto_species.py` (deviates from upstream, so decide deliberately), raise
+`new_species_min_breadth_pct` well above the cross-mapping band, or require a minimum
+mean_depth/reads_mapped rather than breadth alone. **Don't enable both features together
+until this is decided.**
+
+Also still unproven: Themisto's hit calls have not been compared against mSWEEP's on the
+same sample with `--run_msweep true` (which would produce both tables side by side), and
+no multi-sample Themisto run has been done.
+
 ## Your remaining work, roughly in priority/dependency order
 
 ### 1. Prove the assembly lane actually runs -- DONE, see above

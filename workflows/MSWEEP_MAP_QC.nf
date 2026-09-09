@@ -36,7 +36,7 @@ include { SAMTOOLS_COVERAGE
 workflow MSWEEP_MAP_QC {
 
     take:
-    reads_ch           // tuple( meta, read_1, read_2 ) — same preprocessed reads VIRAL_MSWEEP receives
+    reads_ch           // tuple( meta, read_1, read_2 ) — same preprocessed reads VIRAL_THEMISTO_MSWEEP receives
     abundances_ch      // MSWEEP.out.abundances: tuple( meta, mSWEEP_abundances.txt, mSWEEP_probs.tsv )
     species_labels_ch  // value channel: species_labels.txt (same file mSWEEP used as ref_groups)
 

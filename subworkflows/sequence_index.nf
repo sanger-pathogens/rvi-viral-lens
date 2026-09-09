@@ -8,7 +8,7 @@
 // this lane) so a sample report row exists even if only one method ran for
 // it, or (with more than one flag on) one row carries every enabled method's
 // counts.
-include {VIRAL_MSWEEP} from '../workflows/VIRAL_MSWEEP.nf'
+include {VIRAL_THEMISTO_MSWEEP} from '../workflows/VIRAL_THEMISTO_MSWEEP.nf'
 include {VIRAL_METAGRAPH_ALIGN} from '../workflows/VIRAL_METAGRAPH_ALIGN.nf'
 include {VIRAL_METAGRAPH_QUERY} from '../workflows/VIRAL_METAGRAPH_QUERY.nf'
 include {GENERATE_MAPPING_REPORT} from '../workflows/GENERATE_MAPPING_REPORT.nf'
@@ -34,26 +34,47 @@ workflow SEQUENCE_INDEX {
 
         // -- Themisto2 pseudoalignment + mSWEEP abundance, then breadth-of-coverage
         // validation of the low-abundance calls.
-        if (params.run_msweep) {
-            VIRAL_MSWEEP(preprocessed_3tuple_ch)
+        //
+        // THE LANE'S DEFAULT METHOD (run_themisto defaults true). Species are called
+        // directly from Themisto2 pseudoalignment read-hit counts (CALL_THEMISTO_SPECIES)
+        // and validated by THEMISTO_MAP_QC -- no probabilistic model involved. mSWEEP's
+        // abundance estimate is an optional add-on *inside* this arm, gated by run_msweep
+        // (default false) inside VIRAL_THEMISTO_MSWEEP itself; see nextflow.config's note
+        // on run_msweep's changed meaning.
+        if (params.run_themisto) {
+            VIRAL_THEMISTO_MSWEEP(preprocessed_3tuple_ch)
 
-            msweep_counts_ch = VIRAL_MSWEEP.out.abundances
+            themisto_counts_ch = VIRAL_THEMISTO_MSWEEP.out.species_hits
+                .map { meta, tsv -> [meta.id, count_species_hits(tsv, 'themisto')] }
+
+            // themisto_map_qc is Channel.empty() when themisto_align_run_map_qc is off,
+            // and drops samples with nothing above themisto_align_min_hits; joined with
+            // remainder below rather than losing those samples from the report.
+            themisto_mapqc_counts_ch = VIRAL_THEMISTO_MSWEEP.out.themisto_map_qc
+                .map { meta, tsv -> [meta.id, count_map_qc_breadth(tsv, 'themisto')] }
+
+            // Both of these are Channel.empty() unless run_msweep is set (see
+            // ../workflows/VIRAL_THEMISTO_MSWEEP.nf), so they need no gate of their own --
+            // an empty channel simply contributes no counts and the joins below fill in
+            // EMPTY_*_COUNTS.
+            msweep_counts_ch = VIRAL_THEMISTO_MSWEEP.out.abundances
                 .map { meta, abundances, _probs -> [meta.id, count_msweep_abundances(abundances)] }
 
-            // map_qc drops samples with nothing above msweep_map_min_abundance (the
-            // MSWEEP_MAP_QC processes emit optional outputs); joined with remainder
-            // below rather than losing those samples from the report entirely.
-            mapqc_counts_ch = VIRAL_MSWEEP.out.map_qc
+            mapqc_counts_ch = VIRAL_THEMISTO_MSWEEP.out.map_qc
                 .map { meta, qc_tsv -> [meta.id, count_msweep_map_qc(qc_tsv)] }
 
-            // Kept as its own variable so the new-species block below can consume it
-            // without touching VIRAL_MSWEEP.out, which is undefined unless the
+            // Kept as their own variables so the new-species block below can consume them
+            // without touching VIRAL_THEMISTO_MSWEEP.out, which is undefined unless the
             // subworkflow was actually invoked.
-            msweep_map_qc_ch = VIRAL_MSWEEP.out.map_qc
+            themisto_map_qc_ch = VIRAL_THEMISTO_MSWEEP.out.themisto_map_qc
+            msweep_map_qc_ch   = VIRAL_THEMISTO_MSWEEP.out.map_qc
         } else {
-            msweep_counts_ch = Channel.empty()
-            mapqc_counts_ch = Channel.empty()
-            msweep_map_qc_ch = Channel.empty()
+            themisto_counts_ch       = Channel.empty()
+            themisto_mapqc_counts_ch = Channel.empty()
+            msweep_counts_ch         = Channel.empty()
+            mapqc_counts_ch          = Channel.empty()
+            themisto_map_qc_ch       = Channel.empty()
+            msweep_map_qc_ch         = Channel.empty()
         }
 
         // -- Sequence-to-graph alignment via Metagraph (metagraph align), then its own
@@ -62,12 +83,12 @@ workflow SEQUENCE_INDEX {
             VIRAL_METAGRAPH_ALIGN(preprocessed_3tuple_ch)
 
             metagraph_align_counts_ch = VIRAL_METAGRAPH_ALIGN.out.species_hits
-                .map { meta, tsv -> [meta.id, count_metagraph_species_hits(tsv, 'metagraph_align')] }
+                .map { meta, tsv -> [meta.id, count_species_hits(tsv, 'metagraph_align')] }
 
             // map_qc drops samples with nothing above metagraph_align_min_hits, same
             // reasoning as mSWEEP's map_qc above.
             metagraph_align_mapqc_counts_ch = VIRAL_METAGRAPH_ALIGN.out.map_qc
-                .map { meta, tsv -> [meta.id, count_metagraph_map_qc(tsv, 'metagraph_align')] }
+                .map { meta, tsv -> [meta.id, count_map_qc_breadth(tsv, 'metagraph_align')] }
 
             metagraph_align_map_qc_ch = VIRAL_METAGRAPH_ALIGN.out.map_qc
         } else {
@@ -85,10 +106,10 @@ workflow SEQUENCE_INDEX {
             VIRAL_METAGRAPH_QUERY(preprocessed_3tuple_ch)
 
             metagraph_query_counts_ch = VIRAL_METAGRAPH_QUERY.out.species_hits
-                .map { meta, tsv -> [meta.id, count_metagraph_species_hits(tsv, 'metagraph_query')] }
+                .map { meta, tsv -> [meta.id, count_species_hits(tsv, 'metagraph_query')] }
 
             metagraph_query_mapqc_counts_ch = VIRAL_METAGRAPH_QUERY.out.map_qc
-                .map { meta, tsv -> [meta.id, count_metagraph_map_qc(tsv, 'metagraph_query')] }
+                .map { meta, tsv -> [meta.id, count_map_qc_breadth(tsv, 'metagraph_query')] }
 
             metagraph_query_map_qc_ch = VIRAL_METAGRAPH_QUERY.out.map_qc
         } else {
@@ -112,6 +133,12 @@ workflow SEQUENCE_INDEX {
             // 'VIRAL_METAGRAPH_ALIGN.out' is undefined" the moment this feature is enabled
             // with any subset of the three methods. flatMap over an empty channel emits
             // nothing, which is what "that method is off" should mean here.
+            // Themisto's own map_qc table uses the same species/breadth_pct schema as the
+            // Metagraph ones (bin/aggregate_themisto_coverage.py), so the same parser and
+            // 'species' column apply.
+            themisto_candidates_ch = themisto_map_qc_ch
+                .flatMap { meta, tsv -> parse_new_species_candidates(tsv, 'species').collect { name -> [meta.id, name] } }
+
             msweep_candidates_ch = msweep_map_qc_ch
                 .flatMap { meta, tsv -> parse_new_species_candidates(tsv, 'species_label').collect { name -> [meta.id, name] } }
 
@@ -123,8 +150,8 @@ workflow SEQUENCE_INDEX {
 
             // .unique() streams -- it emits each non-duplicate immediately as it passes,
             // it does not need to see the whole channel close first (unlike groupTuple()).
-            candidate_new_species_ch = msweep_candidates_ch
-                .mix(metagraph_align_candidates_ch, metagraph_query_candidates_ch)
+            candidate_new_species_ch = themisto_candidates_ch
+                .mix(msweep_candidates_ch, metagraph_align_candidates_ch, metagraph_query_candidates_ch)
                 .unique { sample_id, name -> [sample_id, name.trim().toLowerCase()] }
 
             // Drop anything MAPPING already found for that sample. remainder:true so a
@@ -195,6 +222,8 @@ workflow SEQUENCE_INDEX {
         }
 
         sequence_index_sample_ch
+            .join(themisto_counts_ch, remainder: true)
+            .join(themisto_mapqc_counts_ch, remainder: true)
             .join(msweep_counts_ch, remainder: true)
             .join(mapqc_counts_ch, remainder: true)
             .join(metagraph_align_counts_ch, remainder: true)
@@ -202,8 +231,9 @@ workflow SEQUENCE_INDEX {
             .join(metagraph_query_counts_ch, remainder: true)
             .join(metagraph_query_mapqc_counts_ch, remainder: true)
             .join(new_species_counts_ch, remainder: true)
-            .map { id, meta, m_counts, qc_counts, mga_counts, mga_qc_counts, mgq_counts, mgq_qc_counts, ns_counts ->
-                def new_meta = meta + (m_counts ?: EMPTY_MSWEEP_COUNTS) + (qc_counts ?: EMPTY_MAP_QC_COUNTS) +
+            .map { id, meta, t_counts, t_qc_counts, m_counts, qc_counts, mga_counts, mga_qc_counts, mgq_counts, mgq_qc_counts, ns_counts ->
+                def new_meta = meta + (t_counts ?: EMPTY_THEMISTO_COUNTS) + (t_qc_counts ?: EMPTY_THEMISTO_MAPQC_COUNTS) +
+                    (m_counts ?: EMPTY_MSWEEP_COUNTS) + (qc_counts ?: EMPTY_MAP_QC_COUNTS) +
                     (mga_counts ?: EMPTY_METAGRAPH_ALIGN_COUNTS) + (mga_qc_counts ?: EMPTY_METAGRAPH_ALIGN_MAPQC_COUNTS) +
                     (mgq_counts ?: EMPTY_METAGRAPH_QUERY_COUNTS) + (mgq_qc_counts ?: EMPTY_METAGRAPH_QUERY_MAPQC_COUNTS) +
                     (ns_counts ?: EMPTY_NEW_SPECIES_COUNTS)
@@ -224,10 +254,12 @@ workflow SEQUENCE_INDEX {
 // ran but the step's own output is itself optional per-sample (e.g. nothing above a
 // min-abundance/min-hits threshold). Named constants (not inline [:]) so every sample
 // still gets the same report columns regardless of which method(s) actually ran for it.
+EMPTY_THEMISTO_COUNTS = [themisto_n_species_considered: 0, themisto_n_species_called: 0]
+EMPTY_THEMISTO_MAPQC_COUNTS = [themisto_mapqc_n_species: 0, themisto_mapqc_max_breadth_pct: 0.0]
 EMPTY_MSWEEP_COUNTS = [msweep_n_groups: 0, msweep_top_group: '', msweep_top_abundance: 0.0]
 EMPTY_MAP_QC_COUNTS = [mapqc_n_species: 0, mapqc_max_breadth_pct: 0.0]
-// One pair per Metagraph method (align, query) -- both call count_metagraph_species_hits()/
-// count_metagraph_map_qc() with a distinct prefix, since both methods' counts can merge
+// One pair per Metagraph method (align, query) -- both call count_species_hits()/
+// count_map_qc_breadth() with a distinct prefix, since both methods' counts can merge
 // into the same per-sample meta and would otherwise collide on field name.
 EMPTY_METAGRAPH_ALIGN_COUNTS = [metagraph_align_n_species_considered: 0, metagraph_align_n_species_called: 0]
 EMPTY_METAGRAPH_ALIGN_MAPQC_COUNTS = [metagraph_align_mapqc_n_species: 0, metagraph_align_mapqc_max_breadth_pct: 0.0]
@@ -239,11 +271,11 @@ EMPTY_METAGRAPH_QUERY_MAPQC_COUNTS = [metagraph_query_mapqc_n_species: 0, metagr
 // was found for this sample.
 EMPTY_NEW_SPECIES_COUNTS = [new_species_consensus_n: 0]
 
-def empty_metagraph_counts(prefix) {
+def empty_species_hits_counts(prefix) {
     return prefix == 'metagraph_align' ? EMPTY_METAGRAPH_ALIGN_COUNTS : EMPTY_METAGRAPH_QUERY_COUNTS
 }
 
-def empty_metagraph_mapqc_counts(prefix) {
+def empty_map_qc_counts(prefix) {
     return prefix == 'metagraph_align' ? EMPTY_METAGRAPH_ALIGN_MAPQC_COUNTS : EMPTY_METAGRAPH_QUERY_MAPQC_COUNTS
 }
 
@@ -275,16 +307,16 @@ def count_msweep_abundances(txt) {
     ]
 }
 
-def count_metagraph_species_hits(tsv, prefix) {
-    // <sample>_species_hits.tsv (bin/call_metagraph_species.py): sample_id, species,
-    // hit_count, provisional_call -- the last written by Python's str(bool), so "True"/
-    // "False", not lowercase. Shared by both Metagraph methods (see
-    // ../workflows/VIRAL_METAGRAPH_ALIGN.nf / VIRAL_METAGRAPH_QUERY.nf, both call
-    // CALL_METAGRAPH_SPECIES) -- prefix ('metagraph_align' or 'metagraph_query') keeps
-    // their counts from colliding when both merge into the same per-sample meta.
-    if (tsv == null || !tsv.exists()) return empty_metagraph_counts(prefix)
+def count_species_hits(tsv, prefix) {
+    // <sample>_species_hits.tsv: sample_id, species, hit_count, provisional_call -- the
+    // last written by Python's str(bool), so "True"/"False", not lowercase. All three
+    // read-hit methods emit this identical schema (bin/call_metagraph_species.py for both
+    // Metagraph methods, bin/call_themisto_species.py for Themisto2), so one parser serves
+    // them all -- prefix ('themisto', 'metagraph_align' or 'metagraph_query') keeps their
+    // counts from colliding when several merge into the same per-sample meta.
+    if (tsv == null || !tsv.exists()) return empty_species_hits_counts(prefix)
     def lines = tsv.readLines()
-    if (lines.size() < 2) return empty_metagraph_counts(prefix)
+    if (lines.size() < 2) return empty_species_hits_counts(prefix)
     def header = lines[0].split('\t')
     def called_idx = header.findIndexOf { String col -> col == 'provisional_call' }
     def n_considered = lines.size() - 1
@@ -298,14 +330,14 @@ def count_metagraph_species_hits(tsv, prefix) {
     return ["${prefix}_n_species_considered": n_considered, "${prefix}_n_species_called": n_called]
 }
 
-def count_metagraph_map_qc(tsv, prefix) {
+def count_map_qc_breadth(tsv, prefix) {
     // <sample>_metagraph_map_qc.tsv (bin/aggregate_metagraph_coverage.py): sample_id,
     // species, hit_count, reference_accession, reference_length, query_length,
     // covered_bases, breadth_pct, mean_depth, meanbaseq, meanmapq, reads_mapped. Same
-    // prefix reasoning as count_metagraph_species_hits() above.
-    if (tsv == null || !tsv.exists()) return empty_metagraph_mapqc_counts(prefix)
+    // prefix reasoning as count_species_hits() above.
+    if (tsv == null || !tsv.exists()) return empty_map_qc_counts(prefix)
     def lines = tsv.readLines()
-    if (lines.size() < 2) return empty_metagraph_mapqc_counts(prefix)
+    if (lines.size() < 2) return empty_map_qc_counts(prefix)
     def header = lines[0].split('\t')
     def breadth_idx = header.findIndexOf { String col -> col == 'breadth_pct' }
     def breadths = lines[1..-1].collect { String line ->

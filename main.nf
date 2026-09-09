@@ -81,9 +81,13 @@ workflow {
     --vrhyme_min_scaffold_length  : ${params.vrhyme_min_scaffold_length}
 
   --> SEQUENCE_INDEX workflow parameters (subworkflows/sequence_index.nf; only used if --do_sequence_index true):
-    --run_msweep                  : ${params.run_msweep}
+    --run_themisto                : ${params.run_themisto}
     --run_metagraph_align         : ${params.run_metagraph_align}
     --run_metagraph_query         : ${params.run_metagraph_query}
+    --run_msweep (add-on)         : ${params.run_msweep}
+    --themisto_align_min_hits     : ${params.themisto_align_min_hits}
+    --themisto_align_run_map_qc   : ${params.themisto_align_run_map_qc}
+    --themisto_map_reference_fasta: ${params.themisto_map_reference_fasta}
     --msweep_themisto_index       : ${params.msweep_themisto_index}
     --msweep_ref_groups           : ${params.msweep_ref_groups}
     --msweep_map_min_abundance    : ${params.msweep_map_min_abundance}
