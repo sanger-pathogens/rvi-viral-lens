@@ -8,13 +8,26 @@
 // a sample report row exists even if only one method ran for it, or (with more than one
 // flag on) one row carries every enabled method's counts.
 //
-// This classifier CALLS AND REPORTS ONLY. It does no reference extraction, no read
-// mapping and no consensus generation: it emits the species each method called, the
-// reference record that method validated each one against, and the supporting hit
-// counts, and subworkflows/mapping.nf takes it from there -- preferring Kraken2's calls
-// where the two classifiers agree, and mapping the genuinely new ones itself. Doing the
-// reference/read work here as well was the previous arrangement, and meant resolving
-// references for species that were about to be discarded as already-known.
+// What this classifier produces is CALLS, not consensus sequences: per sample, the species
+// each method found, the reference record it was validated against, and the supporting
+// counts. subworkflows/mapping.nf takes it from there -- preferring Kraken2's calls where
+// the two classifiers agree, and building consensus for the genuinely new ones.
+//
+// It does map reads, though, and it is worth being precise about which mapping happens
+// where, because there are two kinds and they serve different purposes:
+//
+//   - VALIDATION mapping, here, inside each method's map-QC step (THEMISTO_MAP_QC /
+//     METAGRAPH_MAP_QC): bowtie2 the sample's reads against the candidate references,
+//     then samtools coverage. This is where breadth_pct comes from, and breadth is the
+//     evidence new_species_min_breadth_pct thresholds on -- it is what separates a real
+//     call at ~99% breadth from index noise at 3-14%. A species cannot be judged worth a
+//     consensus without it, so this mapping is load-bearing, not incidental.
+//   - CONSENSUS mapping, in mapping.nf: the pipeline's own aligner (params.read_aligner)
+//     plus iVar, against the one reference chosen for that species.
+//
+// So surviving species really are mapped twice, by different aligners for different
+// reasons. What moved out of this file was consensus-reference resolution and consensus
+// generation -- not all mapping.
 include {VIRAL_THEMISTO_MSWEEP} from '../workflows/VIRAL_THEMISTO_MSWEEP.nf'
 include {VIRAL_METAGRAPH_ALIGN} from '../workflows/VIRAL_METAGRAPH_ALIGN.nf'
 include {VIRAL_METAGRAPH_QUERY} from '../workflows/VIRAL_METAGRAPH_QUERY.nf'
@@ -114,10 +127,12 @@ workflow CLASSIFYING_INDEX {
         // method called with real breadth of coverage, plus the reference record that
         // method validated it against and its read-hit count.
         //
-        // Reporting ONLY. This classifier does no reference extraction and no read
-        // mapping: MAPPING decides which of these species are actually new (Kraken2's
-        // calls win) and resolves/maps just those. See MAPPING's own comment for why the
-        // filter lives there.
+        // Read straight out of each method's map-QC table, which already exists -- the
+        // validation mapping that produced breadth_pct ran inside the method's own arm
+        // above (see this file's header on the two kinds of mapping). Nothing extra is
+        // computed here; this block only reshapes those tables into calls. MAPPING then
+        // decides which of these species are actually new (Kraken2's calls win) and does
+        // the consensus-reference resolution and consensus mapping for just those.
         if (params.call_consensus_for_new_species) {
             // Parse each enabled method's own already-computed map-QC table. These consume
             // the *_map_qc_ch variables set in each method's if/else above, NOT

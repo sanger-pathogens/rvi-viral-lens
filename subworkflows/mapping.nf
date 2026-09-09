@@ -16,8 +16,17 @@
 //   - CLASSIFYING_KRAKEN2 arrives consensus-ready (reads + reference), because
 //     SORT_READS_BY_REF resolves its references as part of classifying;
 //   - CLASSIFYING_INDEX arrives as species calls plus the reference record each was
-//     validated against, and no reads. Resolving those references is this subworkflow's
-//     job, done only for the calls that survive the "Kraken2 already found it" filter.
+//     validated against, and no reads. Extracting that reference and pairing reads for
+//     consensus is this subworkflow's job, done only for the calls that survive the
+//     "Kraken2 already found it" filter.
+//
+// Note what "mapping" means on each side. CLASSIFYING_INDEX has already mapped reads once,
+// with bowtie2, inside its map-QC step -- that is where the breadth_pct it reports comes
+// from, and thresholding on it is how a call is judged worth a consensus at all. What
+// happens here is the separate CONSENSUS mapping (params.read_aligner + iVar), so a
+// surviving sequence-index species is mapped twice in total, by different aligners for
+// different purposes. That is deliberate: reusing the bowtie2 BAM would build these
+// consensuses differently from every Kraken2-side one and make the two incomparable.
 include {INDEX_REFERENCE_FASTA; EXTRACT_REFERENCE_RECORD} from '../modules/reference_subset.nf'
 include {GENERATE_CONSENSUS} from '../workflows/GENERATE_CONSENSUS.nf'
 include {SCOV2_SUBTYPING} from '../workflows/SCOV2_SUBTYPING.nf'
@@ -75,8 +84,8 @@ workflow MAPPING {
     main:
         // --- Kraken2's calls win; sequence-index species are mapped only if new --------
         // CLASSIFYING_INDEX reports species and the ideal reference record for each, but
-        // does no mapping of its own, so both halves of "prefer Kraken2, map what it
-        // missed" are decided here, where the consensus actually gets spent:
+        // generates no consensus, so both halves of "prefer Kraken2, map what it missed"
+        // are decided here, where the consensus actually gets spent:
         //
         //   1. drop index calls for species Kraken2 already found for that sample --
         //      Kraken2's own reference selection is kept in preference to the index's;

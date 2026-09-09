@@ -605,8 +605,9 @@ helpers, own PUBLISH calls):
   `SEQUENCE_INDEX`): the three mapping methods (Themisto2/mSWEEP, Metagraph align,
   Metagraph query) → `GENERATE_MAPPING_REPORT`, plus the
   `count_msweep_*()`/`count_metagraph_*()` helpers and `EMPTY_*_COUNTS` constants
-  referenced in item 3 above. **Calls and reports only** — no reference extraction, no read
-  mapping, no consensus; it hands species calls to `MAPPING`.
+  referenced in item 3 above. Produces species **calls**, not consensus sequences, and
+  hands them to `MAPPING`. It does still map reads for validation inside its map-QC step —
+  see the note under "Classifier reports, MAPPING maps".
 - `subworkflows/assembly.nf` — `ASSEMBLY`: `ASSEMBLE_META` → `GENOMAD_CLASSIFY` →
   `VRHYME_BIN`/`CHECKV_QC` → `VCONTACT3_RUN` → `GENERATE_ASSEMBLY_REPORT`, plus the
   `count_genomad_summary()`/`count_vrhyme_membership()`/`count_checkv_quality()`/
@@ -843,10 +844,23 @@ consensus, so it should decide what gets one.
   now holds structurally for anything reaching `MAPPING`, rather than resting on each
   classifier remembering to filter itself, and a classifier no longer needs to know what a
   *different* classifier found.
-- Reference resolution and read pairing followed. `CLASSIFYING_INDEX` is now
-  reporting-only: it emits species + the reference record its own map-QC already picked +
-  hit counts, and nothing else. This also removed the wasted work the first step created,
-  where references were resolved for species about to be discarded as already-known.
+- Consensus-reference resolution and read pairing followed. `CLASSIFYING_INDEX` now emits
+  species + the reference record its own map-QC already picked + the supporting counts, and
+  nothing else. This also removed the wasted work the first step created, where references
+  were resolved for species about to be discarded as already-known.
+
+  **Be precise about "no mapping" here — an earlier version of this file got it wrong.**
+  `CLASSIFYING_INDEX` *does* map reads: its map-QC step (`THEMISTO_MAP_QC` /
+  `METAGRAPH_MAP_QC`) runs `INDEX_REFERENCE_FASTA` → `EXTRACT_REFERENCE_SUBSET` →
+  `BOWTIE_INDEX` → `BOWTIE2SAMTOOLS` → `SAMTOOLS_COVERAGE`, which is exactly where the
+  `breadth_pct` it reports comes from. That mapping is load-bearing, not incidental:
+  breadth is what `new_species_min_breadth_pct` thresholds on, and what separates a real
+  call at ~99% breadth from index noise at 3-14%. So there are two kinds of mapping in
+  play — VALIDATION mapping (bowtie2, in the classifier, to decide whether a call is real)
+  and CONSENSUS mapping (`params.read_aligner` + iVar, in `MAPPING`) — and a surviving
+  sequence-index species goes through both. Reusing the bowtie2 BAM for consensus instead
+  would build these consensuses differently from every Kraken2-side one, making the two
+  incomparable, so the second pass is deliberate.
 
 So: `MAPPING` prefers Kraken2's species and references where both classifiers agree, and
 resolves + maps only the species Kraken2 missed. `SELECT_REFERENCE_RECORD_BY_NAME` fell
