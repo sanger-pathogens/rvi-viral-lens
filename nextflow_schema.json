@@ -9,7 +9,9 @@
             "type": "string"
         },
         "db_path": {
-            "type": "string"
+            "type": "string",
+            "default": "/lustre/scratch126/pam/projects/rvidata/pipeline_resources/kraken_databases/production/viral_lens_kdb_v1.5.2",
+            "description": "Kraken2 database directory. Defaults to the current production database."
         },
         "db_library_fa_path": {
             "type": "string"

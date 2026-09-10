@@ -126,14 +126,42 @@ export SINGULARITY_TMPDIR=$SINGULARITY_CACHEDIR/tmp
 export LSB_DEFAULTGROUP=rvidata
 ```
 
-Reference data, all verified present:
+Reference data, all verified present. Every one of these is now a `nextflow.config`
+default, so none has to be passed explicitly for a normal farm run -- pass one only to
+point at something else:
 
 | param | path |
 |---|---|
-| `--db_path` | `/lustre/scratch126/pam/projects/rvidata/pipeline_resources/kraken_databases/production/viral_lens_kdb_v1.5.2` |
+| `--db_path` | `/lustre/scratch126/pam/projects/rvidata/pipeline_resources/kraken_databases/production/viral_lens_kdb_v1.5.2` (**now the default**, see below) |
 | `--genomad_db` | `/data/pam/software/genomad/genomad_db/genomad_db` |
 | `--checkv_db` | `/data/pam/software/ViWrap/CheckV_db/` |
 | `--vcontact3_db_path` | `/data/pam/software/vcontact3/` (holds `v232`, `v236`; default version is now 236) |
+
+`db_path` used to default to `null`, which made `--db_path` mandatory and produced only
+`ERROR ~ No kraken database path provided` (`check_sort_reads_params()` in
+`workflows/SORT_READS_BY_REF.nf`) when it was forgotten. It now defaults to the production
+database above, since every real run has used that one. `manifest` is now the only input
+with no usable default. `db_library_fa_path` stays `null` on purpose: `SORT_READS_BY_REF`
+derives `${params.db_path}/library/library.fna` when it is unset, which is exactly where it
+lives under the default database (564 MB, verified). Verified with a `-preview` that passes
+**no** `--db_path` at all (`nf_runs/dbdefault/`): `Success: true`, the banner reports the
+default path, and the only remaining note is the expected "No db_library_fa_path set,
+assuming .../library/library.fna exists" warning.
+
+Two traps that this error tends to travel with, both seen in a real invocation:
+
+- **`--results_dir` is NOT the output flag; `--outdir` is.** `results_dir = params.outdir`
+  in `nextflow.config` is an internal alias that exists only so the `rvi_toolbox` submodule's
+  processes publish somewhere sensible without editing the shared submodule. Passing
+  `--results_dir` overrides the alias but leaves `outdir` at its `$launchDir/results/`
+  default, so output **splits**: the 15 `rvi_toolbox` files that publish via `results_dir`
+  go where you asked, the 14 viral-lens files that publish via `outdir` do not.
+- **nextflow 23.10.1 silently disables parameter validation.** It logs `Nextflow
+  self-contained distribution allows only core plugins -- User config plugins will be
+  ignored: nf-schema@2.2.0`, which means `validateParameters()` does nothing and a typo'd
+  param is accepted in silence; the `>=24.10.3` manifest gate only warns. Use 24.10.6.
+  Likewise, without `-profile sanger_standard` the executor stays `local` and every process
+  runs inside the single driver job instead of being submitted to LSF.
 
 Working run directories (launch scripts, logs, outputs, LSF driver output) live at
 `/lustre/scratch126/pam/projects/rvidata/personal/eu1/pipeline-integration/nf_runs/`:
