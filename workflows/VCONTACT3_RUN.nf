@@ -58,7 +58,7 @@ workflow VCONTACT3_RUN {
 
     VCONTACT3_POSTPROCESS(
         VCONTACT3.out.final_assignments,
-        VCONTACT3.out.vog_support,
+        VCONTACT3.out.gene2genome,
         postprocess_script_ch
     )
 
@@ -67,5 +67,4 @@ workflow VCONTACT3_RUN {
     performance_metrics       = VCONTACT3.out.performance_metrics
     postprocessed_assignments = VCONTACT3_POSTPROCESS.out.postprocessed
     novel_taxa_assignments    = VCONTACT3_POSTPROCESS.out.novel_taxa
-    postprocess_report        = VCONTACT3_POSTPROCESS.out.report
 }

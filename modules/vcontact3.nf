@@ -44,15 +44,18 @@ process VCONTACT3_PER_SAMPLE_PREP {
 
 // Pipeline-level vContact3 run. Takes the collected per-sample prep outputs
 // (one file per sample), concatenates them into a single proteins.faa and
-// gene2genome.tsv, then runs `vcontact3 run`. vcontact3 3.2.0 emits result
+// gene2genome.tsv, then runs `vcontact3 run`. vcontact3 3.2.4 emits result
 // CSVs into `vcontact3_out/exports/`, so the publishDir patterns and output
-// declarations target that nested path.
+// declarations target that nested path. combined_gene2genome.tsv is also
+// emitted (always produced, ahead of vcontact3 run itself): VCONTACT3_POSTPROCESS
+// needs it to fill in Proteins counts, since vConTACT3 leaves that column
+// blank for query genomes in final_assignments.csv.
 process VCONTACT3 {
     label 'cpu_16'
     label 'mem_8'
     label 'time_12'
 
-    container 'quay.io/sangerpathogens/vcontact3:3.2.0'
+    container 'quay.io/sangerpathogens/vcontact3:3.2.4'
 
     publishDir "${params.outdir}/vcontact3", mode: 'copy', overwrite: true, pattern: "vcontact3_out/exports/final_assignments.csv",   saveAs: { f -> file(f).getName() }
     publishDir "${params.outdir}/vcontact3", mode: 'copy', overwrite: true, pattern: "vcontact3_out/exports/performance_metrics.csv", saveAs: { f -> file(f).getName() }
@@ -66,6 +69,7 @@ process VCONTACT3 {
     path 'vcontact3_out/exports/final_assignments.csv',   emit: final_assignments,   optional: true
     path 'vcontact3_out/exports/performance_metrics.csv', emit: performance_metrics, optional: true
     path 'vcontact3_out/HMMprofile_vog_support.h5',       emit: vog_support,         optional: true
+    path 'combined_gene2genome.tsv',                      emit: gene2genome
 
     script:
     """
@@ -111,46 +115,39 @@ PYEOF
 }
 
 // Post-process VCONTACT3's final_assignments.csv: keep query genomes only,
-// flag out-of-protein-range novel-genus calls as uncertain, fix realm/lower-rank
-// taxonomy conflicts using each genome's own VOG evidence, and split off the
+// flag out-of-protein-range novel-genus calls as uncertain, and split off the
 // remaining (still-confident) novel-genus calls into their own file.
-// --genome-report points at the same reference database VCONTACT3 itself used
-// (params.vcontact3_db_path/-version), same convention as --db-path/-version
-// above: referenced directly by path, not staged, since it lives in the shared
-// reference database directory. Note the "v" prefix on the version directory:
-// vcontact3 resolves --db-path/--db-version to <db_path>/v<version>/, and the
-// genome report lives in there beside the rest of that version's files.
+// gene2genome is combined_gene2genome.tsv from VCONTACT3 itself: vConTACT3
+// leaves the Proteins column blank for query genomes in final_assignments.csv
+// (it only populates Proteins/GenomeName/Size_Kb from its reference-DB
+// metadata table), so the postprocess script re-derives it from gene2genome.
 // See rvi_toolbox/bin/vcontact3_postprocess.py for the exact semantics.
 process VCONTACT3_POSTPROCESS {
     label 'cpu_1'
     label 'mem_4'
     label 'time_1'
 
-    container 'quay.io/sangerpathogens/vcontact3:3.2.0'
+    container 'quay.io/sangerpathogens/vcontact3:3.2.4'
 
     publishDir "${params.outdir}/vcontact3", mode: 'copy', overwrite: true, pattern: "final_assignments_postprocessed.csv"
     publishDir "${params.outdir}/vcontact3", mode: 'copy', overwrite: true, pattern: "final_assignments_noveltaxa.csv"
-    publishDir "${params.outdir}/vcontact3", mode: 'copy', overwrite: true, pattern: "postprocess_report.txt"
 
     input:
     path(final_assignments)
-    path(vog_support)
+    path(gene2genome)
     path(postprocess_script)
 
     output:
     path 'final_assignments_postprocessed.csv', emit: postprocessed
     path 'final_assignments_noveltaxa.csv',     emit: novel_taxa
-    path 'postprocess_report.txt',              emit: report
 
     script:
     """
     /opt/conda/bin/python ${postprocess_script} \\
         --assignments       ${final_assignments} \\
-        --vog-support       ${vog_support} \\
-        --genome-report     ${params.vcontact3_db_path}/v${params.vcontact3_db_version}/RefSeq.${params.vcontact3_db_version}.genome_report.parquet \\
+        --gene2genome       ${gene2genome} \\
         --output            final_assignments_postprocessed.csv \\
         --novel-taxa-output final_assignments_noveltaxa.csv \\
-        --report            postprocess_report.txt \\
         --min-proteins      ${params.vcontact3_postprocess_min_proteins} \\
         --max-proteins      ${params.vcontact3_postprocess_max_proteins}
     """
