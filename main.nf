@@ -90,7 +90,6 @@ workflow {
     --run_themisto                : ${params.run_themisto}
     --run_metagraph_align         : ${params.run_metagraph_align}
     --run_metagraph_query         : ${params.run_metagraph_query}
-    --run_msweep (add-on)         : ${params.run_msweep}
     --themisto_align_min_hits     : ${params.themisto_align_min_hits}
     --msweep_themisto_index       : ${params.msweep_themisto_index}
     --msweep_ref_groups           : ${params.msweep_ref_groups}
@@ -109,6 +108,7 @@ workflow {
     --run_kraken2bracken             : ${params.run_kraken2bracken}
     --run_abundance_estimation       : ${params.run_abundance_estimation}
     --run_scrub                      : ${params.run_scrub}
+    --run_msweep                     : ${params.run_msweep} (needs --do_sequence_index + --run_themisto)
     --kraken2bracken_kraken2_db      : ${params.kraken2bracken_kraken2_db}
     --kraken2bracken_classification_level : ${params.kraken2bracken_classification_level}
     --scrub_plate_map                : ${params.scrub_plate_map}
@@ -193,9 +193,16 @@ workflow {
     // off. Empty channels are what "that classifier didn't run" should mean here.
     if (params.do_sequence_index) {
         CLASSIFYING_INDEX(preprocessed_3tuple_ch)
-        index_species_calls_ch = CLASSIFYING_INDEX.out.species_calls_ch
+        index_species_calls_ch     = CLASSIFYING_INDEX.out.species_calls_ch
+        // Handover for the abundance lane's optional mSWEEP: it estimates abundances from
+        // Themisto2's pseudoalignments rather than from reads, so the sequence-index lane
+        // has to have produced them first.
+        themisto_pseudoaln_ch      = CLASSIFYING_INDEX.out.themisto_pseudoalignments
+        themisto_ref_groups_ch     = CLASSIFYING_INDEX.out.themisto_ref_groups
     } else {
-        index_species_calls_ch = Channel.empty()
+        index_species_calls_ch     = Channel.empty()
+        themisto_pseudoaln_ch      = Channel.empty()
+        themisto_ref_groups_ch     = Channel.empty()
     }
 
     // === 5 - Consensus, lineage calling and classification report ===
@@ -214,7 +221,7 @@ workflow {
 
     // === 6 - Abundance estimation (rvi_integration_1, opt-in) ===
     if (params.do_abundance) {
-        ABUNDANCE(preprocessed_3tuple_ch)
+        ABUNDANCE(preprocessed_3tuple_ch, themisto_pseudoaln_ch, themisto_ref_groups_ch)
     }
 
     workflow.onComplete = {

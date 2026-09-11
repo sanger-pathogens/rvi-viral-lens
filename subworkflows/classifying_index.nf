@@ -25,7 +25,7 @@
 // The consequence to be aware of: calls leaving here are hit-count-only, so they are
 // less filtered than they used to be. Index noise that breadth would have rejected now
 // reaches MAPPING and is rejected after its consensus alignment instead.
-include {VIRAL_THEMISTO_MSWEEP} from '../workflows/VIRAL_THEMISTO_MSWEEP.nf'
+include {VIRAL_THEMISTO} from '../workflows/VIRAL_THEMISTO.nf'
 include {VIRAL_METAGRAPH_ALIGN} from '../workflows/VIRAL_METAGRAPH_ALIGN.nf'
 include {VIRAL_METAGRAPH_QUERY} from '../workflows/VIRAL_METAGRAPH_QUERY.nf'
 include {GENERATE_MAPPING_REPORT} from '../workflows/GENERATE_MAPPING_REPORT.nf'
@@ -44,34 +44,33 @@ workflow CLASSIFYING_INDEX {
         //
         // THE LANE'S DEFAULT METHOD (run_themisto defaults true). Species are called
         // directly from Themisto2 pseudoalignment read-hit counts (CALL_THEMISTO_SPECIES)
-        // -- no probabilistic model and no validation mapping involved. mSWEEP's
-        // abundance estimate is an optional add-on *inside* this arm, gated by run_msweep
-        // (default false) inside VIRAL_THEMISTO_MSWEEP itself; see nextflow.config's note
-        // on run_msweep's changed meaning.
+        // -- no probabilistic model and no validation mapping involved. mSWEEP is NOT part
+        // of this lane: it estimates abundance rather than calling species, so it lives
+        // behind the abundance lane's --run_msweep (subworkflows/abundance.nf), consuming
+        // the pseudoalignments VIRAL_THEMISTO emits.
         if (params.run_themisto) {
-            VIRAL_THEMISTO_MSWEEP(preprocessed_3tuple_ch)
+            VIRAL_THEMISTO(preprocessed_3tuple_ch)
 
-            themisto_counts_ch = VIRAL_THEMISTO_MSWEEP.out.species_hits
+            themisto_counts_ch = VIRAL_THEMISTO.out.species_hits
                 .map { meta, tsv -> [meta.id, count_species_hits(tsv, 'themisto')] }
 
 
-            // Both of these are Channel.empty() unless run_msweep is set (see
-            // ../workflows/VIRAL_THEMISTO_MSWEEP.nf), so they need no gate of their own --
-            // an empty channel simply contributes no counts and the joins below fill in
-            // EMPTY_*_COUNTS.
-            msweep_counts_ch = VIRAL_THEMISTO_MSWEEP.out.abundances
-                .map { meta, abundances, _probs -> [meta.id, count_msweep_abundances(abundances)] }
-
             // Kept as its own variable so the species-calls block below can consume it
-            // without touching VIRAL_THEMISTO_MSWEEP.out, which is undefined unless the
+            // without touching VIRAL_THEMISTO.out, which is undefined unless the
             // subworkflow was actually invoked. Optional per sample: unwritten when
             // nothing cleared min-hits.
-            themisto_hits_ch     = VIRAL_THEMISTO_MSWEEP.out.species_hits
-            themisto_labels_ch   = VIRAL_THEMISTO_MSWEEP.out.index_label_map
+            themisto_hits_ch     = VIRAL_THEMISTO.out.species_hits
+            themisto_labels_ch   = VIRAL_THEMISTO.out.index_label_map
+            // Handover for the abundance lane's optional MSWEEP (--run_msweep). Empty
+            // whenever run_themisto is off, which is exactly what "no Themisto2 result
+            // available" has to mean there.
+            themisto_pseudoaln_ch = VIRAL_THEMISTO.out.pseudoalignments
+            themisto_ref_groups_ch = VIRAL_THEMISTO.out.ref_groups
         } else {
             themisto_counts_ch   = Channel.empty()
-            msweep_counts_ch     = Channel.empty()
             themisto_hits_ch     = Channel.empty()
+            themisto_pseudoaln_ch = Channel.empty()
+            themisto_ref_groups_ch = Channel.empty()
             themisto_labels_ch   = Channel.empty()
         }
 
@@ -154,7 +153,7 @@ workflow CLASSIFYING_INDEX {
             // determinism here, rank by method instead of by arrival.
             //
             // No mSWEEP calls: mSWEEP estimates abundance only and calls no species (see
-            // ../workflows/VIRAL_THEMISTO_MSWEEP.nf).
+            // ../workflows/VIRAL_THEMISTO.nf).
             species_calls_ch = themisto_calls_ch
                 .mix(metagraph_align_calls_ch, metagraph_query_calls_ch)
                 .unique { sample_id, call -> [sample_id, call.species_name.trim().toLowerCase()] }
@@ -175,16 +174,15 @@ workflow CLASSIFYING_INDEX {
 
         sequence_index_sample_ch
             .join(themisto_counts_ch, remainder: true)
-            .join(msweep_counts_ch, remainder: true)
             .join(metagraph_align_counts_ch, remainder: true)
             .join(metagraph_query_counts_ch, remainder: true)
             .join(new_species_counts_ch, remainder: true)
-            // Parameter count matches the tuple width: five joins onto the backbone, so
-            // six values after the key. The three *_mapqc_* slots that used to sit in here
-            // went with map-QC -- breadth is no longer measured at this stage.
-            .map { id, meta, t_counts, m_counts, mga_counts, mgq_counts, ns_counts ->
+            // Parameter count matches the tuple width: four joins onto the backbone, so
+            // five values after the key. The three *_mapqc_* slots that used to sit in here
+            // went with map-QC (breadth is no longer measured at this stage), and the
+            // msweep_* slot went with mSWEEP to the abundance lane.
+            .map { id, meta, t_counts, mga_counts, mgq_counts, ns_counts ->
                 def new_meta = meta + (t_counts ?: EMPTY_THEMISTO_COUNTS) +
-                    (m_counts ?: EMPTY_MSWEEP_COUNTS) +
                     (mga_counts ?: EMPTY_METAGRAPH_ALIGN_COUNTS) +
                     (mgq_counts ?: EMPTY_METAGRAPH_QUERY_COUNTS) +
                     (ns_counts ?: EMPTY_NEW_SPECIES_COUNTS)
@@ -218,6 +216,13 @@ workflow CLASSIFYING_INDEX {
         // Channel.empty() unless --call_consensus_for_new_species is set, so MAPPING can
         // consume it unconditionally.
         species_calls_ch // [sample_id, [species_name:, reference_record:, reference_source:, hit_count:, method:]]
+
+        // Themisto2's pseudoalignments and the species_labels.txt that goes with them,
+        // for the abundance lane's optional MSWEEP (--run_msweep). Both Channel.empty()
+        // when run_themisto is off; abundance.nf treats that as "Themisto2 has produced
+        // nothing to estimate from" and refuses to run mSWEEP.
+        themisto_pseudoalignments = themisto_pseudoaln_ch
+        themisto_ref_groups       = themisto_ref_groups_ch
 }
 
 // --- rvi_integration_1: sample-level count helpers for the mapping report ---
@@ -227,7 +232,6 @@ workflow CLASSIFYING_INDEX {
 // min-abundance/min-hits threshold). Named constants (not inline [:]) so every sample
 // still gets the same report columns regardless of which method(s) actually ran for it.
 EMPTY_THEMISTO_COUNTS = [themisto_n_species_considered: 0, themisto_n_species_called: 0]
-EMPTY_MSWEEP_COUNTS = [msweep_n_groups: 0, msweep_top_group: '', msweep_top_abundance: 0.0]
 // One per Metagraph method (align, query) -- both call count_species_hits() with a
 // distinct prefix, since both methods' counts can merge into the same per-sample meta and
 // would otherwise collide on field name.
@@ -246,33 +250,6 @@ def empty_species_hits_counts(prefix) {
     return prefix == 'metagraph_align' ? EMPTY_METAGRAPH_ALIGN_COUNTS : EMPTY_METAGRAPH_QUERY_COUNTS
 }
 
-def count_msweep_abundances(txt) {
-    // <sample>_mSWEEP_abundances.txt: "<label>\t<relative_abundance>", '#'-prefixed and
-    // non-numeric-second-column lines skipped -- same rule bin/select_reference_records.py
-    // applies in parse_abundances(), so these counts describe the same set of groups the
-    // downstream map-QC step actually considered.
-    if (txt == null || !txt.exists()) return EMPTY_MSWEEP_COUNTS
-    def rows = []
-    txt.readLines().each { line ->
-        def trimmed = line.trim()
-        if (!trimmed || trimmed.startsWith('#')) return
-        def cols = trimmed.split('\t')
-        if (cols.size() < 2) return
-        try {
-            rows << [cols[0], cols[1] as Double]
-        } catch (NumberFormatException ignored) {
-            // header or malformed row -- skipped, as parse_abundances does
-        }
-    }
-    if (!rows) return EMPTY_MSWEEP_COUNTS
-    def above = rows.findAll { row -> row[1] >= params.msweep_map_min_abundance }
-    def top = rows.max { row -> row[1] }
-    return [
-        msweep_n_groups:      above.size(),
-        msweep_top_group:     top[0],
-        msweep_top_abundance: top[1]
-    ]
-}
 
 def count_species_hits(tsv, prefix) {
     // <sample>_species_hits.tsv: sample_id, species, hit_count, provisional_call -- the

@@ -177,7 +177,8 @@
         },
         "run_msweep": {
             "type": "boolean",
-            "default": false
+            "default": false,
+            "description": "Run mSWEEP probabilistic abundance estimation in the abundance lane. Requires --do_sequence_index and --run_themisto, as it consumes Themisto2's pseudoalignments."
         },
         "msweep_themisto_index": {
             "type": "string",
@@ -189,7 +190,8 @@
         },
         "msweep_subsample_limit": {
             "type": "integer",
-            "default": 1000000
+            "default": 500000,
+            "description": "Cap on Themisto2 pseudoalignment input per mate; total reads fed to Themisto2 is twice this (500000 => 1M total)."
         },
         "cleanup_intermediate_files_msweep": {
             "type": "boolean",

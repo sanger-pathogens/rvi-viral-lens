@@ -11,7 +11,7 @@
     criterion: no reads are mapped here (see the note by the emit block, and
     subworkflows/classifying_index.nf's header for where breadth is measured instead).
     Reads are capped at metagraph_align_subsample_limit per mate before alignment (mirrors
-    VIRAL_THEMISTO_MSWEEP's subsampling): metagraph align's per-query output is one label line per
+    VIRAL_THEMISTO's subsampling): metagraph align's per-query output is one label line per
     matched k-mer window, so it scales with input depth far faster than a normal aligner's
     output would, and species calling only needs enough hits to clear metagraph_align_min_hits
     — feeding it full depth on a deep sample mostly just costs METAGRAPH/CALL_METAGRAPH_SPECIES
@@ -48,7 +48,7 @@ workflow VIRAL_METAGRAPH_ALIGN {
     names_dmp_ch        = Channel.fromPath(params.metagraph_align_names_dmp).first()
 
     // Cap METAGRAPH_ALIGN input at metagraph_align_subsample_limit reads per mate (mirrors
-    // VIRAL_THEMISTO_MSWEEP's SUBSAMPLE_ITER step).
+    // VIRAL_THEMISTO's SUBSAMPLE_ITER step).
     metagraph_align_subsample_limit_ch = Channel.value( params.metagraph_align_subsample_limit )
 
     reads_ch.map{ meta, read_1, read_2 ->
