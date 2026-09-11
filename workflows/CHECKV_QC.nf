@@ -46,10 +46,20 @@ workflow CHECKV_QC {
         .map { meta, source, tsv -> tuple(meta, tsv) }
         .set { ch_virus_scaffolds_quality }
 
+    // The same call for the linked vRhyme bins (source == 'linked_bins'). Unlike
+    // the per-scaffold channel above this does NOT carry every sample: CheckV only
+    // assesses linked bins for samples where vRhyme produced at least one bin, so
+    // consumers must tolerate missing entries. Feeds the vMAG report.
+    CHECKV.out.quality_summary
+        .filter { meta, source, tsv -> source == 'linked_bins' }
+        .map { meta, source, tsv -> tuple(meta, tsv) }
+        .set { ch_linked_bins_quality }
+
     emit:
     quality_summary                 = CHECKV.out.quality_summary
     completeness                    = CHECKV.out.completeness
     contamination                   = CHECKV.out.contamination
     complete_genomes                = CHECKV.out.complete_genomes
     virus_scaffolds_quality_summary = ch_virus_scaffolds_quality
+    linked_bins_quality_summary     = ch_linked_bins_quality
 }

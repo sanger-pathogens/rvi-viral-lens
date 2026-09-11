@@ -8,6 +8,7 @@ include {VRHYME_BIN} from '../workflows/VRHYME_BIN.nf'
 include {CHECKV_QC} from '../workflows/CHECKV_QC.nf'
 include {VCONTACT3_RUN} from '../workflows/VCONTACT3_RUN.nf'
 include {GENERATE_ASSEMBLY_REPORT} from '../workflows/GENERATE_ASSEMBLY_REPORT.nf'
+include {ASSEMBLY_REPORTS} from '../workflows/ASSEMBLY_REPORTS.nf'
 include {publish_lane_json} from '../modules/publish_lane_report.nf'
 include {publish_run_files as publish_assembly_run_files} from '../modules/publish_lite.nf'
 
@@ -70,6 +71,19 @@ workflow ASSEMBLY {
             .set { assembly_report_prep_ch }
 
         GENERATE_ASSEMBLY_REPORT(assembly_report_prep_ch)
+
+        // The lane's three CSV reports (sample / scaffold / vMAG level). Separate
+        // from GENERATE_ASSEMBLY_REPORT above, which still writes the per-sample
+        // properties.json + assembly_run_summary.json from `meta`: these are
+        // multi-row-per-sample tables built from the modules' own output files,
+        // which `meta` cannot carry. Downstream of vContact3 for its taxonomy.
+        ASSEMBLY_REPORTS(
+            GENOMAD_CLASSIFY.out.virus_summary,
+            VRHYME_BIN.out.membership,
+            CHECKV_QC.out.virus_scaffolds_quality_summary,
+            CHECKV_QC.out.linked_bins_quality_summary,
+            VCONTACT3_RUN.out.postprocessed_assignments
+        )
 
         // PUBLISH (assembly lane)
         publish_lane_json(GENERATE_ASSEMBLY_REPORT.out.publish_seq_level_ch)

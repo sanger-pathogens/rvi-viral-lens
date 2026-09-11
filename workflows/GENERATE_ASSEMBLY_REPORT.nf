@@ -34,7 +34,17 @@ workflow GENERATE_ASSEMBLY_REPORT {
             .set { all_summaries_pre_ch }
 
         write_lane_run_summary(all_summaries_pre_ch, "assembly")
-        write_lane_run_summary.out.set { publish_run_level_summaries_ch }
+
+        // Publish only the run-level JSON. write_lane_run_summary also writes
+        // <lane>_summary_report.csv, but the assembly lane's sample-level CSV is
+        // now assembly_sample_summary_report.csv, built by ASSEMBLY_REPORTS from
+        // the modules' own outputs (subworkflows/assembly.nf). Publishing both
+        // would ship two sample-level CSVs whose columns had already diverged.
+        // The shared writer is left alone -- the mapping and abundance lanes
+        // still use its CSV.
+        write_lane_run_summary.out
+            .map { run_summary_json, _summary_report_csv -> run_summary_json }
+            .set { publish_run_level_summaries_ch }
 
     emit:
         publish_seq_level_ch
