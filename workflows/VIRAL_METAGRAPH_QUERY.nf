@@ -25,8 +25,8 @@
     IMPORT MODULES
 ========================================================================================
 */
-include { METAGRAPH_QUERY        } from '../modules/metagraph_query.nf'
-include { CALL_METAGRAPH_SPECIES } from '../modules/metagraph_species_call.nf'
+include { METAGRAPH_QUERY        } from '../rvi_toolbox/modules/metagraph_query.nf'
+include { CALL_METAGRAPH_SPECIES } from '../rvi_toolbox/modules/metagraph_species_call.nf'
 include { SUBSAMPLE_ITER         } from '../rvi_toolbox/subworkflows/subsample.nf'
 
 /*

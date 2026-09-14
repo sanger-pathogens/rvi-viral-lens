@@ -29,7 +29,7 @@
 // call's consensus is computed and then discarded; the saving is that a real call is
 // mapped once instead of twice.
 include {INDEX_REFERENCE_FASTA; EXTRACT_REFERENCE_RECORD} from '../modules/reference_subset.nf'
-include {EXTRACT_METAGRAPH_REFERENCE_RECORD} from '../modules/metagraph_reference_subset.nf'
+include {EXTRACT_METAGRAPH_REFERENCE_RECORD} from '../rvi_toolbox/modules/metagraph_reference_subset.nf'
 include {GENERATE_CONSENSUS} from '../workflows/GENERATE_CONSENSUS.nf'
 include {SCOV2_SUBTYPING} from '../workflows/SCOV2_SUBTYPING.nf'
 include {GENERATE_CLASSIFICATION_REPORT} from '../workflows/GENERATE_CLASSIFICATION_REPORT.nf'
@@ -228,7 +228,7 @@ workflow MAPPING {
             )
 
             // metagraph_record_pattern() builds the grep pattern in Groovy rather than in
-            // the process's shell -- see modules/metagraph_reference_subset.nf.
+            // the process's shell -- see rvi_toolbox/modules/metagraph_reference_subset.nf.
             EXTRACT_METAGRAPH_REFERENCE_RECORD(
                 index_new_by_source_ch.metagraph_ch.map { meta, call ->
                     [meta, metagraph_record_pattern(call.reference_record)]
@@ -388,7 +388,7 @@ workflow MAPPING {
         publish_run_files(GENERATE_CLASSIFICATION_REPORT.out.publish_run_level_summaries_ch)
 }
 
-// The Groovy half of a rule that also exists in Python: bin/call_metagraph_species.py's
+// The Groovy half of a rule that also exists in Python: rvi_toolbox/bin/call_metagraph_species.py's
 // build_record_id_pattern(). Metagraph reports a species' reference either as a bare taxid
 // (for 'kraken:taxid|<taxid>|...'-shaped index labels) or as a complete accession, and the
 // two need different anchoring to grep out of metagraph_map_reference_fasta:

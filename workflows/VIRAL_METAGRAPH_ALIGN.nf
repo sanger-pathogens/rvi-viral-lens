@@ -25,8 +25,8 @@
     IMPORT MODULES
 ========================================================================================
 */
-include { METAGRAPH_ALIGN        } from '../modules/metagraph_align.nf'
-include { CALL_METAGRAPH_SPECIES } from '../modules/metagraph_species_call.nf'
+include { METAGRAPH_ALIGN        } from '../rvi_toolbox/modules/metagraph_align.nf'
+include { CALL_METAGRAPH_SPECIES } from '../rvi_toolbox/modules/metagraph_species_call.nf'
 include { SUBSAMPLE_ITER         } from '../rvi_toolbox/subworkflows/subsample.nf'
 
 /*

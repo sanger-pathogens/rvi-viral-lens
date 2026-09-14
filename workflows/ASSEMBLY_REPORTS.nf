@@ -1,4 +1,4 @@
-include { ASSEMBLY_REPORT_PER_SAMPLE; ASSEMBLY_REPORTS_MERGE } from '../modules/assembly_reports.nf'
+include { ASSEMBLY_REPORT_PER_SAMPLE; ASSEMBLY_REPORTS_MERGE } from '../rvi_toolbox/modules/assembly_reports.nf'
 
 workflow ASSEMBLY_REPORTS {
     /*
@@ -67,7 +67,7 @@ workflow ASSEMBLY_REPORTS {
             .dump(tag: 'assembly_reports_per_sample_inputs')
             .set { ch_per_sample_inputs }
 
-        reports_script_ch = Channel.value(file("${projectDir}/bin/assembly_reports.py"))
+        reports_script_ch = Channel.value(file("${projectDir}/rvi_toolbox/bin/assembly_reports.py"))
 
         ASSEMBLY_REPORT_PER_SAMPLE(ch_per_sample_inputs, reports_script_ch)
 

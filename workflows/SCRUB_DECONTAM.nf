@@ -20,8 +20,8 @@
 ========================================================================================
 */
 include { REFORMAT_BRACKEN_FOR_SCRUB } from '../modules/reformat_bracken.nf'
-include { SCRUB                      } from '../modules/scrub.nf'
-include { SCRUB_HEATMAP              } from '../modules/scrub_heatmap.nf'
+include { SCRUB                      } from '../rvi_toolbox/modules/scrub.nf'
+include { SCRUB_HEATMAP              } from '../rvi_toolbox/modules/scrub_heatmap.nf'
 
 /*
 ========================================================================================

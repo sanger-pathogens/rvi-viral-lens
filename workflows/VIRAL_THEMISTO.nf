@@ -35,9 +35,9 @@
     IMPORT MODULES
 ========================================================================================
 */
-include { THEMISTO_PSEUDOALIGN              } from '../modules/themisto2.nf'
-include { CALL_THEMISTO_SPECIES             } from '../modules/themisto_species_call.nf'
-include { CLEANUP_THEMISTO_PSEUDOALIGNMENTS } from '../modules/cleanup.nf'
+include { THEMISTO_PSEUDOALIGN              } from '../rvi_toolbox/modules/themisto2.nf'
+include { CALL_THEMISTO_SPECIES             } from '../rvi_toolbox/modules/themisto_species_call.nf'
+include { CLEANUP_THEMISTO_PSEUDOALIGNMENTS } from '../rvi_toolbox/modules/cleanup.nf'
 include { SUBSAMPLE_ITER                    } from '../rvi_toolbox/subworkflows/subsample.nf'
 
 /*

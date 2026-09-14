@@ -383,7 +383,7 @@ all called species validated by mapping (96.9% / 100% breadth).
 - **MIXED_INPUT's ENA and iRODS sources** have never been executed (needs credentials
   and real accessions). Its local-reads-manifest source is proven.
 - The **`metagraph query` module comment is now confirmed**, but note both metagraph
-  methods share `bin/call_metagraph_species.py`; a change there affects both.
+  methods share `rvi_toolbox/bin/call_metagraph_species.py`; a change there affects both.
 
 ---
 
@@ -425,7 +425,7 @@ was built deliberately differently from what you'd get by reviving old history:
   reference data, alternative method against it.
 - **The exact output shape of `metagraph query --query-mode labels` is unverified** — no
   `metagraph` binary available where this was written, so it couldn't be checked against a
-  real invocation. `bin/call_metagraph_species.py` (already proven against `metagraph
+  real invocation. `rvi_toolbox/bin/call_metagraph_species.py` (already proven against `metagraph
   align`'s output) is reused unchanged on the assumption that it scans every
   tab-separated field for a recognizable label shape rather than depending on a fixed
   column count — check this holds for query's actual output on your first real run; if
@@ -1069,7 +1069,7 @@ from raw pseudoalignment hit counts (`CALL_METAGRAPH_SPECIES`). The eventual int
 (flagged by the user, not yet built) is to restructure this the same way — Themisto2
 pseudoalignment-hit-driven species calling, mSWEEP demoted to an optional add-on
 estimate — but that needs a new hit-count caller script (parsing Themisto2's raw
-pseudoalignment format, mirroring `bin/call_metagraph_species.py`) that doesn't exist
+pseudoalignment format, mirroring `rvi_toolbox/bin/call_metagraph_species.py`) that doesn't exist
 anywhere: checked viral-lens's own history, `rvi-viral-metagenomics-pipeline`'s `main`,
 and its `feature_mGEMS`/`msweep_map_sourmash_ref` branches (and their `rvi_toolbox`
 submodule pins) — none of them do this; `feature_mGEMS` replaces map_qc with mGEMS
@@ -1104,13 +1104,13 @@ with mSWEEP demoted to an optional add-on.
 
 **That earlier round's claim that the hit-count caller "doesn't exist anywhere" was wrong.**
 It checked `feature_mGEMS` and `msweep_map_sourmash_ref` but not `feature_msweep_map`,
-which has both `bin/call_themisto_species.py` and the whole surrounding subworkflow. This
+which has both `rvi_toolbox/bin/call_themisto_species.py` and the whole surrounding subworkflow. This
 was a port, not a build.
 
 New files: `workflows/VIRAL_THEMISTO_MSWEEP.nf` (from `subworkflows/themisto2-msweep.nf`),
 `workflows/THEMISTO_MAP_QC.nf` (from `subworkflows/themisto_map_qc.nf`),
 `modules/themisto_species_call.nf`, `modules/themisto_coverage.nf`,
-`bin/call_themisto_species.py`, `bin/aggregate_themisto_coverage.py`. Differences from
+`rvi_toolbox/bin/call_themisto_species.py`, `rvi_toolbox/bin/aggregate_themisto_coverage.py`. Differences from
 upstream are confined to paths (`results_dir`->`outdir`, publish under
 `<outdir>/<sample>/sequenceindex/`, `bin/` not `rvi_toolbox/bin/`, viral-lens's
 `workflows/`+`modules/` include layout) -- each ported file's header says so. Everything
@@ -1196,7 +1196,7 @@ doing its job.
 
 ### `NA` labels are now skipped (deliberate deviation from upstream)
 
-`bin/call_themisto_species.py` maps placeholder labels (`UNUSABLE_LABELS`, currently just
+`rvi_toolbox/bin/call_themisto_species.py` maps placeholder labels (`UNUSABLE_LABELS`, currently just
 `"NA"`) to `None`, so they are skipped exactly like a blank line and never reach
 `species_hits`, `record_ids` or `index_label_map` -- and therefore never get map-QC'd,
 reported, or offered to `--call_consensus_for_new_species`. This is the one behavioural
@@ -1447,7 +1447,7 @@ Two related details:
 
 - The grep pattern for a Metagraph record is built in Groovy
   (`metagraph_record_pattern()` in `mapping.nf`), not in the process's shell: it is the
-  same rule as `build_record_id_pattern()` in `bin/call_metagraph_species.py` (taxid →
+  same rule as `build_record_id_pattern()` in `rvi_toolbox/bin/call_metagraph_species.py` (taxid →
   anchored on the fixed `kraken:taxid|<taxid>|` prefix; accession → anchored to header
   start and required to be followed by whitespace/EOL), and a regex surviving both
   Nextflow's interpolation and the shell's quoting is not worth the risk. Metacharacters

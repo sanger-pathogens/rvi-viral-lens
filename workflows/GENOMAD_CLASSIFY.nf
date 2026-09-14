@@ -9,7 +9,7 @@
 //
 // MODULES
 //
-include { GENOMAD } from '../modules/genomad.nf'
+include { GENOMAD } from '../rvi_toolbox/modules/genomad.nf'
 
 /*
 ========================================================================================

@@ -91,7 +91,7 @@ workflow CLASSIFYING_INDEX {
 
         // -- Pseudoalignment via Metagraph (metagraph query --query-mode labels), same
         // shared index, alternative method to the alignment above -- see
-        // ../workflows/VIRAL_METAGRAPH_QUERY.nf / ../modules/metagraph_query.nf for why
+        // ../workflows/VIRAL_METAGRAPH_QUERY.nf / ../rvi_toolbox/modules/metagraph_query.nf for why
         // this exists as its own module rather than the old filter+query pipeline that
         // metagraph_align.nf itself replaced (found ~zero real hits, see git history).
         if (params.run_metagraph_query) {
@@ -254,8 +254,8 @@ def empty_species_hits_counts(prefix) {
 def count_species_hits(tsv, prefix) {
     // <sample>_species_hits.tsv: sample_id, species, hit_count, provisional_call -- the
     // last written by Python's str(bool), so "True"/"False", not lowercase. All three
-    // read-hit methods emit this identical schema (bin/call_metagraph_species.py for both
-    // Metagraph methods, bin/call_themisto_species.py for Themisto2), so one parser serves
+    // read-hit methods emit this identical schema (rvi_toolbox/bin/call_metagraph_species.py for both
+    // Metagraph methods, rvi_toolbox/bin/call_themisto_species.py for Themisto2), so one parser serves
     // them all -- prefix ('themisto', 'metagraph_align' or 'metagraph_query') keeps their
     // counts from colliding when several merge into the same per-sample meta.
     if (tsv == null || !tsv.exists()) return empty_species_hits_counts(prefix)
@@ -325,8 +325,8 @@ def parse_species_calls(hits_tsv, label_map_tsv, method) {
     def called_idx  = header.findIndexOf { String col -> col == 'provisional_call' }
     if (species_idx < 0 || hits_idx < 0 || called_idx < 0) {
         error("species-hits table ${hits_tsv} is missing one of the species/hit_count/" +
-              "provisional_call columns (header: ${header}). bin/call_themisto_species.py " +
-              "or bin/call_metagraph_species.py changed its output -- update " +
+              "provisional_call columns (header: ${header}). rvi_toolbox/bin/call_themisto_species.py " +
+              "or rvi_toolbox/bin/call_metagraph_species.py changed its output -- update " +
               "parse_species_calls() in subworkflows/classifying_index.nf.")
     }
 

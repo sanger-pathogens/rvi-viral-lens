@@ -4,7 +4,7 @@
 ========================================================================================
 */
 
-include { BOWTIE_INDEX; BOWTIE2SAMTOOLS                                                  } from '../modules/bowtie.nf'
+include { BOWTIE_INDEX; BOWTIE2SAMTOOLS                                                  } from '../rvi_toolbox/modules/bowtie.nf'
 include { VRHYME_WITH_COVERAGE; POOL_VIRAL_SCAFFOLDS; COVERM_FILTER; COVERM_DEPTH;
           SUBSET_COVERAGE_FOR_SAMPLE; CLEANUP_BOWTIE_BAMS_VRHYME                         } from '../modules/vrhyme.nf'
 

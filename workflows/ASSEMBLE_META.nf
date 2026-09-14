@@ -1,5 +1,5 @@
 include { SUBSAMPLE_ITER } from '../rvi_toolbox/subworkflows/subsample.nf'
-include { METASPADES } from '../modules/metaspades.nf'
+include { METASPADES } from '../rvi_toolbox/modules/metaspades.nf'
 
 workflow ASSEMBLE_META {
     // run metaspades on data set with at most X reads to avoid loss of quality when too much data fed in (statistical inconsistency)

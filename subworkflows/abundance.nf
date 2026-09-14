@@ -11,8 +11,8 @@ include {KRAKEN2BRACKEN} from '../workflows/KRAKEN2BRACKEN.nf'
 // call species. It is the one process in this lane that is not self-sufficient -- it
 // consumes Themisto2's pseudoalignments, so it can only run when CLASSIFYING_INDEX has
 // actually produced them (see the run_msweep block below).
-include {MSWEEP} from '../modules/msweep.nf'
-include {CLEANUP_THEMISTO_PSEUDOALIGNMENTS} from '../modules/cleanup.nf'
+include {MSWEEP} from '../rvi_toolbox/modules/msweep.nf'
+include {CLEANUP_THEMISTO_PSEUDOALIGNMENTS} from '../rvi_toolbox/modules/cleanup.nf'
 include {ABUNDANCE_ESTIMATION} from '../rvi_toolbox/subworkflows/abundance_estimation.nf'
 include {SCRUB_DECONTAM} from '../workflows/SCRUB_DECONTAM.nf'
 include {GENERATE_ABUNDANCE_REPORT} from '../workflows/GENERATE_ABUNDANCE_REPORT.nf'
