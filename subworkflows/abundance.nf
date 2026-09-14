@@ -6,7 +6,7 @@
 // submodule. SCRUB_DECONTAM is ported from eu1/rvi_toolbox.git (that fork's
 // only copy, same situation as Metagraph -- see INSTRUCT.md's "rvi_toolbox
 // fork problem").
-include {KRAKEN2BRACKEN} from '../workflows/KRAKEN2BRACKEN.nf'
+include {KRAKEN2BRACKEN} from '../rvi_toolbox/subworkflows/kraken2bracken.nf'
 // mSWEEP moved here from the sequence-index lane: it estimates abundances, it does not
 // call species. It is the one process in this lane that is not self-sufficient -- it
 // consumes Themisto2's pseudoalignments, so it can only run when CLASSIFYING_INDEX has

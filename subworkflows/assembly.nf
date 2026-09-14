@@ -2,13 +2,13 @@
 // Extracted unchanged from main.nf's inline body. Ported from
 // rvi-viral-metagenomics-pipeline/main.nf, wiring unchanged (see
 // docs/nf-metro/route_map.mmd "De novo assembly" + "Viral binning" sections).
-include {ASSEMBLE_META} from '../workflows/ASSEMBLE_META.nf'
-include {GENOMAD_CLASSIFY} from '../workflows/GENOMAD_CLASSIFY.nf'
-include {VRHYME_BIN} from '../workflows/VRHYME_BIN.nf'
-include {CHECKV_QC} from '../workflows/CHECKV_QC.nf'
+include {ASSEMBLE_META} from '../rvi_toolbox/subworkflows/assemble.nf'
+include {GENOMAD_CLASSIFY} from '../rvi_toolbox/subworkflows/genomad.nf'
+include {VRHYME_BIN} from '../rvi_toolbox/subworkflows/vrhyme.nf'
+include {CHECKV_QC} from '../rvi_toolbox/subworkflows/checkv.nf'
 include {VCONTACT3_RUN} from '../workflows/VCONTACT3_RUN.nf'
 include {GENERATE_ASSEMBLY_REPORT} from '../workflows/GENERATE_ASSEMBLY_REPORT.nf'
-include {ASSEMBLY_REPORTS} from '../workflows/ASSEMBLY_REPORTS.nf'
+include {ASSEMBLY_REPORTS} from '../rvi_toolbox/subworkflows/assembly_reports.nf'
 include {publish_lane_json} from '../modules/publish_lane_report.nf'
 include {publish_run_files as publish_assembly_run_files} from '../modules/publish_lite.nf'
 
@@ -115,7 +115,7 @@ def count_genomad_summary(tsv) {
 }
 
 def count_vrhyme_membership(tsv) {
-    // vRhyme_best_bins.*.membership.tsv: header "scaffold\tbin" (modules/vrhyme.nf)
+    // vRhyme_best_bins.*.membership.tsv: header "scaffold\tbin" (rvi_toolbox/modules/vrhyme.nf)
     def lines = tsv.readLines()
     if (lines.size() < 2) return [vrhyme_n_bins: 0, vrhyme_n_binned_scaffolds: 0]
     def bins = lines[1..-1].collect { line -> line.split('\t')[1] }
