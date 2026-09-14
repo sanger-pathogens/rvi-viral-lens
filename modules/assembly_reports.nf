@@ -11,9 +11,10 @@
 // sample-local -- no vContact3 involvement, since vContact3 runs once for the
 // whole batch and is only available to the merge stage below.
 //
-// --bin-quality is genuinely optional: CheckV only runs on linked bins for
-// samples where vRhyme produced at least one bin. Samples without one are
-// handed the assets/NO_FILE placeholder, and the flag is dropped.
+// --vrhyme-membership and --bin-quality are both genuinely optional: vRhyme emits
+// nothing for a sample it cannot bin, and CheckV only assesses linked bins where a
+// bin exists. Samples without either are handed the empty assets/NO_FILE placeholder,
+// which the script reads as zero rows.
 process ASSEMBLY_REPORT_PER_SAMPLE {
     tag "${meta.id}"
 
@@ -24,21 +25,33 @@ process ASSEMBLY_REPORT_PER_SAMPLE {
     container "quay.io/gsu-pipelines/rvi-vp-basecontainer"
 
     input:
-    tuple val(meta), path(genomad_summary), path(vrhyme_membership), path(scaffold_quality), path(bin_quality)
+    // Every input is staged under a fixed name of its own, for two reasons that would
+    // otherwise each cause a filename collision:
+    //   - CheckV writes both its runs as '<source>/quality_summary.tsv', so the
+    //     per-scaffold and linked-bins files share a basename.
+    //   - the NO_FILE placeholder stands in for more than one absent input, so a sample
+    //     missing both its membership and its linked-bins QC would stage NO_FILE twice.
+    tuple val(meta), \
+          path(genomad_summary,   stageAs: 'genomad_virus_summary.tsv'), \
+          path(vrhyme_membership, stageAs: 'vrhyme_membership.tsv'), \
+          path(scaffold_quality,  stageAs: 'scaffold_quality_summary.tsv'), \
+          path(bin_quality,       stageAs: 'bin_quality_summary.tsv')
     path(reports_script)
 
     output:
     tuple val(meta), path("${meta.id}.assembly_report_parts.json"), emit: parts
 
     script:
-    def bin_quality_arg = bin_quality.name != 'NO_FILE' ? "--bin-quality ${bin_quality}" : ''
+    // Every flag is passed unconditionally: an absent input arrives as the empty NO_FILE
+    // placeholder, which the script reads as zero rows -- the same result as omitting it,
+    // without the module having to decide which spelling means "absent".
     """
     python3 ${reports_script} per-sample \\
         --sample-id         ${meta.id} \\
         --genomad-summary   ${genomad_summary} \\
         --vrhyme-membership ${vrhyme_membership} \\
         --scaffold-quality  ${scaffold_quality} \\
-        ${bin_quality_arg} \\
+        --bin-quality       ${bin_quality} \\
         --output            ${meta.id}.assembly_report_parts.json
     """
 }

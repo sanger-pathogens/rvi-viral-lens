@@ -45,16 +45,24 @@ workflow ASSEMBLY_REPORTS {
         // name the process recognises and drops the corresponding flag for.
         def no_file = file("${projectDir}/assets/NO_FILE")
 
-        // CheckV only assesses linked bins for samples that have at least one bin,
-        // so bin_quality_ch is missing entries the other three channels have.
-        // remainder: true keeps those samples in rather than silently dropping them
-        // from the reports; their vMAG rows are simply empty.
+        // Two of these channels carry fewer samples than the others, and both gaps mean
+        // the same thing -- vRhyme found nothing to bin:
+        //   membership_ch  -- vRhyme emits nothing at all for a sample it cannot bin
+        //   bin_quality_ch -- CheckV only assesses linked bins where a bin exists
+        // Both are therefore joined with remainder: true and filled with the placeholder.
+        // An inner join here would silently drop such a sample from ALL three reports,
+        // including its geNomad and per-scaffold CheckV rows, which are perfectly good.
+        // geNomad and per-scaffold CheckV are inner-joined: every sample reaching this
+        // lane has both (CHECKV_QC guarantees one virus_scaffolds row set per sample).
         genomad_summary_ch
-            .join(membership_ch)
             .join(scaffold_quality_ch)
+            .join(membership_ch,  remainder: true)
             .join(bin_quality_ch, remainder: true)
-            .map { meta, genomad, membership, scaffold_q, bin_q ->
-                [meta, genomad, membership, scaffold_q, bin_q ?: no_file]
+            // remainder: true also admits right-only entries, which would arrive with a
+            // null genomad summary. Nothing should produce one; drop it rather than fail.
+            .filter { it[1] != null }
+            .map { meta, genomad, scaffold_q, membership, bin_q ->
+                [meta, genomad, membership ?: no_file, scaffold_q, bin_q ?: no_file]
             }
             .dump(tag: 'assembly_reports_per_sample_inputs')
             .set { ch_per_sample_inputs }
