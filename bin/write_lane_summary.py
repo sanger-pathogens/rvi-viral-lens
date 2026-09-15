@@ -6,10 +6,14 @@ enriched via `meta.plus([...])` upstream) to a `<sample_id>.properties.json` fil
 unlike the taxid lane's report, there's no separate qc/nextclade JSON to merge in, so
 no per-lane python script is needed for that step (see the calling `.nf` workflow).
 
-This script does the run-level concatenation: one JSON list of every sample's record,
-and a CSV with one row per sample. Column set is the union of keys seen across all
-records (rather than a fixed mapping) since these lanes don't have an established
-column contract yet -- a sample missing a given key just gets a blank cell for it.
+This script does the run-level concatenation: a CSV with one row per sample. Column
+set is the union of keys seen across all records (rather than a fixed mapping) since
+these lanes don't have an established column contract yet -- a sample missing a given
+key just gets a blank cell for it.
+
+It used to also write <prefix>_run_summary.json holding the same records. Every lane
+has now dropped that file: it duplicated the CSV exactly -- same keys, same rows, and
+no nested values the CSV could not represent -- so nothing published it.
 """
 
 import argparse
@@ -25,7 +29,7 @@ def main():
     )
     parser.add_argument(
         "-o", "--out_prefix", required=True,
-        help="Prefix for the two output files: <prefix>_run_summary.json, <prefix>_summary_report.csv",
+        help="Prefix for the output file: <prefix>_summary_report.csv",
     )
     args = parser.parse_args()
 
@@ -35,9 +39,6 @@ def main():
             records.append(json.load(fh))
 
     records.sort(key=lambda r: r.get("id", ""))
-
-    with open(f"{args.out_prefix}_run_summary.json", "w") as out:
-        json.dump(records, out, indent=4)
 
     fieldnames = []
     for r in records:

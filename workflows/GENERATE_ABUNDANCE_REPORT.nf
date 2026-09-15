@@ -34,6 +34,9 @@ workflow GENERATE_ABUNDANCE_REPORT {
             .collect()
             .set { all_summaries_pre_ch }
 
+        // Emits abundance_summary_report.csv only. abundance_run_summary.json used to
+        // be written alongside it and is gone: it held exactly the same records as the
+        // CSV -- same keys, same rows, no nested values -- so it carried nothing extra.
         write_lane_run_summary(all_summaries_pre_ch, "abundance")
         write_lane_run_summary.out.set { publish_run_level_summaries_ch }
 

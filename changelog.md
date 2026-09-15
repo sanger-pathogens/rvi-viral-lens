@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+> ### ⚠️ Breaking: two run-level report files changed meaning
+>
+> `mapping_summary_report.csv` **still exists but now holds different content.**
+> Anything reading it by name will silently get the wrong table rather than fail.
+>
+> | before | after | content |
+> | --- | --- | --- |
+> | `summary_report.csv` | `mapping_summary_report.csv` | per-consensus mapping results (unchanged content) |
+> | `mapping_summary_report.csv` | `sequenceindex_summary_report.csv` | sequence-index lane per-sample results (unchanged content) |
+>
+> The old `mapping_summary_report.csv` was never the mapping lane's output: it is
+> written by the sequence-index lane (`subworkflows/classifying_index.nf`), so the
+> name has been corrected. The mapping lane's own report, previously the
+> unqualified `summary_report.csv`, now takes the name that describes it.
+
+- **[added]**: `Discovered_By` column in `mapping_summary_report.csv`, recording which classifier put each row in the report (`kraken2` or `sequence_index`). Previously the report gave no way to tell, and the distinction was dropped before it reached either the CSV or the JSON. Appended as the last column so existing column positions do not shift
+- **[change]**: `summary_report.csv` now called `mapping_summary_report.csv` (see breaking note above)
+- **[change]**: `mapping_summary_report.csv` now called `sequenceindex_summary_report.csv` (see breaking note above)
+- **[removed]**: `mapping_run_summary.json` and `abundance_run_summary.json` — each duplicated its CSV exactly (same keys, same records, no nested values), so neither carried anything the CSV did not. `consensus_sequence_properties.json` is **kept**: it holds nested `nextclade_results` and per-position depth that a CSV cannot represent
+- **[removed]**: `assembly_run_summary.json` — superseded by the assembly CSVs below. It was also under-reporting: built from a chain of inner joins that dropped any sample vRhyme never ran for, it listed 35 of 95 samples on a full run
+- **[added]**: `assembly_sample_summary_report.csv` (one row per sample), `assembly_scaffold_summary_report.csv` (one row per geNomad viral scaffold) and `vmag_scaffold_summary_report.csv` (one row per vRhyme bin), replacing `assembly_summary_report.csv`. All three add the taxonomy geNomad and vContact3 assigned; see README
+- **[change]**: mSWEEP moved out of the sequence-index lane into the abundance lane — it estimates abundance rather than calling species. `--run_msweep` now requires `--do_sequence_index true --run_themisto true` and errors up front if they are missing
+- **[fix]**: a sample that produced no vRhyme bins aborted the entire run while publishing (`No signature of method: ScriptBinding.file()`); a missing optional output no longer takes the run down
+- **[fix]**: vContact3 post-processing selected query genomes on the wrong separator and so matched none, leaving `final_assignments_postprocessed.csv` and `final_assignments_noveltaxa.csv` empty on every run
+- **[fix]**: vContact3 post-processing now fills in the `Proteins` count vContact3 leaves blank for query genomes, without which the novel-genus protein-range check silently never fired
+
 ## [1.5.2]
 
 -- **[changed]**: configuration changes to use current queues supported on Sanger HPC when running with `sanger_standard` profile.

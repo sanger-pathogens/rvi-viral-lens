@@ -264,6 +264,13 @@ workflow MAPPING {
         // same pair -- disjoint because of the filter above, not by assumption.
         sample_taxid_ch = kraken2_sample_taxid_ch.mix(index_new_sample_taxid_ch)
         sample_report_with_join_key_ch = kraken2_report_ch.mix(index_new_report_ch)
+            // Every report row records which classifier put it there, as Discovered_By.
+            // The index side stamps discovered_by itself when it builds its meta above;
+            // anything arriving without it came from Kraken2, so label that explicitly
+            // rather than leaving the column blank -- blank would be indistinguishable
+            // from a missing value. report_meta is on the right so an existing
+            // discovered_by always wins.
+            .map { join_key, report_meta -> [join_key, [discovered_by: 'kraken2'] + report_meta] }
 
         GENERATE_CONSENSUS(sample_taxid_ch)
 

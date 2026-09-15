@@ -1,4 +1,4 @@
-include { write_lane_sequence_summary; write_lane_run_summary } from '../modules/write_lane_report.nf'
+include { write_lane_sequence_summary } from '../modules/write_lane_report.nf'
 
 workflow GENERATE_ASSEMBLY_REPORT {
     /*
@@ -33,20 +33,16 @@ workflow GENERATE_ASSEMBLY_REPORT {
             .collect()
             .set { all_summaries_pre_ch }
 
-        write_lane_run_summary(all_summaries_pre_ch, "assembly")
-
-        // Publish only the run-level JSON. write_lane_run_summary also writes
-        // <lane>_summary_report.csv, but the assembly lane's sample-level CSV is
-        // now assembly_sample_summary_report.csv, built by ASSEMBLY_REPORTS from
-        // the modules' own outputs (subworkflows/assembly.nf). Publishing both
-        // would ship two sample-level CSVs whose columns had already diverged.
-        // The shared writer is left alone -- the mapping and abundance lanes
-        // still use its CSV.
-        write_lane_run_summary.out
-            .map { run_summary_json, _summary_report_csv -> run_summary_json }
-            .set { publish_run_level_summaries_ch }
+        // No run-level report from this lane. assembly_run_summary.json used to be
+        // written here and is gone: ASSEMBLY_REPORTS (subworkflows/assembly.nf) now
+        // builds the lane's run-level CSVs straight from the modules' own outputs,
+        // and the JSON was not merely a duplicate of those -- it was wrong. It came
+        // off the inner-join chain below, which drops any sample vRhyme never ran
+        // for, so a 95-sample run produced a 35-record JSON while
+        // assembly_sample_summary_report.csv correctly held all 95.
+        //
+        // The per-sample properties.json above is still published, unchanged.
 
     emit:
         publish_seq_level_ch
-        publish_run_level_summaries_ch
 }

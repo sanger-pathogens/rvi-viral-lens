@@ -28,7 +28,7 @@ process write_lane_run_summary {
     val(lane_name)
 
     output:
-    tuple path("${lane_name}_run_summary.json"), path("${lane_name}_summary_report.csv")
+    path "${lane_name}_summary_report.csv"
 
     script:
     json_arg = json_file_list.join(" ")

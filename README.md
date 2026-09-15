@@ -242,7 +242,7 @@ The output file tree should look like the tree bellow:
 
 ```bash
 <output_dir>/
-├── summary_report.csv
+├── mapping_summary_report.csv
 ├── consensus_sequence_properties.json
 ├── <sample_id>
 │   ├── <sample_id>.kraken_report.txt
@@ -369,7 +369,11 @@ A `tsv` file sumarizing the number of reads associated to a given item in the ta
 
 Collation of all of `<sample_id>/<ref_id>/<sample_id>.<ref_id>.properties.json` files for all consequence sequences in the entire run (for convenience)
 
-#### summary_report.tsv
+#### mapping_summary_report.csv
+
+> Renamed from `summary_report.csv`; see the changelog's breaking-change note. The name
+> `mapping_summary_report.csv` previously belonged to the sequence-index lane's report,
+> which is now `sequenceindex_summary_report.csv`.
 
 A csv file with selected properties (per sequence) from the properties.json files above. Note that column names are different fron the JSON property names for legacy / backwards compatibility readsons. Columns:
 
@@ -390,6 +394,11 @@ A csv file with selected properties (per sequence) from the properties.json file
 - nc.selected_dataset (identical in JSON)
 - nc.{coverage,overallScore,overallStatus,missingData,mixedSites,privateMutation,snpClusters,frameShifts,stopCodons} (identical in JSON)
 - file_prefix (`id` in JSON)
+- Discovered_By (`discovered_by` in JSON) — which classifier put this row in the report:
+  `kraken2`, or `sequence_index` where the species was called only by the sequence-index
+  lane (Themisto2/Metagraph) and Kraken2 missed it. Where both classifiers agree, Kraken2's
+  call and reference win, so the row is `kraken2`. `sequence_index` rows only ever appear
+  with `--call_consensus_for_new_species true` (default `false`).
 
 
 ### Secondary outputs
@@ -438,8 +447,9 @@ Pair of fastq files containing all reads which were associated to the reference 
 
 ```bash
 <output_dir>/
-├── assembly_run_summary.json
-├── assembly_summary_report.csv
+├── assembly_sample_summary_report.csv
+├── assembly_scaffold_summary_report.csv
+├── vmag_scaffold_summary_report.csv
 ├── vcontact3/
 │   ├── final_assignments.csv
 │   ├── final_assignments_postprocessed.csv
@@ -468,12 +478,24 @@ lane's per-consensus properties.json, but with genomad/vrhyme/checkv/vcontact3
 sample-level counts (`genomad_n_scaffolds`, `genomad_n_eligible`,
 `vrhyme_n_bins`, `vrhyme_n_binned_scaffolds`, `checkv_n_high_quality`,
 `checkv_n_medium_quality`, `vcontact3_n_genomes`, `vcontact3_n_clusters`) in
-place of consensus/nextclade fields — see main.nf's `count_genomad_summary()` /
-`count_vrhyme_membership()` / `count_checkv_quality()` /
+place of consensus/nextclade fields — see `subworkflows/assembly.nf`'s
+`count_genomad_summary()` / `count_vrhyme_membership()` / `count_checkv_quality()` /
 `count_vcontact3_for_sample()` for exactly what each counts.
-`assembly_run_summary.json` / `assembly_summary_report.csv` collate all
-samples' properties.json the same way `consensus_sequence_properties.json` /
-`summary_report.tsv` do for the taxid lane.
+
+The lane's three run-level CSVs are built by `ASSEMBLY_REPORTS`
+(`rvi_toolbox/bin/assembly_reports.py`) straight from the modules' own outputs,
+**not** by collating the per-sample properties.json:
+
+| file | one row per | carries |
+| --- | --- | --- |
+| `assembly_sample_summary_report.csv` | sample | the module counts above, plus `taxonomy_geNomad` and `taxonomy_vcontact3` — the set of taxa each classifier assigned anywhere in that sample |
+| `assembly_scaffold_summary_report.csv` | geNomad viral scaffold | CheckV per-scaffold QC (`contig_length`, `gene_count`, `checkv_quality`, `completeness`, `completeness_method`) plus that scaffold's own `taxonomy_geNomad` |
+| `vmag_scaffold_summary_report.csv` | vRhyme bin (vMAG) | `vMAG_ID` (`<sample_id>_vRhyme_bin_<N>`), the same CheckV QC for the linked bin, plus the `vcontact3_taxonomy` assigned to that bin |
+
+geNomad taxonomy is the lowest rank of its `;`-separated lineage. vContact3
+taxonomy is reported as `<rank>:<taxon>` for the deepest rank carrying a real
+name, skipping the generated `novel_*` / `unplaced_*` placeholders that mean
+"not actually assigned"; it is blank where no rank qualifies.
 
 [**(&uarr;)**](#contents)
 
@@ -745,7 +767,9 @@ Per-sample outputs are grouped by lane, not by tool:
     reports/                  # per-sample lane report json
   vcontact3/                  # run-level: vContact3 runs once per batch
   abundance_summary/          # run-level: whole-run Bracken species-abundance summary
-  summary_report.csv, assembly_summary_report.csv, mapping_summary_report.csv, abundance_summary_report.csv, ...
+  mapping_summary_report.csv, sequenceindex_summary_report.csv, abundance_summary_report.csv,
+  assembly_sample_summary_report.csv, assembly_scaffold_summary_report.csv,
+  vmag_scaffold_summary_report.csv, consensus_sequence_properties.json, ...
 ```
 
 Everything viral-lens-owned publishes under `--outdir`. Two exceptions, both in the

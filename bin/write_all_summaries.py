@@ -38,7 +38,10 @@ def build_summary_csv_mapping():
             "nc.qc.snpClusters": "nc.qc.snpClusters",
             "nc.qc.frameShifts": "nc.qc.frameShifts",
             "nc.qc.stopCodons": "nc.qc.stopCodons",
-            "id": "file_prefix"
+            "id": "file_prefix",
+            # which classifier put this row in the report: 'kraken2' or 'sequence_index'
+            # (subworkflows/mapping.nf sets it for both sides at their union)
+            "discovered_by": "Discovered_By"
             }
 
     return summary_map
@@ -65,7 +68,7 @@ def write_summary_csv(data_list, output_path):
                   'Longest_non_N_segment', 'Percentage_non_N_bases', 'nc.selected_dataset', 
                   'nc.coverage', 'nc.qc.overallScore','nc.qc.overallStatus', 'nc.qc.missingData', 
                   'nc.qc.mixedSites', 'nc.qc.privateMutations','nc.qc.snpClusters', 'nc.qc.frameShifts', 
-                  'nc.qc.stopCodons', 'file_prefix']
+                  'nc.qc.stopCodons', 'file_prefix', 'Discovered_By']
 
     ## Write to CSV file
     with open(output_path, mode='w', newline='') as csvfile:
@@ -174,7 +177,7 @@ def main():
         ## probably redundant
         sorted_csv_lines = sorted(csv_lines, key=lambda d: (d["Sample_ID"], d["Virus_Taxon_ID"], d["Flu_Segment"], d["Reference_Taxon_ID"], d["nc.qc.overallScore"]))
         rounded_sorted_csv_lines = [{k: (float(f"{v:.3g}") if isinstance(v, float) else v) for k, v in d.items()} for d in sorted_csv_lines]
-        summary_csv_fname = "summary_report.csv"
+        summary_csv_fname = "mapping_summary_report.csv"
 
         write_summary_csv(rounded_sorted_csv_lines, summary_csv_fname)
 
