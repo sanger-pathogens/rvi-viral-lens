@@ -192,8 +192,12 @@ workflow {
     // "Access to 'CLASSIFYING_INDEX.out' is undefined" whenever --do_sequence_index is
     // off. Empty channels are what "that classifier didn't run" should mean here.
     if (params.do_sequence_index) {
-        CLASSIFYING_INDEX(preprocessed_3tuple_ch)
+        // identified_species_ch: the sequence-index lane reports how many of Kraken2's
+        // selected species it also found (overlapping_n_species), so it needs Kraken2's
+        // set. CLASSIFYING_KRAKEN2 always runs, so this adds no new conditionality.
+        CLASSIFYING_INDEX(preprocessed_3tuple_ch, CLASSIFYING_KRAKEN2.out.identified_species_ch)
         index_species_calls_ch     = CLASSIFYING_INDEX.out.species_calls_ch
+        index_called_species_ch    = CLASSIFYING_INDEX.out.called_species_ch
         // Handover for the abundance lane's optional mSWEEP: it estimates abundances from
         // Themisto2's pseudoalignments rather than from reads, so the sequence-index lane
         // has to have produced them first.
@@ -201,6 +205,7 @@ workflow {
         themisto_ref_groups_ch     = CLASSIFYING_INDEX.out.themisto_ref_groups
     } else {
         index_species_calls_ch     = Channel.empty()
+        index_called_species_ch    = Channel.empty()
         themisto_pseudoaln_ch      = Channel.empty()
         themisto_ref_groups_ch     = Channel.empty()
     }
@@ -216,6 +221,7 @@ workflow {
         CLASSIFYING_KRAKEN2.out.sample_report_with_join_key_ch,
         index_species_calls_ch,
         CLASSIFYING_KRAKEN2.out.identified_species_ch,
+        index_called_species_ch,
         preprocessed_3tuple_ch
     )
 

@@ -35,6 +35,7 @@ include {publish_run_files as publish_mapping_run_files} from '../modules/publis
 workflow CLASSIFYING_INDEX {
     take:
         preprocessed_3tuple_ch  // tuple (meta, read1, read2)
+        identified_species_ch   // [sample_id, [normalized_species_name, ...]] -- CLASSIFYING_KRAKEN2
 
     main:
         sequence_index_sample_ch = preprocessed_3tuple_ch
@@ -121,6 +122,39 @@ workflow CLASSIFYING_INDEX {
         // Both files are per-sample and index_label_map is optional (unwritten when
         // nothing cleared min-hits), so join() -- 1:1 per sample -- naturally drops
         // samples with no calls, which is correct: there is nothing to hand over for them.
+        // -- Which species each method CALLED, independent of every downstream gate -----
+        // Deliberately NOT derived from species_calls_ch below: that lives behind
+        // --call_consensus_for_new_species and is empty by default, which would make both
+        // overlapping_n_species and the report's Discovered_By silently wrong rather than
+        // absent. This reads the same species-hits tables the counts come from, so it is
+        // available whenever the method ran at all.
+        //
+        // [sample_id, species_lower, method] -- one entry per (sample, species, method).
+        called_species_ch = themisto_hits_ch
+            .flatMap { meta, tsv -> called_species_names(tsv).collect { sp -> [meta.id, sp, 'themisto2'] } }
+            .mix(
+                metagraph_align_hits_ch
+                    .flatMap { meta, tsv -> called_species_names(tsv).collect { sp -> [meta.id, sp, 'metagraph_align'] } },
+                metagraph_query_hits_ch
+                    .flatMap { meta, tsv -> called_species_names(tsv).collect { sp -> [meta.id, sp, 'metagraph_query'] } }
+            )
+
+        // How many of the species Kraken2 SELECTED for this sample were also called by a
+        // sequence-index method. Kraken2's side is identified_species_ch -- the species it
+        // acted on (k2r pre-report's virus_name + ref_selected, already normalized), not
+        // every row of the raw Kraken2 report. Counted per sample over the distinct
+        // species names, so a species two methods both called counts once.
+        overlap_counts_ch = called_species_ch
+            .map { sample_id, species, _method -> [sample_id, species] }
+            .unique()
+            .groupTuple()
+            .join(identified_species_ch, remainder: true)
+            .filter { _sample_id, called, _identified -> called != null }
+            .map { sample_id, called, identified ->
+                def kraken2_set = (identified ?: []) as Set
+                [sample_id, [overlapping_n_species: called.count { sp -> kraken2_set.contains(sp) }]]
+            }
+
         if (params.call_consensus_for_new_species) {
             // These consume the *_hits_ch/*_labels_ch variables set in each method's
             // if/else above, NOT VIRAL_*.out directly: a subworkflow that was never invoked
@@ -130,7 +164,7 @@ workflow CLASSIFYING_INDEX {
             // nothing, which is what "that method is off" should mean here.
             themisto_calls_ch = themisto_hits_ch
                 .join(themisto_labels_ch)
-                .flatMap { meta, hits, labels -> parse_species_calls(hits, labels, 'themisto').collect { call -> [meta.id, call] } }
+                .flatMap { meta, hits, labels -> parse_species_calls(hits, labels, 'themisto2').collect { call -> [meta.id, call] } }
 
             metagraph_align_calls_ch = metagraph_align_hits_ch
                 .join(metagraph_align_labels_ch)
@@ -177,15 +211,17 @@ workflow CLASSIFYING_INDEX {
             .join(metagraph_align_counts_ch, remainder: true)
             .join(metagraph_query_counts_ch, remainder: true)
             .join(new_species_counts_ch, remainder: true)
+            .join(overlap_counts_ch, remainder: true)
             // Parameter count matches the tuple width: four joins onto the backbone, so
             // five values after the key. The three *_mapqc_* slots that used to sit in here
             // went with map-QC (breadth is no longer measured at this stage), and the
             // msweep_* slot went with mSWEEP to the abundance lane.
-            .map { id, meta, t_counts, mga_counts, mgq_counts, ns_counts ->
-                def new_meta = meta + (t_counts ?: EMPTY_THEMISTO_COUNTS) +
-                    (mga_counts ?: EMPTY_METAGRAPH_ALIGN_COUNTS) +
-                    (mgq_counts ?: EMPTY_METAGRAPH_QUERY_COUNTS) +
-                    (ns_counts ?: EMPTY_NEW_SPECIES_COUNTS)
+            .map { id, meta, t_counts, mga_counts, mgq_counts, ns_counts, ov_counts ->
+                def new_meta = meta + (t_counts ?: empty_themisto_counts()) +
+                    (mga_counts ?: empty_species_hits_counts('metagraph_align')) +
+                    (mgq_counts ?: empty_species_hits_counts('metagraph_query')) +
+                    (ns_counts ?: empty_new_species_counts()) +
+                    (ov_counts ?: [overlapping_n_species: 0])
                 [id, new_meta]
             }
             .set { mapping_report_prep_ch }
@@ -217,6 +253,12 @@ workflow CLASSIFYING_INDEX {
         // consume it unconditionally.
         species_calls_ch // [sample_id, [species_name:, reference_record:, reference_source:, hit_count:, method:]]
 
+        // Every (sample, species, method) this lane called, with no gate on it -- unlike
+        // species_calls_ch above, which is empty unless --call_consensus_for_new_species.
+        // MAPPING uses it to record ALL the methods that found a species in the report's
+        // Discovered_By, including for species Kraken2 also found and therefore won.
+        called_species_ch // [sample_id, species_lower, method]
+
         // Themisto2's pseudoalignments and the species_labels.txt that goes with them,
         // for the abundance lane's optional MSWEEP (--run_msweep). Both Channel.empty()
         // when run_themisto is off; abundance.nf treats that as "Themisto2 has produced
@@ -231,6 +273,22 @@ workflow CLASSIFYING_INDEX {
 // ran but the step's own output is itself optional per-sample (e.g. nothing above a
 // min-abundance/min-hits threshold). Named constants (not inline [:]) so every sample
 // still gets the same report columns regardless of which method(s) actually ran for it.
+// A count of 0 and a method that never ran are different facts, and a report that spells
+// both "0" cannot be read correctly -- that is exactly how new_species_candidates_n's 0
+// was misread as "the index found nothing new" when the feature was simply off. So the
+// fill value is NA when the corresponding flag is off, and 0 only when the step genuinely
+// ran and found nothing.
+NOT_RUN = 'NA'
+
+def empty_themisto_counts() {
+    def v = params.run_themisto ? 0 : NOT_RUN
+    return [themisto_n_species_considered: v, themisto_n_species_called: v]
+}
+
+def empty_new_species_counts() {
+    return [new_species_candidates_n: params.call_consensus_for_new_species ? 0 : NOT_RUN]
+}
+
 EMPTY_THEMISTO_COUNTS = [themisto_n_species_considered: 0, themisto_n_species_called: 0]
 // One per Metagraph method (align, query) -- both call count_species_hits() with a
 // distinct prefix, since both methods' counts can merge into the same per-sample meta and
@@ -247,7 +305,13 @@ EMPTY_METAGRAPH_QUERY_COUNTS = [metagraph_query_n_species_considered: 0, metagra
 EMPTY_NEW_SPECIES_COUNTS = [new_species_candidates_n: 0]
 
 def empty_species_hits_counts(prefix) {
-    return prefix == 'metagraph_align' ? EMPTY_METAGRAPH_ALIGN_COUNTS : EMPTY_METAGRAPH_QUERY_COUNTS
+    def ran = prefix == 'metagraph_align' ? params.run_metagraph_align
+            : prefix == 'metagraph_query' ? params.run_metagraph_query
+            : params.run_themisto
+    def v = ran ? 0 : NOT_RUN
+    // Parentheses are required: a GString map key is a computed key, and Groovy parses a
+    // bare one as a label instead.
+    return [("${prefix}_n_species_considered".toString()): v, ("${prefix}_n_species_called".toString()): v]
 }
 
 
@@ -274,6 +338,27 @@ def count_species_hits(tsv, prefix) {
     return ["${prefix}_n_species_considered": n_considered, "${prefix}_n_species_called": n_called]
 }
 
+
+
+def called_species_names(hits_tsv) {
+    // Normalized names of the species a method CALLED (provisional_call == "True") in its
+    // <sample>_species_hits.tsv. Same table count_species_hits() counts, same "True"/"False"
+    // spelling from Python's str(bool). Lowercased/trimmed to match identified_species_ch,
+    // which normalizes the Kraken2 side the same way.
+    if (hits_tsv == null || !hits_tsv.exists()) return []
+    def lines = hits_tsv.readLines()
+    if (lines.size() < 2) return []
+    def header = lines[0].split('\t')
+    def species_idx = header.findIndexOf { String col -> col == 'species' }
+    def called_idx  = header.findIndexOf { String col -> col == 'provisional_call' }
+    if (species_idx < 0 || called_idx < 0) return []
+    def max_idx = [species_idx, called_idx].max()
+    return lines[1..-1].collect { String line -> line.split('\t') }
+        .findAll { cols -> max_idx < cols.size() && cols[called_idx].trim() == 'True' }
+        .collect { cols -> cols[species_idx].trim().toLowerCase() }
+        .findAll { name -> name }
+        .unique()
+}
 
 
 def parse_species_calls(hits_tsv, label_map_tsv, method) {
@@ -330,7 +415,7 @@ def parse_species_calls(hits_tsv, label_map_tsv, method) {
               "parse_species_calls() in subworkflows/classifying_index.nf.")
     }
 
-    def source = method == 'themisto' ? 'seqidx' : 'metagraph'
+    def source = method == 'themisto2' ? 'seqidx' : 'metagraph'
     def max_idx = [species_idx, hits_idx, called_idx].max()
     def calls = []
     lines[1..-1].each { String line ->

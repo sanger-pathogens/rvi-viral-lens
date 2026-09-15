@@ -117,9 +117,9 @@ workflow ABUNDANCE {
             .join(abund_est_ran_ch, remainder: true)
             .join(msweep_counts_ch, remainder: true)
             .map { id, meta, b_counts, s_ran, ae_ran, m_counts ->
-                def new_meta = meta + (b_counts ?: EMPTY_BRACKEN_COUNTS) +
+                def new_meta = meta + (b_counts ?: empty_bracken_counts()) +
                     (s_ran ?: [scrub_ran: false]) + (ae_ran ?: [abundance_estimation_ran: false]) +
-                    (m_counts ?: EMPTY_MSWEEP_COUNTS)
+                    (m_counts ?: empty_msweep_counts())
                 [id, new_meta]
             }
             .set { abundance_report_prep_ch }
@@ -132,6 +132,20 @@ workflow ABUNDANCE {
 }
 
 // --- rvi_integration_1: sample-level count helper for the abundance report ---
+
+// A step that never ran and a step that ran and found nothing are different facts; the
+// report spells the first NA and the second 0, rather than conflating them (same rule as
+// subworkflows/classifying_index.nf).
+NOT_RUN = 'NA'
+
+def empty_bracken_counts() {
+    return [bracken_n_species_called: params.run_kraken2bracken ? 0 : NOT_RUN]
+}
+
+def empty_msweep_counts() {
+    if (params.run_msweep) return EMPTY_MSWEEP_COUNTS
+    return [msweep_n_groups: NOT_RUN, msweep_top_group: NOT_RUN, msweep_top_abundance: NOT_RUN]
+}
 
 EMPTY_BRACKEN_COUNTS = [bracken_n_species_called: 0]
 

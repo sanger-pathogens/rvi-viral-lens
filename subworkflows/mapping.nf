@@ -81,6 +81,7 @@ workflow MAPPING {
         kraken2_report_ch        // [join_key, report_meta]                         -- CLASSIFYING_KRAKEN2
         index_species_calls_ch   // [sample_id, call]                               -- CLASSIFYING_INDEX, or Channel.empty()
         identified_species_ch    // [sample_id, [normalized_species_name, ...]]     -- CLASSIFYING_KRAKEN2
+        index_called_species_ch  // [sample_id, species_lower, method]               -- CLASSIFYING_INDEX, or Channel.empty()
         reads_ch                 // tuple (meta, read_1, read_2) -- preprocessed, one per sample
 
     main:
@@ -263,14 +264,39 @@ workflow MAPPING {
         // these are disjoint sets of (sample, reference) pairs rather than two views of the
         // same pair -- disjoint because of the filter above, not by assumption.
         sample_taxid_ch = kraken2_sample_taxid_ch.mix(index_new_sample_taxid_ch)
+        // Discovered_By lists EVERY method that found the species, not just the one whose
+        // call won. Kraken2 wins the reference where both sides agree (index_new_calls_ch
+        // above drops those index calls), so without this the report would say "kraken2"
+        // for a species Themisto2 and Metagraph also called, losing the corroboration.
+        //
+        // index_called_species_ch is the ungated per-method list from CLASSIFYING_INDEX --
+        // not index_species_calls_ch, which is empty unless --call_consensus_for_new_species
+        // and would leave this column permanently reading "kraken2" by default.
+        index_methods_by_species_ch = index_called_species_ch
+            .map { sample_id, species, method -> [[sample_id, species], method] }
+            .groupTuple()
+            .map { key, methods -> [key, methods.unique().sort()] }
+
         sample_report_with_join_key_ch = kraken2_report_ch.mix(index_new_report_ch)
-            // Every report row records which classifier put it there, as Discovered_By.
-            // The index side stamps discovered_by itself when it builds its meta above;
-            // anything arriving without it came from Kraken2, so label that explicitly
-            // rather than leaving the column blank -- blank would be indistinguishable
-            // from a missing value. report_meta is on the right so an existing
-            // discovered_by always wins.
-            .map { join_key, report_meta -> [join_key, [discovered_by: 'kraken2'] + report_meta] }
+            // Key on (sample, normalized species) to look the methods up. A row the index
+            // side produced already knows its own method; a Kraken2 row starts as 'kraken2'
+            // and gains any index method that called the same species.
+            .map { join_key, report_meta ->
+                def species = (report_meta.virus_name ?: report_meta.species_name ?: '').trim().toLowerCase()
+                [[report_meta.sample_id, species], [join_key, report_meta]]
+            }
+            .join(index_methods_by_species_ch, remainder: true)
+            .filter { _key, row, _methods -> row != null }
+            .map { _key, row, methods ->
+                def (join_key, report_meta) = row
+                def own = report_meta.discovered_by == 'sequence_index'
+                    ? (report_meta.discovered_by_method ? [report_meta.discovered_by_method] : [])
+                    : ['kraken2']
+                def all = ((own + (methods ?: [])) as Set).toList().sort()
+                // ';' not ',': a comma forces the CSV writer to quote the cell, and the
+                // report is easier to read and grep without embedded quotes.
+                [join_key, report_meta + [discovered_by: all.join(';')]]
+            }
 
         GENERATE_CONSENSUS(sample_taxid_ch)
 

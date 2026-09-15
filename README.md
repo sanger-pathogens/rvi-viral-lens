@@ -22,6 +22,7 @@
   - [De novo assembly + viral binning outputs](#de-novo-assembly--viral-binning-outputs)
 - [Configuration](#configuration)
   - [Parameters](#parameters)
+  - [Parameter switchboard](#parameter-switchboard)
   - [Profiles](#profiles)
 - [Unit Tests](#unit-tests)
 - [Pipeline components documentation](#pipeline-components-documentation)
@@ -406,11 +407,12 @@ A csv file with selected properties (per sequence) from the properties.json file
 - nc.selected_dataset (identical in JSON)
 - nc.{coverage,overallScore,overallStatus,missingData,mixedSites,privateMutation,snpClusters,frameShifts,stopCodons} (identical in JSON)
 - file_prefix (`id` in JSON)
-- Discovered_By (`discovered_by` in JSON) — which classifier put this row in the report:
-  `kraken2`, or `sequence_index` where the species was called only by the sequence-index
-  lane (Themisto2/Metagraph) and Kraken2 missed it. Where both classifiers agree, Kraken2's
-  call and reference win, so the row is `kraken2`. `sequence_index` rows only ever appear
-  with `--call_consensus_for_new_species true` (default `false`).
+- Discovered_By (`discovered_by` in JSON) — **every** method that called this species, as a
+  sorted `;`-separated list: `kraken2`, `themisto2`, `metagraph_align`, `metagraph_query`.
+  A row reading `kraken2;themisto2` means both found the species; Kraken2 still wins the
+  reference where they agree, so the row is otherwise Kraken2's. A row with no `kraken2`
+  is one only the sequence-index lane found, which requires
+  `--call_consensus_for_new_species true` (default `false`).
 
 
 ### Secondary outputs
@@ -605,6 +607,58 @@ Everything else carries an upstream default unchanged, except
 `nextflow.config`/`nextflow_schema.json`, or `rvi-viral-metagenomics-pipeline`'s
 `rvi_toolbox/subworkflows/kraken2bracken.json`/`abundance_estimation.json` and
 `eu1/rvi_toolbox.git`'s `subworkflows/scrub.json` for the per-parameter rationale.
+
+### Parameter switchboard
+
+`docs/switchboard.html` is a standalone page for answering "if I turn these flags on,
+what actually runs?". Open it in a browser (it needs network access — the fonts and the
+diagram renderer come from a CDN), tick the lane switches, and it redraws the process
+graph for that combination, tallies the processes per lane, and writes out the matching
+`nextflow run` command. It also flags a switch that is **inert** — set, but missing a
+prerequisite, so Nextflow accepts the run and silently skips the step. `--run_scrub`
+without `--run_kraken2bracken` and `--run_msweep` without `--run_themisto` are both
+that shape.
+
+The graph is not hand-drawn. It is assembled from one `-preview -with-dag` run per
+parameter combination, so the wiring is whatever the DSL actually resolves to. Rebuild
+it in three steps after changing a lane switch or the `if (params.*)` gating around a
+subworkflow:
+
+```bash
+# 1. one preview DAG per case, ~23 runs. Under bsub: main.nf never runs on the head
+#    node, not even -preview. No containers or real data needed -- -preview resolves
+#    the graph without executing a task, on the fixtures in tests/test_data.
+bsub -q normal -n 2 -M 6000 -R "select[mem>6000] rusage[mem=6000]" \
+     -o preview.%J.out -e preview.%J.err bash docs/switchboard/preview_dags.sh
+#    -> nf_runs/param_dags/<case>/dag.mmd (untracked scratch; pass a directory to move it)
+
+# 2. contract those to a process-level graph, attributing each process to its switch
+python3 docs/switchboard/build_graph.py        # -> docs/switchboard/graph.json
+
+# 3. inline the graph into the page
+python3 docs/switchboard/build_switchboard.py  # -> docs/switchboard.html
+```
+
+Step 2 is the part that needs care. Nextflow numbers DAG nodes by position, so ids mean
+nothing across runs; processes are identified by subworkflow path plus name, and channel
+and operator nodes are contracted away. Attribution comes from the cases differing by
+**one** switch each: a process present with the switch on and absent with it off is gated
+on that switch. A batch of all-flags-on runs would carry no attribution at all.
+
+So adding a switch means adding an isolating case, in three places:
+
+1. `docs/switchboard/preview_dags.sh` — a case that flips only the new switch relative to
+   an existing case. If the switch is nested inside another (`run_scrub` lives inside
+   `if (params.run_kraken2bracken)`), its baseline is the enclosing switch turned on,
+   not the pipeline default.
+2. `docs/switchboard/build_graph.py` — a `PAIRS` entry naming that baseline, the case and
+   the switch, plus a `FLAGS` entry for the page's provenance table.
+3. `docs/switchboard/template.html` — the switch in `SWITCHES`, with `pre:` listing the
+   flags it needs to do anything, and `grp:` putting it in a lane.
+
+`build_graph.py` prints a warning for any non-baseline process left gated on no switch,
+and for any `PAIRS` entry whose cases are missing, so a forgotten step is visible rather
+than silently producing a graph that ignores the new flag.
 
 ### Profiles
 
