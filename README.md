@@ -461,7 +461,7 @@ Pair of fastq files containing all reads which were associated to the reference 
 <output_dir>/
 ├── assembly_sample_summary_report.csv
 ├── assembly_scaffold_summary_report.csv
-├── vmag_scaffold_summary_report.csv
+├── assembly_vmag_summary_report.csv
 ├── vcontact3/
 │   ├── final_assignments.csv
 │   ├── final_assignments_postprocessed.csv
@@ -502,7 +502,7 @@ The lane's three run-level CSVs are built by `ASSEMBLY_REPORTS`
 | --- | --- | --- |
 | `assembly_sample_summary_report.csv` | sample | the module counts above, plus `taxonomy_geNomad` and `taxonomy_vcontact3` — the set of taxa each classifier assigned anywhere in that sample |
 | `assembly_scaffold_summary_report.csv` | geNomad viral scaffold | CheckV per-scaffold QC (`contig_length`, `gene_count`, `checkv_quality`, `completeness`, `completeness_method`) plus that scaffold's own `taxonomy_geNomad` |
-| `vmag_scaffold_summary_report.csv` | vRhyme bin (vMAG) | `vMAG_ID` (`<sample_id>_vRhyme_bin_<N>`), the same CheckV QC for the linked bin, plus the `vcontact3_taxonomy` assigned to that bin |
+| `assembly_vmag_summary_report.csv` | vRhyme bin (vMAG) | `vMAG_ID` (`<sample_id>_vRhyme_bin_<N>`), the same CheckV QC for the linked bin, plus the `vcontact3_taxonomy` assigned to that bin |
 
 geNomad taxonomy is the lowest rank of its `;`-separated lineage. vContact3
 taxonomy is reported as `<rank>:<taxon>` for the deepest rank carrying a real
