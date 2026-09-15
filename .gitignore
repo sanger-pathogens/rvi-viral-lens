@@ -4,3 +4,4 @@ test_input_manifest_located.csv
 sandbox/__pycache__/
 bin/__pycache__/
 results/
+INSTRUCT.md

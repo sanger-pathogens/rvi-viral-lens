@@ -27,7 +27,6 @@
 - [Pipeline components documentation](#pipeline-components-documentation)
   - [Processes](#processes)
   - [Workflows](#workflows)
-- [rvi_integration_1: work in progress](#rvi_integration_1-work-in-progress)
 - [Licence](#licence)
 
 ---
@@ -41,15 +40,28 @@ The pipeline takes as input (a) a manifest containing  **fastq pairs file** path
 1. **Classify Reads and select references** (`subworkflows/classifying_kraken2.nf`): `kraken2` is initially used to classify the reads in the input fastq, using the input Kraken database. The resulting Kraken2 report is used to select partition the reads into groups, each associated with a selected reference sequence that will be used to guide the reconstruction of the viral genome. 
 
 2. **Generate Consensus** (`subworkflows/mapping.nf`): The reads sets produced in the previous step are aligned to their respective references (via `bwa`
-or minimap2), with the resulting pileup being provided to `ivar` to determine the sequence by consensus (in either one or two rounds). This step is deliberately *shared*: reads can reach it from either classifier — Kraken2 (step 1) or, when `--call_consensus_for_new_species true`, the sequence-index methods for species Kraken2 missed (`subworkflows/classifying_index.nf`). Both hand over the same channel shapes, so steps 2-4 run once over the union rather than once per classifier.
+or minimap2), with the resulting pileup being provided to `ivar` to determine the sequence by consensus (in either one or two rounds). This step is deliberately *shared*: reads can reach it from either classifier — Kraken2 (step 1) or, when `--call_consensus_for_new_species true`, the sequence-index methods for species Kraken2 missed (step 5). Both hand over the same channel shapes, so steps 2-4 run once over the union rather than once per classifier.
 
 3. **NextClade analysis**: (Optional) NextClade is run on the resulting viral genomes.
 
 4. **Pangolin analysis**: (Optional) For SARS-CoV-2 genomes, Pangolin is run to sub-type the genome. 
 
-5. **De novo assembly + viral binning** (Optional, activated by `--do_assembly true`): the same preprocessed reads are also assembled de novo (`metaSPAdes`), classified for viral content (`geNomad`), binned into putative genomes (`vRhyme`), quality-checked (`CheckV`) and clustered/taxonomically assigned (`vContact3`) — a parallel lane alongside steps 1-4, not a replacement for them. See [rvi_integration_1: work in progress](#rvi_integration_1-work-in-progress).
+5. **Classify reads against sequence indexes** (Optional, activated by `--do_sequence_index true`) (`subworkflows/classifying_index.nf`): a second, independent classifier lane running alongside step 1. Reads are pseudoaligned against a prebuilt sequence index — Themisto2 (the lane's default, `--run_themisto`, on unless turned off) and/or Metagraph (`--run_metagraph_align`, `--run_metagraph_query`) — and species are called directly from read-hit counts, with no probabilistic model. It does not replace Kraken2: where both classifiers find the same species, Kraken2's call and reference win. Species **only** this lane found are handed to step 2 for consensus when `--call_consensus_for_new_species true` (default `false`); with the default the lane reports its calls and nothing more. Outputs `sequenceindex_summary_report.csv` plus per-sample hit tables.
 
-The diagram below (rendered with [nf-metro](https://github.com/seqeralabs/nf-metro) from [`docs/nf-metro/route_map.mmd`](docs/nf-metro/route_map.mmd)) shows how these lanes relate — the green line is steps 1-4 above; the purple line is step 5:
+6. **De novo assembly + viral binning** (Optional, activated by `--do_assembly true`): the same preprocessed reads are also assembled de novo (`metaSPAdes`), classified for viral content (`geNomad`), binned into putative genomes (`vRhyme`), quality-checked (`CheckV`) and clustered/taxonomically assigned (`vContact3`) — a parallel lane alongside steps 1-4, not a replacement for them.
+
+7. **Abundance estimation** (Optional, activated by `--do_abundance true`) (`subworkflows/abundance.nf`): Kraken2 + Bracken species abundance (`--run_kraken2bracken`), sourmash/inStrain genome-level profiling (`--run_abundance_estimation`), SCRuB cross-contamination decontamination (`--run_scrub`), and mSWEEP probabilistic abundance (`--run_msweep`). mSWEEP is the one step here that does not start from the reads: it consumes Themisto2's pseudoalignments, so it additionally requires step 5 (`--do_sequence_index true --run_themisto true`).
+
+The diagram below (rendered with [nf-metro](https://github.com/seqeralabs/nf-metro) from [`docs/nf-metro/route_map.mmd`](docs/nf-metro/route_map.mmd)) shows how these lanes relate. Each optional lane is its own line, and they run in parallel over the same preprocessed reads:
+
+| line | lane | steps |
+| --- | --- | --- |
+| grey | every sample (input + preprocessing) | 0 |
+| green | classify by Kraken2 taxid, then consensus | 1-4 |
+| orange | classify against sequence indexes | 5 |
+| purple | de novo assembly + viral binning | 6 |
+| blue | abundance estimation | 7 |
+
 
 ![viral-lens route map](docs/nf-metro/route_map.svg)
 
@@ -443,7 +455,7 @@ Pair of fastq files containing all reads which were associated to the reference 
 
 ### De novo assembly + viral binning outputs
 
-> Only produced if `--do_assembly true` (see [rvi_integration_1: work in progress](#rvi_integration_1-work-in-progress)).
+> Only produced if `--do_assembly true`.
 
 ```bash
 <output_dir>/
@@ -554,8 +566,7 @@ The following command-line parameters can be used to modify the behaviour of the
 
 #### De novo assembly + viral binning (`--do_assembly`)
 
-Off by default; ported from `rvi-viral-metagenomics-pipeline` (see
-[rvi_integration_1: work in progress](#rvi_integration_1-work-in-progress)).
+Off by default; ported from `rvi-viral-metagenomics-pipeline`.
 Requires three reference databases with no bundled default — the pipeline will
 fail validation if `--do_assembly true` is set without all three:
 
@@ -709,7 +720,7 @@ Writes the per-sample + run-level report for this lane, straight from `meta` —
 
 #### GENERATE_MAPPING_REPORT / GENERATE_ABUNDANCE_REPORT
 
-Same shape as `GENERATE_ASSEMBLY_REPORT`. Both are now wired into `main.nf` — see [rvi_integration_1: work in progress](#rvi_integration_1-work-in-progress) for what's landed vs. farm-verified in each of their upstream lanes.
+Same shape as `GENERATE_ASSEMBLY_REPORT`. Both are now wired into `main.nf`.
 
 #### KRAKEN2BRACKEN
 
@@ -718,83 +729,6 @@ A viral-lens-owned fork of `rvi_toolbox`'s own subworkflow of the same name — 
 #### SCRUB_DECONTAM
 
 Runs SCRuB (Austin et al., *Nat Biotechnol* 2023) cross-contamination decontamination once per pipeline run against the whole-run Bracken species-abundance summary and a user-supplied plate map — not per-sample, since decontamination inherently needs the whole batch together. Renders a before/after/change relative-abundance heatmap for visual QC.
-
----
-
-## rvi_integration_1: work in progress
-
-This branch is porting `rvi-viral-metagenomics-pipeline` functionality into viral-lens; the [route map](docs/nf-metro/route_map.svg) tracks the target shape and [`docs/nf-metro/README.md`](docs/nf-metro/README.md) explains how to regenerate/extend it. Landed so far: the de novo assembly + viral binning lane (`--do_assembly`) and its report, fanning into a shared Reporting section alongside the existing classification report.
-
-The assembly lane has now been **run for real on the farm** (LSF + singularity, real
-geNomad/CheckV/vContact3/kraken2 databases) and completes end to end. Fixes that first
-real run forced out, all of which only a real execution could have surfaced:
-
-- manifest reads reached `ASSEMBLE_META` as strings, so `R1.countFastq()` threw;
-- none of the lane's 15 processes were opted into LSF under `sanger_standard`, so they
-  would have run on the submit host;
-- `count_vrhyme_membership()` reported the bin count twice, because Groovy's
-  `List.unique()` de-duplicates in place;
-- vContact3's `--db-version` defaulted to a version that exists in no deployed database,
-  and its post-processing step looked for the genome report outside the versioned
-  database directory;
-- `bowtie2_samtools_only_abundance_estimation` was referenced but never declared.
-
-### Output layout
-
-Per-sample outputs are grouped by lane, not by tool:
-
-```
-<outdir>/
-  <sample_id>/
-    mapping/                  # taxid lane
-      <taxid>/                # consensus, bam, per-taxid properties json
-      <sample_id>.kraken_report.txt
-    assembly/                 # --do_assembly only
-      metaspades/
-      genomad/
-      binning/
-        vrhyme/
-        checkv/
-    sequenceindex/            # --do_sequence_index (--run_themisto / --run_metagraph_align / --run_metagraph_query, any combination)
-      themisto_hits/          # Themisto2: per-species read-hit counts + provisional calls
-      msweep/                 # --run_msweep only: mSWEEP abundances + probs
-      metagraph_hits/         # metagraph align: per-species read-hit counts + provisional calls
-      metagraph_query_hits/   # metagraph query: per-species read-hit counts + provisional calls
-    abundance/                # --do_abundance (--run_kraken2bracken / --run_abundance_estimation / --run_scrub)
-      kraken2/, bracken/      # per-sample Kraken2 classification + Bracken re-estimation
-      instrain/               # --run_abundance_estimation only (inStrain genome profiling)
-      scrub/                  # --run_scrub only; RUN-LEVEL, not per-sample (see below)
-    reports/                  # per-sample lane report json
-  vcontact3/                  # run-level: vContact3 runs once per batch
-  abundance_summary/          # run-level: whole-run Bracken species-abundance summary
-  mapping_summary_report.csv, sequenceindex_summary_report.csv, abundance_summary_report.csv,
-  assembly_sample_summary_report.csv, assembly_scaffold_summary_report.csv,
-  vmag_scaffold_summary_report.csv, consensus_sequence_properties.json, ...
-```
-
-Everything viral-lens-owned publishes under `--outdir`. Two exceptions, both in the
-shared `rvi_toolbox` submodule and left as-is rather than edited at the source (see
-"`rvi_toolbox` fork reconciliation" below): `kraken2bracken.nf`/`abundance_estimation.nf`'s
-modules publish under `params.results_dir`, which viral-lens now aliases to `outdir`
-(`results_dir = params.outdir` in `nextflow.config`) rather than leaving undeclared.
-
-The Themisto2 lane's reference-data defaults point at
-`/data/pam/software/themisto2/viromeindex/1.0/`, confirmed against real files on the farm.
-Its `msweep_map_reference_fasta` must stay positionally aligned with `msweep_ref_groups`
-(record N == line N); both currently hold 1321608 entries. The Metagraph lane's reference
-data has no default and is unverified — see the bullet above.
-
-> **Note on resources:** `sanger_standard` caps `max_time` at 6h, so the lane's `time_12`
-> labels are clamped by `check_max`. That is fine at test scale; geNomad and vContact3 on
-> production-sized input may need that cap raised.
-
-Not yet landed, in rough dependency order:
-
-- **Map reads to sequence indexes** lane — all three route-map methods now exist. Themisto2/mSWEEP (`--run_msweep true`) has **landed and been verified on the farm**. Sequence-to-graph alignment via Metagraph (`--run_metagraph_align true`, `metagraph align`) and pseudoalignment via Metagraph (`--run_metagraph_query true`, `metagraph query --query-mode labels`) have **landed but are only DSL-dry-run-checked, not run for real** — no `metagraph` binary or reference index available where they were written. Pseudoalignment is a deliberately *new, simpler* module, not a revival of an earlier two-stage filter+query pipeline that `metagraph align`'s own module once replaced after finding ~zero real hits on real test data (see `modules/metagraph_query.nf`'s header comment and the `ccae756` commit it cites). All three share `metagraph_align_graph`/`metagraph_align_annotation`/`metagraph_align_annotation_seqs`/`metagraph_map_reference_fasta` — `null` by default and unverified on real HPC paths (`rvi_toolbox`'s own `metagraph_align.config` suggests starting from eu1's personal scratch under `/lustre/scratch126/pam/projects/rvidata/personal/eu1/metagraph/bigviralindex-rvdbc/`, unconfirmed whether that still exists). All three methods feed one `GENERATE_MAPPING_REPORT.nf` call — see `main.nf`'s `if (params.do_sequence_index)` block — and each has its own boolean flag so any combination can run together.
-- **Abundance estimation** lane — **landed but only DSL-dry-run-checked, not run for real**, no kraken2/bracken/scrub/inStrain reference data or containers available where it was written. Kraken2+Bracken (`--run_kraken2bracken true`) and `ABUNDANCE_ESTIMATION` (`--run_abundance_estimation true`, sourmash/inStrain genome-level profiling — heavier and more speculative, not viral-specific) run in parallel; SCRuB (`--run_scrub true`) is a final step on Kraken2+Bracken's output only. All three gated by `--do_abundance` (master switch) plus their own flag. Found and worked around one real bug in the process: `rvi_toolbox`'s `abundance_estimation.nf` references an undefined `INSTRAIN` in its cleanup branch under the *upstream default* flag combination — `cleanup_intermediate_files_abundance_estimation` now defaults `false` here (not `true`) specifically to avoid it. `ABUNDANCE_ESTIMATION`'s own reference-data params (`genome_file_abundance_estimation`, `precomputed_index_abundance_estimation`, `stb_file_abundance_estimation`, etc.) have no working default upstream either — same "must be supplied" situation as `genomad_db` etc.
-- **Wider input handling** — **landed, DSL-verified, not run for real.** `MIXED_INPUT` (`--do_mixed_input true`) merges a local reads manifest, ENA download, and/or iRODS retrieval, selected by which of `--manifest_of_reads`/`--manifest_ena`/`--manifest_of_lanes`/`--studyid` etc. are set. Off by default — existing `--manifest` usage (`parse_mnf()`, `sample_id`/`reads_1`/`reads_2` columns) is untouched; this is a separate, mutually-exclusive path with its own manifest format (`id`/`R1`/`R2`, from `rvi_toolbox`'s `INPUT_CHECK`). Unlike every other lane so far, `MIXED_INPUT`/`ENA_DOWNLOAD`/`DOWNLOAD_FROM_IRODS` already lived in viral-lens's own `rvi_toolbox` — nothing to port. ENA needs live network access to verify; iRODS needs `iinit` auth and the `baton` binary — neither available where this was wired.
-- **`rvi_toolbox` fork reconciliation** — viral-lens's submodule tracks `rvi/rvi_toolbox.git`, 51+ commits behind that fork's own master at time of writing (missing vRhyme/vContact3/geNomad work already merged there); the SCRuB and Metagraph subworkflows this plan depends on exist only on a *different* fork (`eu1/rvi_toolbox.git`, merged to its master). This pass avoided the submodule entirely (see "Port de novo assembly + viral binning lane" commit) precisely because that reconciliation hasn't happened yet.
-- **Per-scaffold meta granularity** — today's assembly report counts are sample-level (`genomad_n_scaffolds`, `vrhyme_n_bins`, etc.); one report row per scaffold, carrying that scaffold's own bin/quality/cluster assignment, is a deliberately deferred stretch goal, not a decision made against it.
 
 ---
 
