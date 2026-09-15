@@ -57,8 +57,8 @@ process VCONTACT3 {
 
     container 'quay.io/sangerpathogens/vcontact3:3.2.4'
 
-    publishDir "${params.outdir}/vcontact3", mode: 'copy', overwrite: true, pattern: "vcontact3_out/exports/final_assignments.csv",   saveAs: { f -> file(f).getName() }
-    publishDir "${params.outdir}/vcontact3", mode: 'copy', overwrite: true, pattern: "vcontact3_out/exports/performance_metrics.csv", saveAs: { f -> file(f).getName() }
+    publishDir "${params.outdir}/vcontact3", mode: 'copy', overwrite: true, pattern: "vcontact3_out/exports/final_assignments.csv",   saveAs: { f -> f ? f.toString().tokenize('/').last() : null }
+    publishDir "${params.outdir}/vcontact3", mode: 'copy', overwrite: true, pattern: "vcontact3_out/exports/performance_metrics.csv", saveAs: { f -> f ? f.toString().tokenize('/').last() : null }
 
     input:
     path(all_proteins_faa)
