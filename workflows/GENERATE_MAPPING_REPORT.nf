@@ -5,7 +5,7 @@ workflow GENERATE_MAPPING_REPORT {
     -----------------------------------------------------------------
     Write Mapping Report
 
-    Same shape as GENERATE_ASSEMBLY_REPORT.nf, for the "map reads to
+    Same shape as GENERATE_ABUNDANCE_REPORT.nf, for the "map reads to
     sequence indexes" lane (pseudoalignment/sequence-to-graph alignment
     + QC Mapping). `meta` arrives already carrying that lane's QC
     Mapping fields.

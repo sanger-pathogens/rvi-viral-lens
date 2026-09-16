@@ -5,7 +5,7 @@ workflow GENERATE_ABUNDANCE_REPORT {
     -----------------------------------------------------------------
     Write Abundance Report
 
-    Same shape as GENERATE_ASSEMBLY_REPORT.nf, for the abundance
+    Same shape as GENERATE_MAPPING_REPORT.nf, for the abundance
     estimation lane (Kraken2+Bracken, optionally followed by SCRuB
     decontamination, and ABUNDANCE_ESTIMATION). Bracken's own species
     table already *is* the detailed report; this just carries the
