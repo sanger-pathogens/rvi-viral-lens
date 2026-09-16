@@ -13,18 +13,35 @@
 // the read-hit count supporting it. subworkflows/mapping.nf takes it from there -- preferring Kraken2's calls where
 // the two classifiers agree, and building consensus for the genuinely new ones.
 //
-// It maps NO reads. Species are called on read-hit counts alone (themisto_align_min_hits
-// / metagraph_align_min_hits). The map-QC step that used to run here -- bowtie2 the reads
-// against each called species' reference, then samtools coverage for breadth -- was
-// removed: it meant a surviving species got mapped twice, once to measure breadth and
-// again for consensus. Breadth is now measured once, downstream, from the consensus
-// alignment MAPPING performs anyway, and MAPPING applies the breadth threshold there (see
+// It maps NO reads. The map-QC step that used to run here -- bowtie2 the reads against
+// each called species' reference, then samtools coverage for breadth -- was removed: it
+// meant a surviving species got mapped twice, once to measure breadth and again for
+// consensus. Breadth is now measured once, downstream, from the consensus alignment
+// MAPPING performs anyway, and MAPPING applies the breadth threshold there (see
 // params.new_species_min_breadth_pct). THEMISTO_MAP_QC.nf / METAGRAPH_MAP_QC.nf are kept
 // but unused.
 //
-// The consequence to be aware of: calls leaving here are hit-count-only, so they are
-// less filtered than they used to be. Index noise that breadth would have rejected now
-// reaches MAPPING and is rejected after its consensus alignment instead.
+// THREE GATES decide a call, all of them inside the species callers and all folded into
+// the one `provisional_call` column, so everything here and downstream respects them
+// without knowing they exist (see rvi_toolbox/modules/themisto_species_call.nf):
+//
+//   READ HITS   themisto_align_min_hits / metagraph_align_min_hits.
+//   TAXONOMY    the species' lineage must sit under params.taxon_filter_whitelist (by
+//               default the eight respiratory virus families) and not under
+//               taxon_filter_blacklist, resolved through params.taxon_filter_table.
+//   REFERENCE   the record the call resolved to must be at least
+//               params.min_called_reference_length bases.
+//
+// The last two exist because these methods query a WHOLE-VIROME index, unlike Kraken2's
+// curated database: read hits there answer "is this sequence in the index and did reads
+// match it", not "is this a virus we report, with enough genome behind it to be worth a
+// consensus". Without them, most of what cleared min-hits on a respiratory sample was
+// neither -- phage, plant and insect viruses sharing k-mers, and partial-CDS records that
+// pass a percentage-of-reference breadth gate trivially precisely because they are short.
+//
+// Breadth is still measured only downstream, so the remaining noise these gates do not
+// catch (a whitelisted family's species with a full-length reference and no real coverage)
+// still reaches MAPPING and is rejected there, after its consensus alignment.
 include {VIRAL_THEMISTO} from '../workflows/VIRAL_THEMISTO.nf'
 include {VIRAL_METAGRAPH_ALIGN} from '../workflows/VIRAL_METAGRAPH_ALIGN.nf'
 include {VIRAL_METAGRAPH_QUERY} from '../workflows/VIRAL_METAGRAPH_QUERY.nf'
@@ -110,14 +127,15 @@ workflow CLASSIFYING_INDEX {
         }
 
         // -- Species calls handed to MAPPING (opt-in): every species a sequence-index
-        // method called on read-hit count alone, plus the reference record the index
-        // points at for it.
+        // method called, plus the reference record the index points at for it.
         //
         // Built from two files the species-calling step already writes -- species_hits.tsv
-        // (species, hit_count, provisional_call) and index_label_map.tsv
-        // (record_id -> species) -- joined per sample. No mapping and no breadth here:
-        // hit count is the whole calling criterion now, and breadth is measured downstream
-        // by MAPPING off the consensus alignment (see this file's header).
+        // (species, hit_count, provisional_call, + the gate columns) and index_label_map.tsv
+        // (record_id -> species) -- joined per sample. No mapping and no breadth here: the
+        // callers' three gates have already decided provisional_call, and breadth is
+        // measured downstream by MAPPING off the consensus alignment (see this file's
+        // header). Nothing in here re-checks the gates, and nothing needs to: an excluded
+        // species simply never carries provisional_call True.
         //
         // Both files are per-sample and index_label_map is optional (unwritten when
         // nothing cleared min-hits), so join() -- 1:1 per sample -- naturally drops
@@ -217,7 +235,7 @@ workflow CLASSIFYING_INDEX {
             // went with map-QC (breadth is no longer measured at this stage), and the
             // msweep_* slot went with mSWEEP to the abundance lane.
             .map { id, meta, t_counts, mga_counts, mgq_counts, ns_counts, ov_counts ->
-                def new_meta = meta + (t_counts ?: empty_themisto_counts()) +
+                def new_meta = meta + (t_counts ?: empty_species_hits_counts('themisto')) +
                     (mga_counts ?: empty_species_hits_counts('metagraph_align')) +
                     (mgq_counts ?: empty_species_hits_counts('metagraph_query')) +
                     (ns_counts ?: empty_new_species_counts()) +
@@ -234,8 +252,9 @@ workflow CLASSIFYING_INDEX {
 
     emit:
         // Handover to subworkflows/mapping.nf: one entry per (sample, species) this lane
-        // called on read-hit count, as [sample_id, call] where call is a Map of
-        // species_name, reference_record, reference_source, hit_count and method.
+        // called -- read hits, taxonomy and reference length all cleared -- as
+        // [sample_id, call] where call is a Map of species_name, reference_record,
+        // reference_source, hit_count and method.
         //
         // reference_source ('seqidx' or 'metagraph') says which reference FASTA
         // reference_record indexes into -- the two families of method report ids in
@@ -280,25 +299,14 @@ workflow CLASSIFYING_INDEX {
 // ran and found nothing.
 NOT_RUN = 'NA'
 
-def empty_themisto_counts() {
-    def v = params.run_themisto ? 0 : NOT_RUN
-    return [themisto_n_species_considered: v, themisto_n_species_called: v]
-}
-
 def empty_new_species_counts() {
     return [new_species_candidates_n: params.call_consensus_for_new_species ? 0 : NOT_RUN]
 }
 
-EMPTY_THEMISTO_COUNTS = [themisto_n_species_considered: 0, themisto_n_species_called: 0]
-// One per Metagraph method (align, query) -- both call count_species_hits() with a
-// distinct prefix, since both methods' counts can merge into the same per-sample meta and
-// would otherwise collide on field name.
-EMPTY_METAGRAPH_ALIGN_COUNTS = [metagraph_align_n_species_considered: 0, metagraph_align_n_species_called: 0]
-EMPTY_METAGRAPH_QUERY_COUNTS = [metagraph_query_n_species_considered: 0, metagraph_query_n_species_called: 0]
 // New-species candidates (--call_consensus_for_new_species): how many species a
-// sequence-index method called on read-hit count and has a reference record for, i.e. how
-// many were handed to MAPPING as consensus candidates -- 0 whenever the feature is off, or
-// on but nothing cleared min-hits for this sample. Whether MAPPING then kept them
+// sequence-index method called and has a reference record for, i.e. how many were handed
+// to MAPPING as consensus candidates -- 0 whenever the feature is off, or on but nothing
+// cleared the callers' gates for this sample. Whether MAPPING then kept them
 // (Kraken2 hadn't already found them, and the consensus cleared
 // new_species_min_breadth_pct) is not visible from here, by design: see the counts block
 // above.
@@ -309,33 +317,92 @@ def empty_species_hits_counts(prefix) {
             : prefix == 'metagraph_query' ? params.run_metagraph_query
             : params.run_themisto
     def v = ran ? 0 : NOT_RUN
+    // The gate counts get their own fill value, on the same NA-vs-0 reasoning as the
+    // others but one level down: a method that never ran reports NA, and a method that ran
+    // with a gate switched off reports NA for THAT gate specifically -- 0 there would read
+    // as "the gate ran and rejected nothing", which is a different fact from "the gate was
+    // never applied". Same trap as new_species_candidates_n's 0 (see NOT_RUN above).
+    def taxon_v = (ran && params.run_taxon_filter) ? 0 : NOT_RUN
+    def ref_v = (ran && params.min_called_reference_length > 0) ? 0 : NOT_RUN
     // Parentheses are required: a GString map key is a computed key, and Groovy parses a
     // bare one as a label instead.
-    return [("${prefix}_n_species_considered".toString()): v, ("${prefix}_n_species_called".toString()): v]
+    return [
+        ("${prefix}_n_species_considered".toString()):      v,
+        ("${prefix}_n_species_called".toString()):          v,
+        ("${prefix}_n_species_taxon_filtered".toString()):  taxon_v,
+        ("${prefix}_n_species_short_reference".toString()): ref_v,
+    ]
 }
 
 
 def count_species_hits(tsv, prefix) {
-    // <sample>_species_hits.tsv: sample_id, species, hit_count, provisional_call -- the
-    // last written by Python's str(bool), so "True"/"False", not lowercase. All three
-    // read-hit methods emit this identical schema (rvi_toolbox/bin/call_metagraph_species.py for both
+    // <sample>_species_hits.tsv: sample_id, species, hit_count, provisional_call, then the
+    // call-gate columns (taxon_filter, taxonomy_id, family, family_taxon_id,
+    // reference_record, reference_length, reference_filter). provisional_call is written by
+    // Python's str(bool), so "True"/"False", not lowercase. All three read-hit methods emit
+    // this identical schema (rvi_toolbox/bin/call_metagraph_species.py for both
     // Metagraph methods, rvi_toolbox/bin/call_themisto_species.py for Themisto2), so one parser serves
     // them all -- prefix ('themisto', 'metagraph_align' or 'metagraph_query') keeps their
     // counts from colliding when several merge into the same per-sample meta.
+    //
+    // Columns are found BY NAME, never by position, so the gate columns could be appended
+    // without touching this -- and so a future column added in the middle cannot silently
+    // shift what gets counted.
     if (tsv == null || !tsv.exists()) return empty_species_hits_counts(prefix)
     def lines = tsv.readLines()
     if (lines.size() < 2) return empty_species_hits_counts(prefix)
     def header = lines[0].split('\t')
     def called_idx = header.findIndexOf { String col -> col == 'provisional_call' }
+    def taxon_idx  = header.findIndexOf { String col -> col == 'taxon_filter' }
+    def ref_idx    = header.findIndexOf { String col -> col == 'reference_filter' }
     def n_considered = lines.size() - 1
     def n_called = 0
-    if (called_idx >= 0) {
-        n_called = lines[1..-1].count { String line ->
-            def cols = line.split('\t')
-            called_idx < cols.size() && cols[called_idx] == 'True'
+    // Why these two are counted separately rather than lumped into one "filtered" figure:
+    // they answer different questions about a run. A large taxon-filtered count is the gate
+    // doing its job on a whole-virome index and says nothing is wrong. A large
+    // short-reference count says the index's representative records for otherwise-wanted
+    // families are fragments, which is a property of the reference set worth noticing. And
+    // a taxon-filtered count of ~everything, with the callers' "not one label resolved"
+    // warning in the log, means the taxonomy table does not match the index at all.
+    def n_taxon_filtered = 0
+    def n_short_reference = 0
+    lines[1..-1].each { String line ->
+        def cols = line.split('\t')
+        if (called_idx >= 0 && called_idx < cols.size() && cols[called_idx] == 'True') n_called += 1
+        // NB `+= 1` rather than `++` on these three counters is for tooling, not style:
+        // `nextflow lint` (25.10.3) cannot parse a postfix `++` here -- it crashes on a
+        // braceless `if x` body ("Range [70, 71) out of bounds") and rejects a braced one
+        // inside a closure ("Unexpected input: '}'"). Groovy accepts every form; only the
+        // linter does not, and `+= 1` is the one it reads cleanly.
+        //
+        // Any reason other than a pass or a disabled gate is a rejection by that gate.
+        // Counted this way (rather than matching each reason string) so a new rejection
+        // reason is included the day it is added, instead of quietly counting as zero.
+        if (taxon_idx >= 0 && taxon_idx < cols.size()) {
+            def reason = cols[taxon_idx].trim()
+            if (reason && reason != 'pass' && reason != 'off') n_taxon_filtered += 1
+        }
+        if (ref_idx >= 0 && ref_idx < cols.size()) {
+            def reason = cols[ref_idx].trim()
+            // 'not_evaluated' is not a reference rejection: it means the taxonomy gate had
+            // already rejected the species, so no reference was ever resolved for it.
+            // Counting it here would double-count every taxon-filtered species.
+            if (reason && !(reason in ['pass', 'off', 'not_evaluated'])) n_short_reference += 1
         }
     }
-    return ["${prefix}_n_species_considered": n_considered, "${prefix}_n_species_called": n_called]
+    // A gate that is switched off reports NA, not the 0 it counted -- and it has to be
+    // decided from the params here, exactly as empty_species_hits_counts() decides it for a
+    // sample with no hits file at all. Reading it off the file instead would make the two
+    // paths disagree within one run: with a gate off, every row's reason is 'off' so
+    // nothing counts as a rejection, and this would report 0 for samples that produced a
+    // hits table while empty_species_hits_counts() reported NA for samples that did not.
+    // Same 0-is-not-NA trap as new_species_candidates_n (see NOT_RUN above), one level in.
+    return [
+        ("${prefix}_n_species_considered".toString()):      n_considered,
+        ("${prefix}_n_species_called".toString()):          n_called,
+        ("${prefix}_n_species_taxon_filtered".toString()):  params.run_taxon_filter ? n_taxon_filtered : NOT_RUN,
+        ("${prefix}_n_species_short_reference".toString()): params.min_called_reference_length > 0 ? n_short_reference : NOT_RUN,
+    ]
 }
 
 
@@ -372,10 +439,12 @@ def parse_species_calls(hits_tsv, label_map_tsv, method) {
     //                 written only for the species that cleared min_hits. This is the
     //                 "ideal reference" per call.
     //
-    // Hit count is the entire calling criterion here: the map-QC step that used to measure
-    // breadth for these species is gone, so there is no breadth_pct to threshold on yet.
-    // MAPPING applies params.new_species_min_breadth_pct after its consensus alignment
-    // instead -- see this file's header and subworkflows/mapping.nf.
+    // provisional_call is the callers' verdict across all three gates (read hits, taxonomy
+    // whitelist/blacklist, reference length), so filtering on it here is all that is needed
+    // -- the taxon_filter/reference_filter columns are for reading the table, not for
+    // re-deciding. There is still no breadth_pct at this stage: the map-QC step that used
+    // to measure it is gone, and MAPPING applies params.new_species_min_breadth_pct after
+    // its consensus alignment instead -- see this file's header and subworkflows/mapping.nf.
     //
     // Species are matched between the two files on the name as written, which is the same
     // string in both (both come from one display_name()/species key in the same Python

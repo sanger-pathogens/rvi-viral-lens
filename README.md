@@ -47,7 +47,7 @@ or minimap2), with the resulting pileup being provided to `ivar` to determine th
 
 4. **Pangolin analysis**: (Optional) For SARS-CoV-2 genomes, Pangolin is run to sub-type the genome. 
 
-5. **Classify reads against sequence indexes** (Optional, activated by `--do_sequence_index true`) (`subworkflows/classifying_index.nf`): a second, independent classifier lane running alongside step 1. Reads are pseudoaligned against a prebuilt sequence index — Themisto2 (the lane's default, `--run_themisto`, on unless turned off) and/or Metagraph (`--run_metagraph_align`, `--run_metagraph_query`) — and species are called directly from read-hit counts, with no probabilistic model. It does not replace Kraken2: where both classifiers find the same species, Kraken2's call and reference win. Species **only** this lane found are handed to step 2 for consensus when `--call_consensus_for_new_species true` (default `false`); with the default the lane reports its calls and nothing more. Outputs `sequenceindex_summary_report.csv` plus per-sample hit tables.
+5. **Classify reads against sequence indexes** (Optional, activated by `--do_sequence_index true`) (`subworkflows/classifying_index.nf`): a second, independent classifier lane running alongside step 1. Reads are pseudoaligned against a prebuilt sequence index — Themisto2 (the lane's default, `--run_themisto`, on unless turned off) and/or Metagraph (`--run_metagraph_align`, `--run_metagraph_query`) — and species are called directly from read-hit counts, with no probabilistic model. Each call must then clear two further gates — a **taxonomy whitelist** (`--taxon_filter_whitelist`, by default the eight respiratory virus families) and a **minimum reference length** (`--min_called_reference_length`, default 1000bp) — see [Sequence-index call gates](#sequence-index-call-gates-taxonomy-and-reference-length). It does not replace Kraken2: where both classifiers find the same species, Kraken2's call and reference win. Species **only** this lane found are handed to step 2 for consensus when `--call_consensus_for_new_species true` (default `false`); with the default the lane reports its calls and nothing more. Outputs `sequenceindex_summary_report.csv` plus per-sample hit tables.
 
 6. **De novo assembly + viral binning** (Optional, activated by `--do_assembly true`): the same preprocessed reads are also assembled de novo (`metaSPAdes`), classified for viral content (`geNomad`), binned into putative genomes (`vRhyme`), quality-checked (`CheckV`) and clustered/taxonomically assigned (`vContact3`) — a parallel lane alongside steps 1-4, not a replacement for them.
 
@@ -576,6 +576,105 @@ Everything else has a default carried over from the source pipeline unchanged:
 `nextflow_schema.json` for their values, or `rvi-viral-metagenomics-pipeline`'s
 `rvi_toolbox/subworkflows/{assemble,genomad,checkv,vrhyme,vcontact3}.json` for
 the per-parameter rationale.
+
+#### Sequence-index call gates (taxonomy and reference length)
+
+Applied by all three sequence-index methods' species callers
+(`rvi_toolbox/bin/call_themisto_species.py`, `call_metagraph_species.py`, via the shared
+`bin/taxon_filter.py` and `bin/reference_lengths.py`) and folded into the same
+`provisional_call` column the read-hit threshold already decides — so the lane's report
+counts and the new-species handover to `MAPPING` both respect them automatically.
+
+These gates exist because these methods query a **whole-virome** index
+(`rvdb_clustered_virome`: 1,321,608 reference sequences covering every viral family RVDB
+carries, and RVDB is a sequence collection rather than a genome collection). A read-hit
+count therefore answers "is this sequence in the index and did reads match it", not "is
+this a virus this pipeline reports, backed by enough genome to be worth a consensus".
+Kraken2's lane needs neither gate: its database is already curated to the viruses of
+interest, so the index itself does this job there.
+
+**1. Taxonomy whitelist/blacklist**
+
+- `run_taxon_filter`: master switch. Default: `true`.
+- `taxon_filter_table`: `RVDB_Taxon_Current.tab`, shipped in the index's own `data/`
+  directory. One row per RVDB accession carrying that accession's **already-flattened**
+  NCBI lineage (realm…strain, each as a name and a taxon id), which is why no taxdump and
+  no parent-walk is needed — the family taxid a whitelist entry is compared against is a
+  column. Keep it in step with the index: it is regenerated per RVDB release, and a table
+  from a different release resolves fewer labels, each then rejected as `unresolved`.
+  Default: `/data/pam/software/themisto2/viromeindex/1.0/data/RVDB_Taxon_Current.tab`.
+- `taxon_filter_whitelist`: comma-separated NCBI taxon ids. A species is kept only if one
+  of them appears **anywhere in its lineage**, so a family taxid accepts every species
+  beneath it, and a genus or species taxid accepts just that clade. Default is the eight
+  respiratory virus families:
+
+  | taxid | family |
+  |---|---|
+  | 10508 | Adenoviridae |
+  | 10780 | Parvoviridae |
+  | 11118 | Coronaviridae |
+  | 2560066 | Sedoreoviridae |
+  | 12058 | Picornaviridae |
+  | 11158 | Paramyxoviridae |
+  | 11244 | Pneumoviridae |
+  | 11308 | Orthomyxoviridae |
+
+- `taxon_filter_blacklist`: taxon ids rejected **even when whitelisted**, for carving an
+  exception out of an accepted family (e.g. one genus within Coronaviridae). Tested before
+  the whitelist, which is the only ordering that makes it useful. Default: empty.
+
+A species the table cannot resolve at all is **rejected**, not admitted: "everything under
+these families, nothing else" cannot be satisfied by a species that fails to demonstrate
+it sits under one. Because that also describes a mismatched table, the callers log the
+resolved fraction and name each whitelisted taxid with the family the table gives it, so a
+wrong or stale table shows up in `.nextflow.log` as `unknown to the table` / `not one
+label resolved` rather than as a quietly empty run.
+
+**2. Minimum reference length**
+
+- `min_called_reference_length`: reject a call whose resolved reference record is shorter
+  than this. `0` disables the gate. Default: `1000`.
+
+RVDB carries partial-CDS, single-gene and mRNA records alongside complete genomes, and on
+a clustered index those take read-hits just as readily. A consensus against a few hundred
+bases is not usable, and worse, it clears the downstream breadth gate trivially —
+`new_species_min_breadth_pct` is a *percentage* of the reference length, so a 400bp
+reference needs only 40 covered bases to reach 10%. Short references are the one class of
+call that gets *easier* to accept the less genome there is behind it, which is why they are
+cut here rather than there.
+
+The verdict is on the record the call actually resolved to — its **most-hit** record — with
+no re-pick. A species whose most-hit record is a fragment is rejected even where the index
+also holds a longer record for it that took hits. That keeps the reported reference exactly
+"the most-hit record", so a call's reference is never silently swapped, and the reason a
+species disappeared is always visible in its own row.
+
+When this gate is on, `INDEX_REFERENCE_LENGTHS`
+(`rvi_toolbox/modules/reference_lengths.nf`) runs **once per run per reference FASTA** to
+price every record — from `msweep_map_reference_fasta` for Themisto2 and
+`metagraph_map_reference_fasta` for the Metagraph methods, i.e. whichever FASTA that
+method's own record ids point into.
+
+**What the outputs show**
+
+A rejected species **keeps its row** in `<sample>/sequenceindex/*/[sample]_species_hits.tsv`
+with `provisional_call` `False` and the reason recorded, so a filtered call stays readable
+against its own hit count. That table gains seven columns:
+
+| column | meaning |
+|---|---|
+| `taxon_filter` | `pass`, `not_whitelisted`, `blacklisted`, `unresolved`, or `off` |
+| `taxonomy_id` | the accession's own NCBI taxon id, from the table |
+| `family` / `family_taxon_id` | the resolved family (`;`-joined if the name is ambiguous across RVDB rows) |
+| `reference_record` | the record the call resolved to (`SEQIDX_<n>` for Themisto2, an accession or taxid for Metagraph) |
+| `reference_length` | that record's length in bases |
+| `reference_filter` | `pass`, `short_reference`, `unknown_length`, `off`, or `not_evaluated` (the taxonomy gate already rejected it, so no reference was resolved) |
+
+`sequenceindex_summary_report.csv` gains two per-method counts alongside
+`*_n_species_considered` / `*_n_species_called`:
+`*_n_species_taxon_filtered` and `*_n_species_short_reference` (`NA` when that method did
+not run, or ran with that gate switched off — distinct from `0`, which means the gate ran
+and rejected nothing).
 
 #### Abundance estimation (`--do_abundance`)
 

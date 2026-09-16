@@ -21,7 +21,7 @@
 //     "Kraken2 already found it" filter.
 //
 // This is the ONLY place either classifier's reads get mapped. CLASSIFYING_INDEX calls
-// species on read-hit counts alone and maps nothing, so there is no breadth figure
+// species without mapping anything, so there is no breadth figure
 // attached to its calls when they arrive -- which is why the breadth threshold that
 // decides whether a sequence-index-only species is worth reporting is applied here, AFTER
 // the consensus alignment, rather than up in the classifier (see

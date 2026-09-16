@@ -39,6 +39,7 @@ include { THEMISTO_PSEUDOALIGN              } from '../rvi_toolbox/modules/themi
 include { CALL_THEMISTO_SPECIES             } from '../rvi_toolbox/modules/themisto_species_call.nf'
 include { CLEANUP_THEMISTO_PSEUDOALIGNMENTS } from '../rvi_toolbox/modules/cleanup.nf'
 include { SUBSAMPLE_ITER                    } from '../rvi_toolbox/subworkflows/subsample.nf'
+include { INDEX_REFERENCE_LENGTHS           } from '../rvi_toolbox/modules/reference_lengths.nf'
 
 /*
 ========================================================================================
@@ -106,14 +107,39 @@ workflow VIRAL_THEMISTO {
         .combine(original_meta_ch, by: 0)
         .map { _id, read_1, read_2, meta -> [meta, read_1, read_2] }
 
+
+    // -- Inputs for the two call gates (see rvi_toolbox/modules/themisto_species_call.nf's
+    // header). Both are passed to the caller unconditionally -- a process input cannot be
+    // conditionally absent -- so when a gate is off an empty placeholder from assets/ is
+    // staged instead and the script reads a zero-byte file as "not supplied".
+    taxon_table_ch = Channel.fromPath(
+        params.run_taxon_filter ? params.taxon_filter_table
+                                : "${projectDir}/assets/NO_TAXON_TABLE"
+    ).first()
+
+    // Reference lengths come from params.msweep_map_reference_fasta -- the FASTA the
+    // .thm2 index was built from, so record N of it is Themisto2's SEQIDX_<n>, and the
+    // same file subworkflows/mapping.nf extracts a called species' reference out of. Any
+    // other FASTA would price the wrong record; call_themisto_species.py cross-checks the
+    // record count against species_labels.txt and aborts if the two disagree.
+    // Gated on the threshold rather than run unconditionally: INDEX_REFERENCE_LENGTHS
+    // streams a multi-GB FASTA, which is wasted work if nothing will read the result.
+    if (params.min_called_reference_length > 0) {
+        INDEX_REFERENCE_LENGTHS(Channel.fromPath(params.msweep_map_reference_fasta))
+        reference_lengths_ch = INDEX_REFERENCE_LENGTHS.out.lengths.first()
+    } else {
+        reference_lengths_ch = Channel.fromPath("${projectDir}/assets/NO_REFERENCE_LENGTHS").first()
+    }
+
     pseudoaligned_ch = THEMISTO_PSEUDOALIGN(capped_reads_ch, index_files_ch, index_prefix_ch)
 
     // Default path: call species straight from pseudoalignment hit counts, no
     // probabilistic model needed (see themisto_species_call.nf).
-    CALL_THEMISTO_SPECIES(pseudoaligned_ch, ref_groups_ch)
+    CALL_THEMISTO_SPECIES(pseudoaligned_ch, ref_groups_ch, taxon_table_ch, reference_lengths_ch)
 
-    // NO map-QC here. Species are called on read-hit counts alone
-    // (themisto_align_min_hits); the validation mapping that used to follow -- bowtie2 the
+    // NO map-QC here. Species are called without mapping any reads: read hits
+    // (themisto_align_min_hits) plus the taxonomy and reference-length gates
+    // CALL_THEMISTO_SPECIES applies. The validation mapping that used to follow -- bowtie2 the
     // reads against each called species' reference, then samtools coverage for breadth --
     // was removed deliberately. Its breadth figure is now obtained downstream instead,
     // from the consensus alignment subworkflows/mapping.nf performs anyway, so a

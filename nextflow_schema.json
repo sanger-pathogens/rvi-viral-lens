@@ -265,6 +265,31 @@
             "type": "integer",
             "default": 4
         },
+        "run_taxon_filter": {
+            "type": "boolean",
+            "default": true,
+            "description": "Keep only sequence-index species calls whose lineage sits under taxon_filter_whitelist (and not under taxon_filter_blacklist), resolved through taxon_filter_table."
+        },
+        "taxon_filter_table": {
+            "type": "string",
+            "default": "/data/pam/software/themisto2/viromeindex/1.0/data/RVDB_Taxon_Current.tab",
+            "description": "RVDB_Taxon_Current.tab: per-accession flattened NCBI lineage shipped with the sequence index. Must match the index's RVDB release."
+        },
+        "taxon_filter_whitelist": {
+            "type": "string",
+            "default": "10508,10780,11118,2560066,12058,11158,11244,11308",
+            "description": "Comma-separated NCBI taxon ids to accept, at any rank. A species is kept only if one of these is in its lineage. Defaults to the eight respiratory virus families."
+        },
+        "taxon_filter_blacklist": {
+            "type": "string",
+            "default": "",
+            "description": "Comma-separated NCBI taxon ids to reject even when whitelisted, for carving an exception out of an accepted family. Tested before the whitelist."
+        },
+        "min_called_reference_length": {
+            "type": "integer",
+            "default": 1000,
+            "description": "Reject a sequence-index species call whose resolved reference record is shorter than this many bases. 0 disables the gate."
+        },
         "call_consensus_for_new_species": {
             "type": "boolean",
             "default": false

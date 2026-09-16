@@ -98,6 +98,13 @@ workflow {
     --metagraph_align_annotation  : ${params.metagraph_align_annotation}
     --metagraph_align_min_hits    : ${params.metagraph_align_min_hits}
 
+  --> Sequence-index call gates (applied by all three methods' species callers):
+    --run_taxon_filter            : ${params.run_taxon_filter}
+    --taxon_filter_table          : ${params.taxon_filter_table}
+    --taxon_filter_whitelist      : ${params.taxon_filter_whitelist}
+    --taxon_filter_blacklist      : ${params.taxon_filter_blacklist ?: '(none)'}
+    --min_called_reference_length : ${params.min_called_reference_length}
+
   --> New-species consensus (subworkflows/mapping.nf; sequence-index calls Kraken2 missed):
     --call_consensus_for_new_species : ${params.call_consensus_for_new_species}
     --new_species_min_breadth_pct    : ${params.new_species_min_breadth_pct}
