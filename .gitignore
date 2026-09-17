@@ -5,3 +5,6 @@ sandbox/__pycache__/
 bin/__pycache__/
 results/
 INSTRUCT.md
+
+# macOS junk -- docs/.DS_Store had already been committed once (bba2a02)
+.DS_Store

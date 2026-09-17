@@ -1,16 +1,4 @@
-// -- abundance estimation (rvi_integration_1) --------------------------------
-// Extracted unchanged from main.nf's inline body. KRAKEN2BRACKEN is a
-// viral-lens-owned fork of rvi_toolbox's own subworkflow (same modules, added
-// an emit: block -- see ../workflows/KRAKEN2BRACKEN.nf's header for why).
-// ABUNDANCE_ESTIMATION is unmodified, included directly from the shared
-// submodule. SCRUB_DECONTAM is ported from eu1/rvi_toolbox.git (that fork's
-// only copy, same situation as Metagraph -- see INSTRUCT.md's "rvi_toolbox
-// fork problem").
 include {KRAKEN2BRACKEN} from '../rvi_toolbox/subworkflows/kraken2bracken.nf'
-// mSWEEP moved here from the sequence-index lane: it estimates abundances, it does not
-// call species. It is the one process in this lane that is not self-sufficient -- it
-// consumes Themisto2's pseudoalignments, so it can only run when CLASSIFYING_INDEX has
-// actually produced them (see the run_msweep block below).
 include {MSWEEP} from '../rvi_toolbox/modules/msweep.nf'
 include {CLEANUP_THEMISTO_PSEUDOALIGNMENTS} from '../rvi_toolbox/modules/cleanup.nf'
 include {ABUNDANCE_ESTIMATION} from '../rvi_toolbox/subworkflows/abundance_estimation.nf'
@@ -20,14 +8,6 @@ include {publish_lane_json as publish_abundance_lane_json} from '../modules/publ
 include {publish_run_files as publish_abundance_run_files} from '../modules/publish_lite.nf'
 
 workflow ABUNDANCE {
-    /*
-    Kraken2+Bracken and ABUNDANCE_ESTIMATION run in parallel off the same
-    preprocessed reads (not downstream of each other, and not downstream of
-    the assembly/mapping lanes either). SCRuB is a final, whole-run step on
-    Kraken2+Bracken's output only (see ../workflows/SCRUB_DECONTAM.nf) --
-    ABUNDANCE_ESTIMATION doesn't go through it. Same join-backbone pattern as
-    the sequence-index lane.
-    */
 
     take:
         preprocessed_3tuple_ch     // tuple (meta, read1, read2)
@@ -47,10 +27,7 @@ workflow ABUNDANCE {
             if (params.run_scrub) {
                 SCRUB_DECONTAM(KRAKEN2BRACKEN.out.abundance_summary)
 
-                // SCRuB runs once per run against the whole-run abundance_summary, not
-                // per sample -- its output (an RDS result object) has no natural
-                // per-sample split, so every sample in this run just records that it
-                // went through the step, not a per-sample decontamination magnitude.
+                // SCRuB runs once per run against the whole-run abundance_summary
                 scrub_ran_ch = abundance_sample_ch
                     .map { id, _meta -> [id, [scrub_ran: true]] }
             } else {
@@ -64,14 +41,7 @@ workflow ABUNDANCE {
         if (params.run_abundance_estimation) {
             ABUNDANCE_ESTIMATION(preprocessed_3tuple_ch)
 
-            // ABUNDANCE_ESTIMATION (rvi_toolbox, unmodified -- included directly, not
-            // forked) has no emit: block, so nothing per-sample is reachable from it
-            // the way KRAKEN2BRACKEN's fork now is. Left as a pass-through call: its own
-            // outputs still publish normally under outdir, but the report only records
-            // that it ran, not per-sample metrics. Deepen this into a real wrapper (same
-            // pattern as ../workflows/KRAKEN2BRACKEN.nf) only once it's clear the flag
-            // alone isn't enough for the report -- same "don't build ahead of need"
-            // reasoning as the assembly lane's deferred per-scaffold granularity.
+            // ABUNDANCE_ESTIMATION has no emit: block, so nothing per-sample is reachable from it the way KRAKEN2BRACKEN's fork now is. 
             abund_est_ran_ch = abundance_sample_ch
                 .map { id, _meta -> [id, [abundance_estimation_ran: true]] }
         } else {
@@ -79,12 +49,8 @@ workflow ABUNDANCE {
         }
 
         // -- mSWEEP probabilistic abundance estimation (opt-in, --run_msweep) -----------
-        // Off by default. Unlike everything else in this lane, mSWEEP does not start from
-        // the reads: it reads Themisto2's pseudoalignments, so it is only meaningful when
-        // the sequence-index lane actually ran Themisto2. Checked up front on the params
-        // rather than left to fail late: without run_themisto the handover channels are
-        // Channel.empty(), so MSWEEP would simply never be scheduled and --run_msweep
-        // would look like it had been honoured while producing nothing at all.
+        // Off by default. mSWEEP reads Themisto2's pseudoalignments, so it is only meaningful when
+        // the sequence-index lane actually ran Themisto2. 
         if (params.run_msweep) {
             if (!params.do_sequence_index || !params.run_themisto) {
                 error("--run_msweep needs Themisto2's pseudoalignments, which are only " +
@@ -100,10 +66,7 @@ workflow ABUNDANCE {
             msweep_counts_ch = MSWEEP.out.abundances
                 .map { meta, abundances, _probs -> [meta.id, count_msweep_abundances(abundances)] }
 
-            // Themisto2's pseudoalignments are unpublished intermediates that accumulate
-            // in the work directory. VIRAL_THEMISTO deliberately does NOT clean them up
-            // when run_msweep is set (that would race this MSWEEP), so the cleanup lands
-            // here instead, after MSWEEP has passed the same files through as an output.
+            // Themisto2's pseudoalignments clean them up
             if (params.cleanup_intermediate_files_msweep) {
                 CLEANUP_THEMISTO_PSEUDOALIGNMENTS(MSWEEP.out.pseudoalignments)
             }
@@ -131,7 +94,7 @@ workflow ABUNDANCE {
         publish_abundance_run_files(GENERATE_ABUNDANCE_REPORT.out.publish_run_level_summaries_ch)
 }
 
-// --- rvi_integration_1: sample-level count helper for the abundance report ---
+// --- sample-level count helper for the abundance report ---
 
 // A step that never ran and a step that ran and found nothing are different facts; the
 // report spells the first NA and the second 0, rather than conflating them (same rule as
@@ -148,15 +111,9 @@ def empty_msweep_counts() {
 }
 
 EMPTY_BRACKEN_COUNTS = [bracken_n_species_called: 0]
-
-// Moved here with mSWEEP from subworkflows/classifying_index.nf.
 EMPTY_MSWEEP_COUNTS = [msweep_n_groups: 0, msweep_top_group: '', msweep_top_abundance: 0.0]
 
 def count_msweep_abundances(txt) {
-    // <sample>_mSWEEP_abundances.txt: "<label>\t<relative_abundance>", '#'-prefixed and
-    // non-numeric-second-column lines skipped -- same rule bin/select_reference_records.py
-    // applies in parse_abundances(), so these counts describe the same set of groups the
-    // downstream map-QC step actually considered.
     if (txt == null || !txt.exists()) return EMPTY_MSWEEP_COUNTS
     def rows = []
     txt.readLines().each { line ->
@@ -182,12 +139,7 @@ def count_msweep_abundances(txt) {
 
 
 def count_bracken_species(mpa) {
-    // <sample>_report_bracken_species.mpa.txt (rvi_toolbox/modules/krakentools.nf's
-    // KREPORT2MPA): tab-separated "<pipe-delimited lineage>\t<count>", one row per
-    // taxonomic rank (kreport2mpa.py run with --intermediate-ranks, so every rank
-    // appears, not just leaves). Counts species-level rows (last lineage segment starts
-    // 's__', same rule bin/reformat_bracken_for_scrub.py's parse_bracken_summary applies)
-    // with a non-zero read count.
+    // Counts species-level rows with a non-zero read count.
     if (mpa == null || !mpa.exists()) return EMPTY_BRACKEN_COUNTS
     def n_called = 0
     mpa.readLines().each { String line ->
