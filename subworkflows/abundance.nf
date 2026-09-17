@@ -63,8 +63,10 @@ workflow ABUNDANCE {
 
             MSWEEP(themisto_pseudoaln_ch, themisto_ref_groups_ch.first())
 
+            // 2-tuple, not 3: MSWEEP no longer writes the per-read probability matrix
+            // (--write-probs), which cost tens of GB per sample and nothing consumed.
             msweep_counts_ch = MSWEEP.out.abundances
-                .map { meta, abundances, _probs -> [meta.id, count_msweep_abundances(abundances)] }
+                .map { meta, abundances -> [meta.id, count_msweep_abundances(abundances)] }
 
             // Themisto2's pseudoalignments clean them up
             if (params.cleanup_intermediate_files_msweep) {

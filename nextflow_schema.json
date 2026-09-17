@@ -503,6 +503,11 @@
             "type": "integer",
             "default": 40
         },
+        "scrub_heatmap_min_read_change": {
+            "type": "integer",
+            "default": 20,
+            "description": "Below this raw read-count change, the SCRuB before/after heatmap treats a cell as unchanged and leaves it uncoloured."
+        },
         "scrub_zero_species_in_controls": {
             "type": "string",
             "default": ""
