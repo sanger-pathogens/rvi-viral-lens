@@ -8,14 +8,14 @@
 ## Contents
 - [Pipeline Summary](#pipeline-summary)
 - [How to Cite](#how-to-cite)
-- [Basic usage](#basic-usagwe)
+- [Basic usage](#basic-usage)
 - [Installation and dependencies](#installation-and-dependencies)
   - [Software](#software)
   - [Containers](#containers)
 - [Inputs](#inputs)
   - [Manifest](#manifest)
   - [Kraken2 Database](#kraken2-database)
-  - [NextClade config](#nextClade-index-json)
+  - [NextClade config](#nextclade-index-json)
 - [Outputs](#outputs)
   - [Primary outputs](#primary-outputs)
   - [Secondary outputs](#secondary-outputs)
@@ -27,7 +27,7 @@
 - [Unit Tests](#unit-tests)
 - [Pipeline components documentation](#pipeline-components-documentation)
   - [Processes](#processes)
-  - [Workflows](#workflows)
+  - [Lanes and steps](#lanes-and-steps)
 - [Licence](#licence)
 
 ---
@@ -809,122 +809,24 @@ This process runs nextClade on the reconstructed sequences, recording the result
 
 [**(&uarr;)**](#contents)
 
-### Sub-workflows
+### Lanes and steps
 
-#### SORT_READS_BY_REF
+The pipeline's own Nextflow code is documented next to it, one README per directory, so a
+description sits beside the file it describes rather than drifting from it here:
 
-The SORT_READS_BY_REF workflow processes paired-end sequencing reads by sorting them according to taxonomic classifications obtained from Kraken2. This workflow uses a manifest file to process multiple samples and produces sorted by taxid FASTQ files for each sample and classification reports.
-
-#### GENERATE_CONSENSUS
-
-The `GENERATE_CONSENSUS` workflow performs read alignment and consensus sequence generation for sequencing data. It processes paired-end reads by aligning them to reference genomes using BWA, followed by consensus calling with iVar. This workflow is designed to take in sequencing data for different samples and taxonomic IDs, process them, and produce consensus sequences.
-
-#### COMPUTE_QC_METRICS
-
-The `COMPUTE_QC_METRICS` workflow is designed to compute quality control (QC) metrics for consensus sequences generated from sequencing data. The workflow processes each sample's data to evaluate the quality and coverage of the generated consensus sequences. The QC metrics include the percentage of bases covered, the percentage of N bases, the longest segment without N bases, and read alignment statistics (total reads aligned, unmapped and mapped).
-
-#### SCOV2_SUBTYPING
-
-The `SCOV2_SUBTYPING` workflow is designed to determine the SARS-CoV-2 lineage (subtype) of consensus sequences using the PANGOLIN tool. This workflow takes in a channel of consensus sequences along with their metadata, runs the PANGOLIN lineage classification, and outputs updated metadata with the assigned lineage.
-
-#### GENERATE_CLASSIFICATION_REPORT
-
-The `GENERATE_CLASSIFICATION_REPORT` workflow generates a classification report based on metadata associated with sequencing samples. This workflow collects metadata from each sample, formats the data into a report line, and aggregates these lines into a final classification report file. A report file with filtered out sequences is written as well.
-
-#### RUN_NEXTCLADE
-
-The `RUN_NEXCLADE` workflow generate QC metrics for sequences supported by a dataset (path set by `nextclade_data_dir` parameter) which provides a **reference FASTA**, a **GFF3 annotation** and (optionally) a **tree JSON** following the directory structure bellow:
-
-If `nextclade_index_json` is not provided, this workflow will not run.
-
-#### ASSEMBLE_META
-
-De novo assembles preprocessed reads with `metaSPAdes`, subsampling first (`SUBSAMPLE_ITER`) if a sample is above `metaspades_subsample_limit`. Only runs if `--do_assembly true`.
-
-#### GENOMAD_CLASSIFY
-
-Runs `geNomad` on each sample's metaSPAdes scaffolds to identify viral sequences, emitting per-sample virus summary/FASTA/protein files consumed by every downstream step in this lane.
-
-#### VRHYME_BIN
-
-Bins viral scaffolds into putative genomes with `vRhyme`, using a pooled cross-sample coverage signal (every qualifying sample's scaffolds are pooled into one bowtie2 index so coverage covariance across the whole batch informs each sample's own binning) — the one step in this lane that isn't purely per-sample. Guarantees a real (possibly empty) `membership.tsv` and bins directory for every sample, so downstream steps never need to special-case "no bins".
-
-#### CHECKV_QC
-
-Runs `CheckV` on both geNomad's raw virus scaffolds and vRhyme's linked bins, producing the quality calls `VCONTACT3_RUN` uses to promote high/medium-quality binned scaffolds to standalone genomes alongside their bin.
-
-#### VCONTACT3_RUN
-
-Note: vcontact3 is an experimental module as its performance for RNA virus detection has not been benchmarked by its authors. Moreover, non-consensus genomes and incomplete genomes is not ideal inputs as the tool relies on protein-sharing networks.
-
-Per-sample, reconciles vRhyme's binned scaffolds and geNomad's unbinned scaffolds
-(`vcontact3_prep.py`) into one vContact3-shaped input; pipeline-level, runs `vContact3`
-once across every sample's combined input, then post-processes the taxonomy calls
-(`vcontact3_postprocess.py`). Runs on `quay.io/sangerpathogens/vcontact3:3.2.4` against
-the reference database at `--vcontact3_db_path` / `--vcontact3_db_version` (default
-v236, `--vcontact3_db_domain eukaryotes`).
-
-**What counts as a "genome"** — `vcontact3_prep.py` namespaces every entry by sample, so
-one batch-level run can be split back apart afterwards:
-
-| genome ID | is | proteins from |
+| directory | holds | README |
 | --- | --- | --- |
-| `<sample_id>&#124;&#124;bin_<N>` | a vRhyme bin | that bin's own `vRhyme_bin_<N>.faa` (vRhyme's gene calls, not geNomad's) |
-| `<sample_id>&#124;&#124;<scaffold>` | an unbinned scaffold with `n_genes > 0` | geNomad's `virus_proteins.faa` |
-| `<sample_id>&#124;&#124;<scaffold>&#124;&#124;standalone` | a **binned** scaffold CheckV called High- or Medium-quality | geNomad's, under a distinct ID so it never collides with the copy already emitted under its bin |
+| [`subworkflows/`](subworkflows/) | the **lanes** — one per `--do_*` flag, wired straight into `main.nf` | [`subworkflows/README.md`](subworkflows/README.md) |
+| [`workflows/`](workflows/) | the **steps** those lanes are built from | [`workflows/README.md`](workflows/README.md) |
+| [`modules/`](modules/) | individual processes — see [Processes](#processes) above | — |
+| [`rvi_toolbox/subworkflows/`](rvi_toolbox/subworkflows/) | steps shared with the other RVI pipelines | [`rvi_toolbox/README.md`](rvi_toolbox/README.md) |
 
-The third case is why `CHECKV_QC` feeds this step: a scaffold confident enough to stand
-on its own is given to vContact3 both inside its bin and separately, so the
-protein-sharing network sees both signals.
+Start from [`subworkflows/README.md`](subworkflows/README.md): it shows how the lanes fit
+together and which are on by default. Nothing in `workflows/` runs on its own — it runs
+because a lane calls it — so to find out whether a given step executes, start from the lane
+that calls it.
 
-**Post-processing** (`vcontact3_postprocess.py`) does three things:
-
-1. Keeps **query genomes only** — rows whose Genome contains the `||` separator above.
-   Reference genomes from vContact3's own database never contain it.
-2. Fills in each query genome's `Proteins` count from the run's combined
-   `gene2genome.tsv`. This is load-bearing rather than cosmetic: vConTACT3 populates
-   `Proteins` (and `GenomeName`, `Size_Kb`) only from its reference-DB metadata table,
-   so the column is blank for every query genome, and comparing a blank against the
-   protein-range thresholds below is silently always false. Without this the flagging in
-   step 3 could never fire. The step fails loudly if a count cannot be derived.
-3. Flags a novel-genus call as uncertain when the genome has too few or too many
-   proteins for it to be trusted — below `--vcontact3_postprocess_min_proteins` (5) or
-   above `--vcontact3_postprocess_max_proteins` (20). Flagged calls get an
-   `uncertain_novel_` prefix on `genus_prediction`.
-
-Creates four outputs:
-
-- `final_assignments.csv` — vContact3's own output, every genome in the run including the reference database's
-- `performance_metrics.csv` — vContact3's own run statistics
-- `final_assignments_postprocessed.csv` — query genomes only, sorted by genome ID, with the `Proteins` backfill and the `uncertain_novel_` flagging applied
-- `final_assignments_noveltaxa.csv` — the subset whose `genus_prediction` is *still* a novel-genus call after step 3, i.e. the candidate novel genera confident enough to review
-
-`final_assignments_postprocessed.csv` is what `ASSEMBLY_REPORTS` joins against to fill the
-`taxonomy_vcontact3` / `vcontact3_taxonomy` columns of the lane's run-level CSVs, matching
-each vMAG on its `<sample_id>||bin_<N>` ID.
-
-> **Both post-processed files will be empty if the query-genome separator and
-> `vcontact3_prep.py` ever disagree** — the filter matches on `||` and nothing warns when
-> it selects nothing. This is not hypothetical: it read `#` until 2026-09, and every run
-> before that produced header-only postprocessed output while reporting success.
-
-#### GENERATE_ASSEMBLY_REPORT
-
-**Removed.** This lane writes no per-sample or run-level JSON: its three run-level CSVs
-are built by `ASSEMBLY_REPORTS` from the modules' own output files. See
-[De novo assembly + viral binning outputs](#de-novo-assembly--viral-binning-outputs).
-
-#### GENERATE_MAPPING_REPORT / GENERATE_ABUNDANCE_REPORT
-
-Same shape as `GENERATE_ASSEMBLY_REPORT`. Both are now wired into `main.nf`.
-
-#### KRAKEN2BRACKEN
-
-A viral-lens-owned fork of `rvi_toolbox`'s own subworkflow of the same name — identical orchestration and shared modules, only difference is an added `emit:` block (that subworkflow has none upstream, so nothing it produces was otherwise reachable). Feeds both `GENERATE_ABUNDANCE_REPORT` and `SCRUB_DECONTAM`.
-
-#### SCRUB_DECONTAM
-
-Runs SCRuB (Austin et al., *Nat Biotechnol* 2023) cross-contamination decontamination once per pipeline run against the whole-run Bracken species-abundance summary and a user-supplied plate map — not per-sample, since decontamination inherently needs the whole batch together. Renders a before/after/change relative-abundance heatmap for visual QC.
+[**(&uarr;)**](#contents)
 
 ---
 
