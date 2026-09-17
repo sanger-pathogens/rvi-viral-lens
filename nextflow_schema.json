@@ -20,6 +20,11 @@
             "type": "string",
             "default": "$launchDir/output/"
         },
+        "do_mapping": {
+            "type": "boolean",
+            "default": true,
+            "description": "Master switch for the mapping lane: Kraken2 taxid classification plus consensus, Nextclade, subtyping and the classification report. On by default. With it off the run is reference-free and no kraken2 database is required."
+        },
         "do_scov2_subtyping": {
             "type": "boolean",
             "default": true

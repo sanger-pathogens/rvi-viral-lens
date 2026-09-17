@@ -193,9 +193,12 @@ def check_sort_reads_params(){
 
     */
     def errors = 0
-    // was the kraken database provided?
-    if (params.db_path == null){
-        log.error("No kraken database path provided")
+    // was the kraken database provided? Only this lane consumes it, so it is only
+    // required when the lane runs -- an assembly-only or abundance-only run
+    // (--do_mapping false) needs no kraken2 database. The manifest check below is NOT
+    // gated: every lane reads the manifest, so it has to be validated either way.
+    if (params.do_mapping && params.db_path == null){
+        log.error("No kraken database path provided, which --do_mapping true requires")
         errors +=1
     }
 

@@ -21,21 +21,26 @@ The reusable steps a lane composes live one directory over, in
 
 | lane | flag | default | run-level report |
 | --- | --- | --- | --- |
-| [`classifying_kraken2.nf`](#classifying_kraken2nf) | — | **always runs** | (feeds `mapping.nf`) |
-| [`mapping.nf`](#mappingnf) | — | **always runs** | `mapping_summary_report.csv` |
+| [`classifying_kraken2.nf`](#classifying_kraken2nf) | `--do_mapping` | **on** | (feeds `mapping.nf`) |
+| [`mapping.nf`](#mappingnf) | `--do_mapping` | **on** | `mapping_summary_report.csv` |
 | [`classifying_index.nf`](#classifying_indexnf) | `--do_sequence_index` | off | `sequenceindex_summary_report.csv` |
 | [`assembly.nf`](#assemblynf) | `--do_assembly` | off | three `assembly_*_summary_report.csv` |
 | [`abundance.nf`](#abundancenf) | `--do_abundance` | off | `abundance_summary_report.csv` |
+
+`--do_mapping` covers **two** files, because Kraken2 classification and the consensus pass
+are halves of one pipeline — the original viral-lens, before the other lanes existed. It is
+the only lane on by default, for that reason: defaulting it off would silently change every
+existing command. At least one lane must be enabled, or the run is rejected at startup.
 
 ### How they fit together
 
 Two lanes **classify** and one **builds consensus for both of them**:
 
 ```
-preprocessed reads ─┬─→ classifying_kraken2.nf ─┐
+preprocessed reads ─┬─→ classifying_kraken2.nf ─┐   (--do_mapping)
                     │                            ├─→ mapping.nf ─→ consensus, Nextclade,
-                    ├─→ classifying_index.nf ───┘                  subtyping, classification
-                    │        (--do_sequence_index)                 report
+                    ├─→ classifying_index.nf ───┘   (--do_mapping)  subtyping, classification
+                    │        (--do_sequence_index)                  report
                     ├─→ assembly.nf      (--do_assembly)
                     └─→ abundance.nf     (--do_abundance)
                               ↑
@@ -49,9 +54,21 @@ rather than growing parallel copies of it. That union is why a species only Them
 Metagraph found still gets Nextclade, SARS-CoV-2 subtyping and a row in the classification
 report — it once had its consensus published on its own with none of that.
 
-The only cross-lane dependency is the dashed one above: `--run_msweep` in the abundance lane
-consumes Themisto2's pseudoalignments, so it additionally needs
-`--do_sequence_index --run_themisto`, and `main.nf` errors up front if that is missing.
+Cross-lane dependencies, all rejected at startup rather than mid-run:
+
+| this | needs | because |
+| --- | --- | --- |
+| `--run_msweep` | `--do_sequence_index --run_themisto` | mSWEEP estimates from Themisto2's pseudoalignments, not from reads |
+| `--call_consensus_for_new_species` | `--do_mapping` | `mapping.nf` is what resolves those references, maps them and applies the breadth gate |
+
+**Running with `--do_mapping false`** makes the run reference-free — there is nowhere for a
+consensus to come from. Two knock-on effects worth knowing:
+
+- Kraken2 database parameters stop being required, so an assembly-only or abundance-only run
+  needs no Kraken2 database. The **manifest** is still validated; every lane reads it.
+- `classifying_index.nf` still runs and still reports its calls, but reports
+  `overlapping_n_species` as `NA` — there are no Kraken2 calls to overlap with, which is not
+  the same fact as an overlap of zero.
 
 ### Report convention shared by every lane
 
@@ -67,7 +84,7 @@ did not run *or* ran with that gate switched off.
 ## `classifying_kraken2.nf`
 
 Classifies reads by Kraken2 taxid and selects a reference per taxid — everything up to, but
-not including, consensus. Always runs.
+not including, consensus. Runs unless `--do_mapping false`.
 
 | | |
 | --- | --- |
@@ -87,8 +104,8 @@ places consume it: `classifying_index.nf` counts how many of its own calls overl
 ## `mapping.nf`
 
 Consensus generation, lineage calling and classification reporting, over the union of **both**
-classifiers' findings. Always runs. The only place in the pipeline where either classifier's
-reads get mapped.
+classifiers' findings. Runs unless `--do_mapping false`. The only place in the pipeline where
+either classifier's reads get mapped.
 
 | | |
 | --- | --- |

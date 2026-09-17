@@ -4,25 +4,10 @@
 // enable dsl2
 nextflow.enable.dsl = 2
 
-// --- import modules ---------------------------------------------------------
 include {check_sort_reads_params} from './workflows/SORT_READS_BY_REF.nf'
 include {validateParameters; paramsSummaryLog} from 'plugin/nf-schema'
-
 include {PREPROCESSING} from "./rvi_toolbox/subworkflows/preprocessing.nf"
-// Widened input handling (rvi_integration_1) -- already lives in viral-lens's own
-// rvi_toolbox (rvi/rvi_toolbox.git), unlike every other new lane this integration; no
-// fork/port needed.
 include {MIXED_INPUT} from "./rvi_toolbox/subworkflows/mixed_input.nf"
-
-// --- rvi_integration_1 lanes -------------------------------------------------
-// Each lane is its own subworkflow under subworkflows/, self-contained (including
-// its own sample-level report-count helpers and PUBLISH calls). main.nf just wires
-// preprocessed reads into whichever lanes are enabled.
-//
-// The exception is consensus generation, which is deliberately NOT per-lane: two
-// classifiers can find a species worth a consensus (Kraken2, and the sequence
-// indexes for species Kraken2 missed), and both hand over to the one shared MAPPING
-// subworkflow rather than each running its own consensus/Nextclade/report pass.
 include {CLASSIFYING_KRAKEN2} from './subworkflows/classifying_kraken2.nf'
 include {CLASSIFYING_INDEX} from './subworkflows/classifying_index.nf'
 include {MAPPING} from './subworkflows/mapping.nf'
@@ -42,7 +27,7 @@ workflow {
 
   log.info """${ANSI_RESET}
   ===========================================
-  Viral Lens [v1.5.1]
+  Viral Lens [v2.0.0]
   Used parameters:
   -------------------------------------------
   --> general pipeline parameters:
@@ -50,6 +35,7 @@ workflow {
     --do_mixed_input           : ${params.do_mixed_input}
     --do_preprocessing         : ${params.do_preprocessing}
     --do_assembly              : ${params.do_assembly}
+    --do_mapping               : ${params.do_mapping}
     --do_sequence_index        : ${params.do_sequence_index}
     --do_abundance             : ${params.do_abundance}
     --default_error_strategy   : ${params.default_error_strategy}
@@ -137,20 +123,12 @@ workflow {
     // === 1 - Process input ===
     check_main_params()
     // ==========================
-    // Widened input handling (rvi_integration_1, opt-in via --do_mixed_input): existing
-    // --manifest usage (parse_mnf()) is completely unchanged when this is off (the
-    // default). When on, MIXED_INPUT merges a local reads manifest (its OWN id/R1/R2
-    // columns -- not parse_mnf()'s sample_id/reads_1/reads_2), ENA download, and/or iRODS
-    // retrieval into the same downstream shape.
     if (params.do_mixed_input) {
         MIXED_INPUT()
 
         reads_ch = MIXED_INPUT.out.all_reads_ready_ch
             .map { meta, r1, r2 ->
-                // MIXED_INPUT's sources (INPUT_CHECK/ENA_DOWNLOAD/DOWNLOAD_FROM_IRODS,
-                // rvi_toolbox/subworkflows/{input_check,ena_input,irods}.nf) only ever set
-                // meta.id; everything downstream (publishDir paths, report columns) keys
-                // off meta.sample_id.
+                // meta.sample_id > meta.id 
                 def new_meta = meta + [sample_id: meta.id]
                 [new_meta, [r1, r2]]
             }
@@ -159,8 +137,7 @@ workflow {
     }
 
     // === Preprocessing ===
-    // preprocessed_3tuple_ch (meta, read1, read2) is the single shared input every
-    // lane below (mapping, assembly, sequence-index, abundance) consumes.
+    // preprocessed_3tuple_ch (meta, read1, read2) is the single shared input 
     if (params.do_preprocessing) {
         reads_ch.map{ meta, fastqs ->
             return [meta, fastqs[0], fastqs[1]]
@@ -170,44 +147,39 @@ workflow {
         PREPROCESSING.out.out_ch.set{ preprocessed_3tuple_ch }
 
     } else {
-        // file() matters: parse_mnf yields the manifest's raw strings, while
-        // PREPROCESSING emits real paths. Consumers that only declare `path`
-        // inputs coerce either, but ASSEMBLE_META calls R1.countFastq() in a
-        // map closure, which needs a Path. Coerce here so both branches really
-        // do emit the same shape, as the comment above claims.
         reads_ch.map{ meta, fastqs ->
             return [meta, file(fastqs[0]), file(fastqs[1])]
         }.set{ preprocessed_3tuple_ch }
     }
 
     // ==========================
-    // === 2 - Classify reads by Kraken2 taxid (see subworkflows/classifying_kraken2.nf)
-    CLASSIFYING_KRAKEN2(preprocessed_3tuple_ch)
+    // === 2 - Classify reads by Kraken2
+    // Kraken2 classification and the consensus pass below are the two halves of one
+    // pipeline, so --do_mapping switches both. Outputs are hoisted into variables because
+    // a subworkflow that was never invoked has no .out at all -- reaching for
+    // CLASSIFYING_KRAKEN2.out with the flag off aborts the run.
+    if (params.do_mapping) {
+        CLASSIFYING_KRAKEN2(preprocessed_3tuple_ch)
+        kraken2_sample_taxid_ch = CLASSIFYING_KRAKEN2.out.sample_taxid_ch
+        kraken2_report_ch       = CLASSIFYING_KRAKEN2.out.sample_report_with_join_key_ch
+        identified_species_ch   = CLASSIFYING_KRAKEN2.out.identified_species_ch
+    } else {
+        kraken2_sample_taxid_ch = Channel.empty()
+        kraken2_report_ch       = Channel.empty()
+        identified_species_ch   = Channel.empty()
+    }
 
-    // === 3 - De novo assembly + viral binning (rvi_integration_1, opt-in) ===
+    // === 3 - De novo assembly + viral binning ===
     if (params.do_assembly) {
         ASSEMBLY(preprocessed_3tuple_ch)
     }
 
-    // === 4 - Classify reads against sequence indexes (rvi_integration_1, opt-in) ===
-    // Independent of CLASSIFYING_KRAKEN2: it emits every species it calls above the
-    // breadth threshold, and MAPPING decides which of those are actually new (see
-    // subworkflows/mapping.nf).
-    //
-    // The else branch matters: a subworkflow that was never invoked has no .out at all,
-    // so handing MAPPING `CLASSIFYING_INDEX.out.*` directly would abort the run with
-    // "Access to 'CLASSIFYING_INDEX.out' is undefined" whenever --do_sequence_index is
-    // off. Empty channels are what "that classifier didn't run" should mean here.
+    // === 4 - Classify reads against sequence indexes ===
     if (params.do_sequence_index) {
-        // identified_species_ch: the sequence-index lane reports how many of Kraken2's
-        // selected species it also found (overlapping_n_species), so it needs Kraken2's
-        // set. CLASSIFYING_KRAKEN2 always runs, so this adds no new conditionality.
-        CLASSIFYING_INDEX(preprocessed_3tuple_ch, CLASSIFYING_KRAKEN2.out.identified_species_ch)
+        CLASSIFYING_INDEX(preprocessed_3tuple_ch, identified_species_ch)
         index_species_calls_ch     = CLASSIFYING_INDEX.out.species_calls_ch
         index_called_species_ch    = CLASSIFYING_INDEX.out.called_species_ch
-        // Handover for the abundance lane's optional mSWEEP: it estimates abundances from
-        // Themisto2's pseudoalignments rather than from reads, so the sequence-index lane
-        // has to have produced them first.
+        // Handover for the abundance lane's optional mSWEEP abundances estimation
         themisto_pseudoaln_ch      = CLASSIFYING_INDEX.out.themisto_pseudoalignments
         themisto_ref_groups_ch     = CLASSIFYING_INDEX.out.themisto_ref_groups
     } else {
@@ -218,21 +190,18 @@ workflow {
     }
 
     // === 5 - Consensus, lineage calling and classification report ===
-    // One pass over both classifiers' findings (see subworkflows/mapping.nf). MAPPING also
-    // decides what is worth a consensus: Kraken2's calls and references win where the two
-    // classifiers agree (identified_species_ch is what the index side is filtered
-    // against), and only the species Kraken2 missed get resolved and mapped off the
-    // index's calls -- which is why MAPPING needs the reads as well.
-    MAPPING(
-        CLASSIFYING_KRAKEN2.out.sample_taxid_ch,
-        CLASSIFYING_KRAKEN2.out.sample_report_with_join_key_ch,
-        index_species_calls_ch,
-        CLASSIFYING_KRAKEN2.out.identified_species_ch,
-        index_called_species_ch,
-        preprocessed_3tuple_ch
-    )
+    if (params.do_mapping) {
+        MAPPING(
+            kraken2_sample_taxid_ch,
+            kraken2_report_ch,
+            index_species_calls_ch,
+            identified_species_ch,
+            index_called_species_ch,
+            preprocessed_3tuple_ch
+        )
+    }
 
-    // === 6 - Abundance estimation (rvi_integration_1, opt-in) ===
+    // === 6 - Abundance estimation ===
     if (params.do_abundance) {
         ABUNDANCE(preprocessed_3tuple_ch, themisto_pseudoaln_ch, themisto_ref_groups_ch)
     }
@@ -279,7 +248,28 @@ def check_main_params(){
 
     def errors = 0
 
+    // Called whatever --do_mapping is: it validates the manifest, which every lane reads,
+    // as well as the kraken2 database, which only the mapping lane reads. The db check is
+    // the one conditioned on --do_mapping, inside the function itself.
     errors += check_sort_reads_params()
+
+    // Every lane off would preprocess the reads and then stop, producing no result at all.
+    // Caught here rather than left to finish "successfully" with an empty outdir.
+    if (!(params.do_mapping || params.do_sequence_index || params.do_assembly || params.do_abundance)) {
+        log.error("No lane is enabled: --do_mapping, --do_sequence_index, --do_assembly " +
+                  "and --do_abundance are all false, so the run would produce nothing. " +
+                  "Enable at least one.")
+        errors += 1
+    }
+
+    // The new-species consensus path IS the mapping lane -- MAPPING is what resolves those
+    // references, maps them and applies the breadth gate. With --do_mapping false the
+    // sequence-index lane still reports its calls; there is just nothing to hand them to.
+    if (params.call_consensus_for_new_species && !params.do_mapping) {
+        log.error("--call_consensus_for_new_species needs --do_mapping true: consensus for " +
+                  "sequence-index species is built by the MAPPING lane, which is switched off.")
+        errors += 1
+    }
 
     if (errors > 0) {
         log.error("Parameter errors were found, the pipeline will not run.")

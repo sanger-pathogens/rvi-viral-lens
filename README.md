@@ -22,6 +22,7 @@
   - [De novo assembly + viral binning outputs](#de-novo-assembly--viral-binning-outputs)
 - [Configuration](#configuration)
   - [Parameters](#parameters)
+    - [Lane switches](#lane-switches)
   - [Parameter switchboard](#parameter-switchboard)
   - [Profiles](#profiles)
 - [Unit Tests](#unit-tests)
@@ -508,6 +509,37 @@ name, skipping the generated `novel_*` / `unplaced_*` placeholders that mean
 ### Parameters
 
 The following command-line parameters can be used to modify the behaviour of the pipeline.  
+
+#### Lane switches
+
+Each lane of the pipeline has one master switch. All take the same preprocessed reads and are
+independent, so any combination runs; **at least one must be enabled** or the run is rejected
+at startup. See [`subworkflows/README.md`](subworkflows/README.md) for what each lane does and
+how they fit together.
+
+| flag | lane | default |
+| --- | --- | --- |
+| `do_mapping` | Kraken2 classification → consensus, Nextclade, subtyping, classification report | `true` |
+| `do_sequence_index` | classify against pre-built sequence indexes (Themisto2 / Metagraph) | `false` |
+| `do_assembly` | de novo assembly + viral binning | `false` |
+| `do_abundance` | species-abundance estimation | `false` |
+| `do_preprocessing` | run read preprocessing up front | `false` |
+| `do_mixed_input` | widen input to local manifest + ENA + iRODS | `false` |
+
+`do_mapping` is the only one on by default: it is what viral-lens did before the other lanes
+existed, so defaulting it off would silently change every existing command. It covers both
+Kraken2 classification and the consensus pass, which are halves of one pipeline.
+
+Setting `--do_mapping false` makes the run **reference-free** — there is nowhere for a
+consensus to come from — and has two knock-on effects:
+
+- Kraken2 database parameters stop being required, so an assembly-only or abundance-only run
+  needs no Kraken2 database. The manifest is still validated; every lane reads it.
+- `--call_consensus_for_new_species` is rejected, since the mapping lane is what builds those
+  consensuses, and the sequence-index lane reports `overlapping_n_species` as `NA` rather
+  than `0` — there are no Kraken2 calls to overlap with.
+
+[**(&uarr;)**](#contents)
 
 #### Input and output 
 - `manifest`: Path to the manifest file 

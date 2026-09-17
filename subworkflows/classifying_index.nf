@@ -162,16 +162,27 @@ workflow CLASSIFYING_INDEX {
         // acted on (k2r pre-report's virus_name + ref_selected, already normalized), not
         // every row of the raw Kraken2 report. Counted per sample over the distinct
         // species names, so a species two methods both called counts once.
-        overlap_counts_ch = called_species_ch
-            .map { sample_id, species, _method -> [sample_id, species] }
-            .unique()
-            .groupTuple()
-            .join(identified_species_ch, remainder: true)
-            .filter { _sample_id, called, _identified -> called != null }
-            .map { sample_id, called, identified ->
-                def kraken2_set = (identified ?: []) as Set
-                [sample_id, [overlapping_n_species: called.count { sp -> kraken2_set.contains(sp) }]]
-            }
+        //
+        // Skipped entirely with --do_mapping false, so the column fills as NA rather than
+        // 0. identified_species_ch is empty then (Kraken2 never ran), and the
+        // remainder: true join below would happily pair every sample against a null
+        // Kraken2 side and count an overlap of 0 -- which reads as "nothing Kraken2 found
+        // was corroborated" when the truth is that Kraken2 was never asked. Same
+        // NA-vs-0 distinction the count helpers below exist for.
+        if (params.do_mapping) {
+            overlap_counts_ch = called_species_ch
+                .map { sample_id, species, _method -> [sample_id, species] }
+                .unique()
+                .groupTuple()
+                .join(identified_species_ch, remainder: true)
+                .filter { _sample_id, called, _identified -> called != null }
+                .map { sample_id, called, identified ->
+                    def kraken2_set = (identified ?: []) as Set
+                    [sample_id, [overlapping_n_species: called.count { sp -> kraken2_set.contains(sp) }]]
+                }
+        } else {
+            overlap_counts_ch = Channel.empty()
+        }
 
         if (params.call_consensus_for_new_species) {
             // These consume the *_hits_ch/*_labels_ch variables set in each method's
@@ -239,7 +250,7 @@ workflow CLASSIFYING_INDEX {
                     (mga_counts ?: empty_species_hits_counts('metagraph_align')) +
                     (mgq_counts ?: empty_species_hits_counts('metagraph_query')) +
                     (ns_counts ?: empty_new_species_counts()) +
-                    (ov_counts ?: [overlapping_n_species: 0])
+                    (ov_counts ?: empty_overlap_counts())
                 [id, new_meta]
             }
             .set { mapping_report_prep_ch }
@@ -298,6 +309,12 @@ workflow CLASSIFYING_INDEX {
 // fill value is NA when the corresponding flag is off, and 0 only when the step genuinely
 // ran and found nothing.
 NOT_RUN = 'NA'
+
+def empty_overlap_counts() {
+    // NA when the mapping lane did not run: there were no Kraken2 calls to overlap with,
+    // which is not the same fact as an overlap of zero.
+    return [overlapping_n_species: params.do_mapping ? 0 : NOT_RUN]
+}
 
 def empty_new_species_counts() {
     return [new_species_candidates_n: params.call_consensus_for_new_species ? 0 : NOT_RUN]
