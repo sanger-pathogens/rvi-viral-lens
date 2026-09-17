@@ -508,6 +508,21 @@
             "default": 20,
             "description": "Below this raw read-count change, the SCRuB before/after heatmap treats a cell as unchanged and leaves it uncoloured."
         },
+        "scrub_publish_subdir": {
+            "type": "string",
+            "default": "abundance/scrub",
+            "description": "Subdirectory under outdir for SCRuB output. rvi_toolbox defaults to 'scrub'; viral-lens groups it under the abundance lane."
+        },
+        "themisto_hits_publish_subdir": {
+            "type": "string",
+            "default": "sequenceindex/themisto_hits",
+            "description": "Per-sample subdirectory for Themisto2 species-hit tables. rvi_toolbox defaults to 'themisto_hits'."
+        },
+        "themisto_map_publish_subdir": {
+            "type": "string",
+            "default": "sequenceindex/themisto_map",
+            "description": "Per-sample subdirectory for Themisto2 map-QC output. rvi_toolbox defaults to 'themisto_map'."
+        },
         "scrub_zero_species_in_controls": {
             "type": "string",
             "default": ""
