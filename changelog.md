@@ -12,20 +12,19 @@ building — and is now four independent lanes over the same preprocessed reads,
 so an existing command still runs and still produces the same consensuses; the version bump
 is for the two renamed run-level reports below, and for the restructuring around them.
 
-> ### ⚠️ Breaking: two run-level report files changed meaning
+> ### ⚠️ Breaking: both run-level report files are renamed
 >
-> `mapping_summary_report.csv` **still exists but now holds different content.**
-> Anything reading it by name will silently get the wrong table rather than fail.
->
-> | before | after | content |
+> | before (1.x) | after (2.0.0) | content |
 > | --- | --- | --- |
-> | `summary_report.csv` | `mapping_summary_report.csv` | per-consensus mapping results (unchanged content) |
+> | `summary_report.csv` | `consensus_summary_report.csv` | per-consensus results (unchanged content) |
 > | `mapping_summary_report.csv` | `sequenceindex_summary_report.csv` | sequence-index lane per-sample results (unchanged content) |
 >
-> The old `mapping_summary_report.csv` was never the mapping lane's output: it is
-> written by the sequence-index lane (`subworkflows/classifying_index.nf`), so the
-> name has been corrected. The mapping lane's own report, previously the
-> unqualified `summary_report.csv`, now takes the name that describes it.
+> **No report is called `mapping_*` any more**, and that is the point: anything reading
+> either 1.x name now fails to find the file instead of quietly reading the wrong one.
+> `summary_report.csv` never said what it held, and `mapping_summary_report.csv` was
+> actively misleading -- it is written by the sequence-index lane
+> (`subworkflows/classifying_index.nf`), not the mapping lane. Each now carries the name of
+> what produces it.
 
 - **[added]**: **three new optional lanes**, each with its own master switch, all running off the same preprocessed reads and independent of one another — `--do_sequence_index` (classify against pre-built Themisto2/Metagraph sequence indexes), `--do_assembly` (de novo assembly, viral identification, binning, QC and vContact3 taxonomy) and `--do_abundance` (Kraken2+Bracken, sourmash/inStrain, SCRuB decontamination, mSWEEP). All default off, so a 1.x command runs unchanged
 - **[added]**: `--do_mapping` (default `true`), the master switch for what viral-lens was in 1.x: Kraken2 taxid classification plus the consensus/Nextclade/subtyping/classification-report pass. On by default so existing commands are unaffected. With it off the run is reference-free, no Kraken2 database is required, `--call_consensus_for_new_species` is rejected, and the sequence-index lane reports `overlapping_n_species` as `NA`. At least one lane must be enabled or the run is rejected at startup
@@ -37,11 +36,11 @@ is for the two renamed run-level reports below, and for the restructuring around
 - **[added]**: **minimum reference length on sequence-index species calls** (`--min_called_reference_length`, default `1000`; `0` disables). RVDB carries partial-CDS and single-gene records alongside complete genomes, and on a clustered index those take read-hits just as readily — but they are not usable as a consensus reference, and they clear the downstream `new_species_min_breadth_pct` gate trivially *because* they are short (breadth is a percentage of reference length, so a 400bp reference needs 40 covered bases to reach 10%). The verdict is on the call's most-hit record with no re-pick, so a reference is never silently swapped. Adds `INDEX_REFERENCE_LENGTHS`, which prices every record once per run per reference FASTA
 - **[added]**: seven columns in the per-sample `*_species_hits.tsv`: `taxon_filter`, `taxonomy_id`, `family`, `family_taxon_id`, `reference_record`, `reference_length`, `reference_filter`. Filtered species keep their row with `provisional_call` `False` and the reason recorded, so a rejected call stays readable against its own hit count instead of vanishing from the table. Appended after the existing four columns, and every consumer reads them by name, so nothing shifts
 - **[added]**: `*_n_species_taxon_filtered` and `*_n_species_short_reference` per method in `sequenceindex_summary_report.csv`, following the `NA`-vs-`0` convention below: `NA` when the method did not run *or* ran with that gate off, `0` when the gate ran and rejected nothing
-- **[added]**: `Discovered_By` column in `mapping_summary_report.csv`, listing **every** method that called the species as a `;`-separated list (`kraken2`, `themisto2`, `metagraph_align`, `metagraph_query`) rather than only the one whose reference won. Previously the report gave no way to tell which classifier found a species, and the corroboration was discarded before it reached either the CSV or the JSON. Appended as the last column so existing column positions do not shift
+- **[added]**: `Discovered_By` column in `consensus_summary_report.csv`, listing **every** method that called the species as a `;`-separated list (`kraken2`, `themisto2`, `metagraph_align`, `metagraph_query`) rather than only the one whose reference won. Previously the report gave no way to tell which classifier found a species, and the corroboration was discarded before it reached either the CSV or the JSON. Appended as the last column so existing column positions do not shift
 - **[added]**: `overlapping_n_species` column in `sequenceindex_summary_report.csv` — how many of the species Kraken2 selected were also called by a sequence-index method
 - **[added]**: `assembly_sample_summary_report.csv` (one row per sample), `assembly_scaffold_summary_report.csv` (one row per geNomad viral scaffold) and `assembly_vmag_summary_report.csv` (one row per vRhyme bin), replacing `assembly_summary_report.csv`. All three add the taxonomy geNomad and vContact3 assigned; see README
 - **[change]**: summary reports now write `NA`, not `0`, for a step that did not run in that execution. `0` now means "ran and found nothing". Affects `themisto_*`, `metagraph_align_*`, `metagraph_query_*`, `new_species_candidates_n`, `bracken_n_species_called` and `msweep_*`. `new_species_candidates_n` in particular read `0` whenever `--call_consensus_for_new_species` was off, which was indistinguishable from the lane genuinely finding nothing new
-- **[change]**: `summary_report.csv` now called `mapping_summary_report.csv` (see breaking note above)
+- **[change]**: `summary_report.csv` now called `consensus_summary_report.csv` (see breaking note above)
 - **[change]**: `mapping_summary_report.csv` now called `sequenceindex_summary_report.csv` (see breaking note above)
 - **[change]**: mSWEEP moved out of the sequence-index lane into the abundance lane — it estimates abundance rather than calling species. `--run_msweep` now requires `--do_sequence_index true --run_themisto true` and errors up front if they are missing
 - **[change]**: shared modules and subworkflows are now included from the `rvi_toolbox` submodule instead of vendored as forked copies, removing ~4700 lines of duplicated Nextflow that had begun to drift from upstream

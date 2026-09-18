@@ -33,9 +33,10 @@ workflow GENERATE_MAPPING_REPORT {
             .set { all_summaries_pre_ch }
 
         // "sequenceindex", not "mapping": this report is the sequence-index lane's
-        // (subworkflows/classifying_index.nf calls this workflow). The old
-        // mapping_summary_report.csv name belonged to a different lane's output and
-        // is now used by subworkflows/mapping.nf's own report -- see the release notes.
+        // (subworkflows/classifying_index.nf calls this workflow), despite this file's
+        // own name. It used to be published as mapping_summary_report.csv, which said
+        // the wrong lane; no report is called mapping_* now -- the per-consensus one is
+        // consensus_summary_report.csv. See the release notes.
         write_lane_run_summary(all_summaries_pre_ch, "sequenceindex")
 
         write_lane_run_summary.out.set { publish_run_level_summaries_ch }

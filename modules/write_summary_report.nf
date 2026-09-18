@@ -26,7 +26,7 @@ process write_run_level_summaries {
     val(json_file_list)
 
     output:
-    tuple path("consensus_sequence_properties.json"), path("mapping_summary_report.csv")
+    tuple path("consensus_sequence_properties.json"), path("consensus_summary_report.csv")
 
     script:
     json_arg = json_file_list.join(" ")

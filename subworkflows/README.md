@@ -22,7 +22,7 @@ The reusable steps a lane composes live one directory over, in
 | lane | flag | default | run-level report |
 | --- | --- | --- | --- |
 | [`classifying_kraken2.nf`](#classifying_kraken2nf) | `--do_mapping` | **on** | (feeds `mapping.nf`) |
-| [`mapping.nf`](#mappingnf) | `--do_mapping` | **on** | `mapping_summary_report.csv` |
+| [`mapping.nf`](#mappingnf) | `--do_mapping` | **on** | `consensus_summary_report.csv` |
 | [`classifying_index.nf`](#classifying_indexnf) | `--do_sequence_index` | off | `sequenceindex_summary_report.csv` |
 | [`assembly.nf`](#assemblynf) | `--do_assembly` | off | three `assembly_*_summary_report.csv` |
 | [`abundance.nf`](#abundancenf) | `--do_abundance` | off | `abundance_summary_report.csv` |

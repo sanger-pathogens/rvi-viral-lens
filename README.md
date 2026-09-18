@@ -256,7 +256,7 @@ The output file tree should look like the tree bellow:
 
 ```bash
 <output_dir>/
-├── mapping_summary_report.csv
+├── consensus_summary_report.csv
 ├── consensus_sequence_properties.json
 ├── <sample_id>
 │   ├── <sample_id>.kraken_report.txt
@@ -383,11 +383,13 @@ A `tsv` file sumarizing the number of reads associated to a given item in the ta
 
 Collation of all of `<sample_id>/<ref_id>/<sample_id>.<ref_id>.properties.json` files for all consequence sequences in the entire run (for convenience)
 
-#### mapping_summary_report.csv
+#### consensus_summary_report.csv
 
-> Renamed from `summary_report.csv`; see the changelog's breaking-change note. The name
-> `mapping_summary_report.csv` previously belonged to the sequence-index lane's report,
-> which is now `sequenceindex_summary_report.csv`.
+> Renamed from `summary_report.csv`, whose name said nothing about what it held. This is the
+> per-consensus report; the sequence-index lane's per-sample report is
+> `sequenceindex_summary_report.csv`. Neither name existed in 1.x, so anything reading
+> `summary_report.csv` or `mapping_summary_report.csv` now fails to find the file rather than
+> reading the wrong one — see the changelog.
 
 A csv file with selected properties (per sequence) from the properties.json files above. Note that column names are different fron the JSON property names for legacy / backwards compatibility readsons. Columns:
 

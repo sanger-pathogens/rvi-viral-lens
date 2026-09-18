@@ -112,9 +112,9 @@ SARS-CoV-2 lineage to `meta`. Disable with `--do_scov2_subtyping false`.
 | **emit** | `publish_seq_level_ch`, `publish_run_level_summaries_ch` |
 
 The pipeline's primary report. Collects each consensus's metadata, formats it into a report
-line and aggregates them into `mapping_summary_report.csv` — plus a second file listing the
+line and aggregates them into `consensus_summary_report.csv` — plus a second file listing the
 sequences that were **filtered out**, so an absent row is explicable rather than just missing.
-Columns: [`mapping_summary_report.csv`](../README.md#mapping_summary_reportcsv).
+Columns: [`consensus_summary_report.csv`](../README.md#consensus_summary_reportcsv).
 
 ## The sequence-index methods
 
@@ -194,9 +194,10 @@ mapping — a sample missing a key gets a blank cell — so a lane adding a coun
 here.
 
 Despite the name, `GENERATE_MAPPING_REPORT` belongs to the **sequence-index** lane and writes
-`sequenceindex_summary_report.csv`. The `mapping_summary_report.csv` name belongs to
-[`GENERATE_CLASSIFICATION_REPORT`](#generate_classification_reportnf); see the changelog's
-breaking-change note.
+`sequenceindex_summary_report.csv`. The per-consensus report is
+`consensus_summary_report.csv`, written by
+[`GENERATE_CLASSIFICATION_REPORT`](#generate_classification_reportnf) — no report is called
+`mapping_*` any more, which is the point of both renames.
 
 Neither writes a run-level JSON any more: it duplicated the CSV exactly, so nothing published
 it.
