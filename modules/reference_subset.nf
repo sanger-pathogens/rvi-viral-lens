@@ -1,47 +1,10 @@
-// Reference-sequence selection for mSWEEP low-abundance hit validation.
-// Given mSWEEP's per-sample relative-abundance calls, for every reference group above a
-// threshold pick one (randomly, seeded for reproducibility) of its sequences in the
-// positionally-aligned reference FASTA used to build the Themisto2 index
-// (species_labels.txt line N == reference FASTA record N) — one mapping per species,
-// not an aggregate across every sequence clustered under that label.
+// Reference-record selection and extraction out of a positionally-indexed reference FASTA.
+// INDEX_REFERENCE_FASTA tags every record with its 1-based position (SEQIDX_<n>) and
+// records its length in the same pass; the EXTRACT_* processes pull records back out by
+// that tag. The abundance-driven selection this file used to open with
+// (SELECT_REFERENCE_RECORDS) went with mSWEEP map-QC, which nothing invoked.
 
 params.script_src_path = "${projectDir}/bin/"
-
-// UNUSED since the Themisto2 restructuring dropped MSWEEP_MAP_QC (mSWEEP now estimates
-// abundance only -- see workflows/VIRAL_THEMISTO.nf). Kept, not deleted, so the
-// step can be restored if abundance-driven breadth validation is ever wanted again;
-// nothing invokes it today.
-process SELECT_REFERENCE_RECORDS {
-    tag "${meta.id}"
-    label 'cpu_1'
-    label 'mem_1'
-    label 'time_1'
-
-    container "quay.io/gsu-pipelines/rvi-vp-basecontainer"
-
-    input:
-    tuple val(meta), path(abundances)
-    path(species_labels)
-    path(sequence_lengths)
-
-    output:
-    tuple val(meta), path("${meta.id}_abundant_groups.tsv"), emit: groups, optional: true
-    tuple val(meta), path("${meta.id}_record_ids.txt"), emit: record_ids, optional: true
-    tuple val(meta), path("${meta.id}_index_label_map.tsv"), emit: index_label_map, optional: true
-
-    script:
-    """
-    ${params.script_src_path}select_reference_records.py \\
-        --abundances ${abundances} \\
-        --species-labels ${species_labels} \\
-        --sequence-lengths ${sequence_lengths} \\
-        --min-abundance ${params.msweep_map_min_abundance} \\
-        --seed ${params.msweep_map_reference_seed} \\
-        --out-groups ${meta.id}_abundant_groups.tsv \\
-        --out-record-ids ${meta.id}_record_ids.txt \\
-        --out-index-label-map ${meta.id}_index_label_map.tsv
-    """
-}
 
 process INDEX_REFERENCE_FASTA {
     label 'cpu_1'
@@ -50,9 +13,13 @@ process INDEX_REFERENCE_FASTA {
 
     // Runs once per pipeline run (not per-sample): tags every record in the reference
     // FASTA with its 1-based positional index so later per-sample extraction can match on
-    // a stable exact token (SEQIDX_<n>) instead of fragile numeric record-slicing. Also
-    // records each record's sequence length in the same pass, so SELECT_REFERENCE_RECORDS
-    // can pick the longest sequence per species label.
+    // a stable exact token (SEQIDX_<n>) instead of fragile numeric record-slicing.
+    //
+    // The `lengths` emit is a by-product of the same pass. Its only consumer was
+    // SELECT_REFERENCE_RECORDS, and the sequence-index callers get record lengths from
+    // INDEX_REFERENCE_LENGTHS instead -- which streams the FASTA without writing a
+    // tagged copy of it. Left emitted rather than removed: it costs nothing here, and
+    // splitting the two passes is the caller's choice, not this process's.
     stageInMode 'symlink'
 
     input:
@@ -79,8 +46,8 @@ process INDEX_REFERENCE_FASTA {
 
 // Single-record variant of EXTRACT_REFERENCE_SUBSET, taking the record id as a VALUE
 // rather than a file of ids. Used by subworkflows/mapping.nf for sequence-index species:
-// the calling method's own map-QC table already names the one reference record it
-// validated that species against (a SEQIDX_<n> token, same id space INDEX_REFERENCE_FASTA
+// the calling method's own index-label map already names the one reference record it
+// picked for that species (a SEQIDX_<n> token, same id space INDEX_REFERENCE_FASTA
 // mints), so there is nothing to write to a file first -- seqkit grep -p matches the
 // sequence ID directly.
 process EXTRACT_REFERENCE_RECORD {
