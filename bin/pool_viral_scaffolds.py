@@ -4,7 +4,6 @@ each scaffold header with the sample id so the sample-of-origin is recoverable
 after binning.
 
 Output header convention:  >sampleId||originalHeader
-This is the same convention vRhyme/ViWrap use for renaming geNomad outputs.
 """
 
 import argparse
