@@ -79,24 +79,6 @@ workflow VIRAL_THEMISTO {
 
     // SUBSAMPLE_ITER (rvi_toolbox) is LOSSY, and asymmetrically so — restore the meta
     // here or every downstream key silently stops matching.
-    //
-    // Its two branches emit different meta shapes (see
-    // rvi_toolbox/subworkflows/subsample.nf): a sample already below the limit passes
-    // through with its meta untouched, but a sample that actually gets subsampled has its
-    // meta REBUILT FROM SCRATCH as `meta_new = [:]` carrying a single renamed key,
-    // `id = "<original id>_subsampled<limit*2 abbreviated>-<iteration>"`. Everything else,
-    // `sample_id` included, is dropped.
-    //
-    // That cost a real multi-sample run: 2M-read samples subsampled, their ids became
-    // `47726_2_53_subsampled2M-1`, and the classifier's report backbone (keyed on the
-    // pre-subsample `meta.id`) no longer matched the counts keyed on the post-subsample
-    // one. Being `join(..., remainder: true)`, the mismatch did not drop the row — it
-    // yielded `meta == null` and aborted the run with
-    // "Cannot execute null+{themisto_n_species_considered=115, ...}". Small test samples
-    // never tripped it because they sat below the limit and so kept their meta.
-    //
-    // combine(by: 0), not join: with subsample_iterations > 1 the left side has repeated
-    // ids, which join would not tolerate.
     original_meta_ch = reads_ch.map { meta, _r1, _r2 -> [meta.id, meta] }
 
     capped_reads_ch = SUBSAMPLE_ITER.out.final_read_channel
@@ -117,13 +99,7 @@ workflow VIRAL_THEMISTO {
                                 : "${projectDir}/assets/NO_TAXON_TABLE"
     ).first()
 
-    // Reference lengths come from params.msweep_map_reference_fasta -- the FASTA the
-    // .thm2 index was built from, so record N of it is Themisto2's SEQIDX_<n>, and the
-    // same file subworkflows/mapping.nf extracts a called species' reference out of. Any
-    // other FASTA would price the wrong record; call_themisto_species.py cross-checks the
-    // record count against species_labels.txt and aborts if the two disagree.
-    // Gated on the threshold rather than run unconditionally: INDEX_REFERENCE_LENGTHS
-    // streams a multi-GB FASTA, which is wasted work if nothing will read the result.
+    // Reference lengths come from params.msweep_map_reference_fasta -- the FASTA the .thm2 index was built from
     if (params.min_called_reference_length > 0) {
         INDEX_REFERENCE_LENGTHS(Channel.fromPath(params.msweep_map_reference_fasta))
         reference_lengths_ch = INDEX_REFERENCE_LENGTHS.out.lengths.first()
@@ -133,31 +109,9 @@ workflow VIRAL_THEMISTO {
 
     pseudoaligned_ch = THEMISTO_PSEUDOALIGN(capped_reads_ch, index_files_ch, index_prefix_ch)
 
-    // Default path: call species straight from pseudoalignment hit counts, no
-    // probabilistic model needed (see themisto_species_call.nf).
+    // Default path: call species straight from pseudoalignment hit counts
     CALL_THEMISTO_SPECIES(pseudoaligned_ch, ref_groups_ch, taxon_table_ch, reference_lengths_ch)
 
-    // NO map-QC here. Species are called without mapping any reads: read hits
-    // (themisto_align_min_hits) plus the taxonomy and reference-length gates
-    // CALL_THEMISTO_SPECIES applies. The validation mapping that used to follow -- bowtie2 the
-    // reads against each called species' reference, then samtools coverage for breadth --
-    // was removed deliberately. Its breadth figure is now obtained downstream instead,
-    // from the consensus alignment subworkflows/mapping.nf performs anyway, so a
-    // sequence-index species is mapped once rather than twice. THEMISTO_MAP_QC.nf is kept
-    // but unused; see its header.
-
-    // mSWEEP is NOT run here any more. It is an abundance estimator, not a classifier,
-    // so it now lives behind the abundance lane's own --run_msweep flag
-    // (subworkflows/abundance.nf), consuming the `pseudoalignments` emitted below. This
-    // workflow is purely Themisto2: pseudoalign, then call species from read-hit counts.
-    // Pseudoalignment files are never published (see themisto2.nf) and, left unmanaged,
-    // accumulate unbounded in the Nextflow work directory. Clean them up only once every
-    // consumer has finished with them: CALL_THEMISTO_SPECIES always runs and passes the
-    // same files through as an output; MSWEEP (when run_msweep is set) reads the same
-    // pseudoaligned_ch independently, so cleanup has to wait on both, not just one.
-    // Only safe to clean up here when nothing else will read them. With --run_msweep set,
-    // MSWEEP consumes the same files from the abundance lane, so cleanup is deferred to
-    // there (subworkflows/abundance.nf) — deleting them here would race MSWEEP.
     if (params.cleanup_intermediate_files_msweep && !params.run_msweep) {
         CLEANUP_THEMISTO_PSEUDOALIGNMENTS(CALL_THEMISTO_SPECIES.out.pseudoalignments)
     }

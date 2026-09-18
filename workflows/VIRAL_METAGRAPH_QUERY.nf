@@ -59,20 +59,11 @@ workflow VIRAL_METAGRAPH_QUERY {
     capped_reads_ch = SUBSAMPLE_ITER.out.final_read_channel
 
 
-    // -- Inputs for the two call gates (see rvi_toolbox/modules/themisto_species_call.nf's
-    // header). Both are passed to the caller unconditionally -- a process input cannot be
-    // conditionally absent -- so when a gate is off an empty placeholder from assets/ is
-    // staged instead and the script reads a zero-byte file as "not supplied".
     taxon_table_ch = Channel.fromPath(
         params.run_taxon_filter ? params.taxon_filter_table
                                 : "${projectDir}/assets/NO_TAXON_TABLE"
     ).first()
 
-    // Reference lengths come from params.metagraph_map_reference_fasta -- the FASTA
-    // metagraph's accession/taxid record ids name records in, and a DIFFERENT file from
-    // the Themisto2 side's (see rvi_toolbox/modules/metagraph_species_call.nf).
-    // Gated on the threshold rather than run unconditionally: INDEX_REFERENCE_LENGTHS
-    // streams a multi-GB FASTA, which is wasted work if nothing will read the result.
     if (params.min_called_reference_length > 0) {
         INDEX_REFERENCE_LENGTHS(Channel.fromPath(params.metagraph_map_reference_fasta))
         reference_lengths_ch = INDEX_REFERENCE_LENGTHS.out.lengths.first()
@@ -87,15 +78,6 @@ workflow VIRAL_METAGRAPH_QUERY {
     CALL_METAGRAPH_SPECIES(
         METAGRAPH_QUERY.out.alignments, names_dmp_ch, taxon_table_ch, reference_lengths_ch, 'metagraph_query_hits'
     )
-
-    // NO map-QC here. Species are called without mapping any reads: read hits
-    // (metagraph_align_min_hits) plus the taxonomy and reference-length gates
-    // CALL_METAGRAPH_SPECIES applies. The validation mapping that used to follow -- bowtie2
-    // the reads against each called species' reference, then samtools coverage for breadth
-    // -- was removed deliberately. Its breadth figure is now obtained downstream instead,
-    // from the consensus alignment subworkflows/mapping.nf performs anyway, so a
-    // sequence-index species is mapped once rather than twice. METAGRAPH_MAP_QC.nf is kept
-    // but unused; see its header.
 
     emit:
     species_hits    = CALL_METAGRAPH_SPECIES.out.species_hits
