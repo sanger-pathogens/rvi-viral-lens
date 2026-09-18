@@ -27,7 +27,7 @@ workflow {
 
   log.info """${ANSI_RESET}
   ===========================================
-  Viral Lens [v2.0.0]
+  Viral Lens [v2.0.0-beta]
   Used parameters:
   -------------------------------------------
   --> general pipeline parameters:
