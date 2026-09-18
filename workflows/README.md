@@ -19,8 +19,9 @@ in [`modules/`](../modules/).
 
 A step that moves out to `rvi_toolbox` stops being documented here and is documented under
 the lane that composes it, in [`subworkflows/README.md`](../subworkflows/README.md) —
-`VCONTACT3_RUN` went that way, and is covered under
-[`assembly.nf`](../subworkflows/README.md#assemblynf).
+`VCONTACT3_RUN` and `SCRUB_DECONTAM` went that way, and are covered under
+[`assembly.nf`](../subworkflows/README.md#assemblynf) and
+[`abundance.nf`](../subworkflows/README.md#abundancenf).
 
 ## Index, by the lane that calls it
 
@@ -34,7 +35,6 @@ the lane that composes it, in [`subworkflows/README.md`](../subworkflows/README.
 | [`VIRAL_THEMISTO`](#viral_themistonf) | [`classifying_index`](../subworkflows/README.md#classifying_indexnf) | Themisto2 pseudoalignment + species calling |
 | [`VIRAL_METAGRAPH_ALIGN`](#viral_metagraph_alignnf) | [`classifying_index`](../subworkflows/README.md#classifying_indexnf) | `metagraph align` + species calling |
 | [`VIRAL_METAGRAPH_QUERY`](#viral_metagraph_querynf) | [`classifying_index`](../subworkflows/README.md#classifying_indexnf) | `metagraph query` + species calling |
-| [`SCRUB_DECONTAM`](#scrub_decontamnf) | [`abundance`](../subworkflows/README.md#abundancenf) | SCRuB whole-run cross-contamination correction |
 | [`GENERATE_MAPPING_REPORT`](#generate_mapping_reportnf) | [`classifying_index`](../subworkflows/README.md#classifying_indexnf) | that lane's per-sample + run-level report |
 | [`GENERATE_ABUNDANCE_REPORT`](#generate_abundance_reportnf) | [`abundance`](../subworkflows/README.md#abundancenf) | that lane's per-sample + run-level report |
 | [`THEMISTO_MAP_QC`](#themisto_map_qcnf--metagraph_map_qcnf) | *nothing* | **unused** — kept deliberately, see below |
@@ -176,26 +176,6 @@ The two Metagraph steps are **alternative methods against the same reference dat
 independently configured pipelines — which is why this one reuses every `metagraph_align_*`
 param. They publish to different subdirectories (`metagraph_hits` vs `metagraph_query_hits`)
 so running both for one sample cannot overwrite either result.
-
-## Abundance
-
-### `SCRUB_DECONTAM.nf`
-
-| | |
-| --- | --- |
-| **take** | `bracken_summary_ch` — `bracken_summary_report.tsv`, a single whole-run file |
-| **emit** | `scrub_output`, `heatmap` |
-
-Reformats the whole-run Bracken species-abundance summary into SCRuB's expected
-samples × species orientation, then runs SCRuB (Austin et al., *Nat Biotechnol* 2023) against
-it and a user-supplied plate map to detect and correct cross-sample contamination —
-well-to-well leakage and shared control-sample contamination. Also renders a
-before/after/change relative-abundance heatmap for visual QC.
-
-Runs **once per pipeline run, not per sample**: decontamination inherently needs the whole
-batch, samples and controls together. Requires `scrub_plate_map` (`is_control`,
-`sample_type`, optionally `sample_well`) — mandatory when `--run_scrub` is set, no default.
-Published under `<outdir>/abundance/scrub`.
 
 ## Lane reports
 

@@ -28,7 +28,7 @@
 // params.new_species_min_breadth_pct below). The cost of that ordering is that a noise
 // call's consensus is computed and then discarded; the saving is that a real call is
 // mapped once instead of twice.
-include {INDEX_REFERENCE_FASTA; EXTRACT_REFERENCE_RECORD} from '../modules/reference_subset.nf'
+include {INDEX_REFERENCE_FASTA; EXTRACT_REFERENCE_RECORD} from '../rvi_toolbox/modules/reference_subset.nf'
 include {EXTRACT_METAGRAPH_REFERENCE_RECORD} from '../rvi_toolbox/modules/metagraph_reference_subset.nf'
 include {GENERATE_CONSENSUS} from '../workflows/GENERATE_CONSENSUS.nf'
 include {SCOV2_SUBTYPING} from '../workflows/SCOV2_SUBTYPING.nf'

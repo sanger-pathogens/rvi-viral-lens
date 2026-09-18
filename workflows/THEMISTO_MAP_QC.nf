@@ -47,7 +47,7 @@
 ========================================================================================
 */
 include { INDEX_REFERENCE_FASTA
-          EXTRACT_REFERENCE_SUBSET     } from '../modules/reference_subset.nf'
+          EXTRACT_REFERENCE_SUBSET     } from '../rvi_toolbox/modules/reference_subset.nf'
 include { BOWTIE_INDEX; BOWTIE2SAMTOOLS  } from '../rvi_toolbox/modules/bowtie.nf'
 include { SAMTOOLS_COVERAGE               } from '../rvi_toolbox/modules/samtools_coverage.nf'
 include { AGGREGATE_THEMISTO_COVERAGE

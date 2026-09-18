@@ -515,10 +515,6 @@
             "default": "sequenceindex/themisto_map",
             "description": "Per-sample subdirectory for Themisto2 map-QC output. rvi_toolbox defaults to 'themisto_map'."
         },
-        "scrub_zero_species_in_controls": {
-            "type": "string",
-            "default": ""
-        },
         "do_mixed_input": {
             "type": "boolean",
             "default": false

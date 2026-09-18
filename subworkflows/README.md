@@ -110,7 +110,7 @@ either classifier's reads get mapped.
 | | |
 | --- | --- |
 | **take** | `kraken2_sample_taxid_ch`, `kraken2_report_ch`, `identified_species_ch` — from `classifying_kraken2.nf`<br>`index_species_calls_ch`, `index_called_species_ch` — from `classifying_index.nf`, or `Channel.empty()`<br>`reads_ch` — `(meta, read1, read2)` |
-| **composes** | [`GENERATE_CONSENSUS`](../workflows/README.md#generate_consensusnf) · [`RUN_NEXTCLADE`](../workflows/README.md#run_nextcladenf) · [`SCOV2_SUBTYPING`](../workflows/README.md#scov2_subtypingnf) · [`GENERATE_CLASSIFICATION_REPORT`](../workflows/README.md#generate_classification_reportnf) · `INDEX_REFERENCE_FASTA` / `EXTRACT_REFERENCE_RECORD` / `EXTRACT_METAGRAPH_REFERENCE_RECORD` ([`modules/reference_subset.nf`](../modules/reference_subset.nf)) |
+| **composes** | [`GENERATE_CONSENSUS`](../workflows/README.md#generate_consensusnf) · [`RUN_NEXTCLADE`](../workflows/README.md#run_nextcladenf) · [`SCOV2_SUBTYPING`](../workflows/README.md#scov2_subtypingnf) · [`GENERATE_CLASSIFICATION_REPORT`](../workflows/README.md#generate_classification_reportnf) · `INDEX_REFERENCE_FASTA` / `EXTRACT_REFERENCE_RECORD` / `EXTRACT_METAGRAPH_REFERENCE_RECORD` ([`rvi_toolbox/modules/reference_subset.nf`](../rvi_toolbox/modules/reference_subset.nf)) |
 
 **The two classifiers hand over different shapes, on purpose.** Kraken2 arrives
 *consensus-ready* (reads + reference), because `SORT_READS_BY_REF` resolves its references as
@@ -268,7 +268,7 @@ Species-abundance estimation by four independent, separately flagged methods. Op
 | | |
 | --- | --- |
 | **take** | `preprocessed_3tuple_ch` — `(meta, read1, read2)`<br>`themisto_pseudoaln_ch`, `themisto_ref_groups_ch` — from `classifying_index.nf`, empty unless `--run_themisto` |
-| **composes** | `KRAKEN2BRACKEN` · `ABUNDANCE_ESTIMATION` · `MSWEEP` ([`rvi_toolbox`](../rvi_toolbox/subworkflows/)) · [`SCRUB_DECONTAM`](../workflows/README.md#scrub_decontamnf) · [`GENERATE_ABUNDANCE_REPORT`](../workflows/README.md#generate_abundance_reportnf) |
+| **composes** | `KRAKEN2BRACKEN` · `ABUNDANCE_ESTIMATION` · `MSWEEP` ([`rvi_toolbox`](../rvi_toolbox/subworkflows/)) · [`SCRUB_DECONTAM`](#scrub_decontam-inside-the-abundance-lane) · [`GENERATE_ABUNDANCE_REPORT`](../workflows/README.md#generate_abundance_reportnf) |
 
 | method | flag | reads from |
 | --- | --- | --- |
@@ -291,3 +291,23 @@ downstream of any other lane. Two are shaped differently:
 Pseudoalignment cleanup is owned by whichever lane reads them last: with `--run_msweep` set,
 this lane deletes them after mSWEEP, because deleting them in the sequence-index lane would
 race it.
+
+### SCRUB_DECONTAM, inside the abundance lane
+
+| | |
+| --- | --- |
+Taken from [`rvi_toolbox/subworkflows/scrub.nf`](../rvi_toolbox/subworkflows/scrub.nf); viral-lens keeps no copy of its own.
+
+| **take** | `bracken_summary_ch` — `bracken_summary_report.tsv`, a single whole-run file |
+| **emit** | `scrub_output`, `heatmap` |
+
+Reformats the whole-run Bracken species-abundance summary into SCRuB's expected
+samples × species orientation, then runs SCRuB (Austin et al., *Nat Biotechnol* 2023) against
+it and a user-supplied plate map to detect and correct cross-sample contamination —
+well-to-well leakage and shared control-sample contamination. Also renders a
+before/after/change relative-abundance heatmap for visual QC.
+
+Runs **once per pipeline run, not per sample**: decontamination inherently needs the whole
+batch, samples and controls together. Requires `scrub_plate_map` (`is_control`,
+`sample_type`, optionally `sample_well`) — mandatory when `--run_scrub` is set, no default.
+Published under `<outdir>/abundance/scrub`.
