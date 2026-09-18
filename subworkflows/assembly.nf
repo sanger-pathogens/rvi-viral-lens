@@ -6,7 +6,7 @@ include {ASSEMBLE_META} from '../rvi_toolbox/subworkflows/assemble.nf'
 include {GENOMAD_CLASSIFY} from '../rvi_toolbox/subworkflows/genomad.nf'
 include {VRHYME_BIN} from '../rvi_toolbox/subworkflows/vrhyme.nf'
 include {CHECKV_QC} from '../rvi_toolbox/subworkflows/checkv.nf'
-include {VCONTACT3_RUN} from '../workflows/VCONTACT3_RUN.nf'
+include {VCONTACT3_RUN} from '../rvi_toolbox/subworkflows/vcontact3.nf'
 include {ASSEMBLY_REPORTS} from '../rvi_toolbox/subworkflows/assembly_reports.nf'
 
 workflow ASSEMBLY {

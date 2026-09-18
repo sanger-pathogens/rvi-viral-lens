@@ -191,7 +191,7 @@ them.
 | | |
 | --- | --- |
 | **take** | `preprocessed_3tuple_ch` — `(meta, read1, read2)` |
-| **composes** | `ASSEMBLE_META` · `GENOMAD_CLASSIFY` · `VRHYME_BIN` · `CHECKV_QC` (all [`rvi_toolbox/subworkflows/`](../rvi_toolbox/subworkflows/)) · [`VCONTACT3_RUN`](../workflows/README.md#vcontact3_runnf) · `ASSEMBLY_REPORTS` |
+| **composes** | `ASSEMBLE_META` · `GENOMAD_CLASSIFY` · `VRHYME_BIN` · `CHECKV_QC` · [`VCONTACT3_RUN`](#vcontact3_run-inside-the-assembly-lane) · `ASSEMBLY_REPORTS` (all [`rvi_toolbox/subworkflows/`](../rvi_toolbox/subworkflows/)) |
 
 Almost every step is per-sample, with two exceptions that need the whole batch: `VRHYME_BIN`
 pools every qualifying sample's scaffolds into one bowtie2 index so coverage covariance across
@@ -202,6 +202,63 @@ samples' combined input. Requires three reference databases with no bundled defa
 Reports: three run-level CSVs at different grains — one row per sample, per geNomad viral
 scaffold, and per vRhyme bin. The lane writes **no** per-sample `properties.json`;
 `ASSEMBLY_REPORTS` builds the CSVs from the modules' own output files.
+
+### VCONTACT3_RUN, inside the assembly lane
+
+| | |
+| --- | --- |
+Taken from [`rvi_toolbox/subworkflows/vcontact3.nf`](../rvi_toolbox/subworkflows/vcontact3.nf); viral-lens keeps no copy of its own.
+
+| **take** | `virus_proteins_ch`, `virus_summary_ch` (geNomad) · `bin_membership_ch`, `bins_fasta_ch` (vRhyme) · `checkv_quality_ch` (CheckV) |
+| **emit** | `final_assignments`, `performance_metrics`, `postprocessed_assignments`, `novel_taxa_assignments` |
+
+> vContact3 is an **experimental** module: its performance for RNA virus detection has not
+> been benchmarked by its authors, and non-consensus or incomplete genomes are not ideal
+> input, since the tool relies on protein-sharing networks.
+
+Per-sample, reconciles vRhyme's binned scaffolds and geNomad's unbinned scaffolds
+(`vcontact3_prep.py`) into one vContact3-shaped input; then runs vContact3 **once** across
+every sample's combined input, and post-processes the taxonomy calls
+(`vcontact3_postprocess.py`).
+
+**What counts as a "genome"** — every entry is namespaced by sample, so one batch-level run can
+be split back apart:
+
+| genome ID | is | proteins from |
+| --- | --- | --- |
+| `<sample_id>&#124;&#124;bin_<N>` | a vRhyme bin | that bin's own `vRhyme_bin_<N>.faa` (vRhyme's gene calls, not geNomad's) |
+| `<sample_id>&#124;&#124;<scaffold>` | an unbinned scaffold with `n_genes > 0` | geNomad's `virus_proteins.faa` |
+| `<sample_id>&#124;&#124;<scaffold>&#124;&#124;standalone` | a **binned** scaffold CheckV called High- or Medium-quality | geNomad's, under a distinct ID so it never collides with the copy already emitted under its bin |
+
+The third case is why CheckV feeds this step: a scaffold confident enough to stand on its own
+is given to vContact3 both inside its bin and separately, so the protein-sharing network sees
+both signals.
+
+**Post-processing** does three things:
+
+1. Keeps **query genomes only** — rows whose Genome contains the `||` separator above.
+   Reference genomes from vContact3's own database never contain it.
+2. Fills in each query genome's `Proteins` count from the run's combined `gene2genome.tsv`.
+   Load-bearing, not cosmetic: vContact3 populates `Proteins` only from its reference-DB
+   metadata table, so the column is blank for every query genome, and comparing a blank
+   against the thresholds below is silently always false — without this, step 3 could never
+   fire. Fails loudly if a count cannot be derived.
+3. Flags a novel-genus call as uncertain when the genome has too few or too many proteins for
+   it to be trusted — below `vcontact3_postprocess_min_proteins` (5) or above
+   `vcontact3_postprocess_max_proteins` (20). Flagged calls get an `uncertain_novel_` prefix
+   on `genus_prediction`.
+
+Four outputs: `final_assignments.csv` (vContact3's own, including its reference database),
+`performance_metrics.csv`, `final_assignments_postprocessed.csv` (query genomes only, with the
+backfill and flagging applied) and `final_assignments_noveltaxa.csv` (those *still* called
+novel-genus after step 3 — the candidates worth reviewing). `ASSEMBLY_REPORTS` joins the
+postprocessed file to fill the lane's `taxonomy_vcontact3` columns, matching each vMAG on its
+`<sample_id>||bin_<N>` ID.
+
+> **Both post-processed files will be empty if the query-genome separator and
+> `vcontact3_prep.py` ever disagree** — the filter matches on `||` and nothing warns when it
+> selects nothing. Not hypothetical: it read `#` until 2026-09, and every run before that
+> produced header-only postprocessed output while reporting success.
 
 ## `abundance.nf`
 
