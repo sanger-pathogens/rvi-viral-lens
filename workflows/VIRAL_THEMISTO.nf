@@ -20,9 +20,12 @@
 
     Core processes are adapted from the gemsweep pipeline (themisto2 branch).
     PORTED (rvi_integration_1) from eu1/rvi_toolbox.git's `feature_msweep_map` branch
-    (`subworkflows/themisto2-msweep.nf`, renamed here since mSWEEP was split out), as a viral-lens-owned file rather than a submodule
-    bump, same as every other lane in this integration -- see INSTRUCT.md item 2 (the
-    unresolved fork question). Differences from upstream are confined to paths:
+    (`subworkflows/themisto2-msweep.nf`, renamed here since mSWEEP was split out), as a
+    viral-lens-owned file rather than a submodule bump, same as every other lane in this
+    integration. That fork is no longer the source: its work has been merged into
+    rvi/master, which is what the submodule now tracks -- the upstream counterpart is
+    `rvi_toolbox/subworkflows/themisto2-msweep.nf`. This file stays viral-lens-owned.
+    Differences from upstream are confined to paths:
     params.results_dir -> params.outdir, publish under <outdir>/<sample>/sequenceindex/
     to match the other sequence-index methods, bin/ instead of rvi_toolbox/bin/, and
     include paths for viral-lens's workflows/ + modules/ layout. If the upstream branch

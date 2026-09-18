@@ -728,8 +728,8 @@ Off by default, three independent sub-flags (`run_kraken2bracken`,
 Everything else carries an upstream default unchanged, except
 `cleanup_intermediate_files_abundance_estimation` (see the note above) — see
 `nextflow.config`/`nextflow_schema.json`, or `rvi-viral-metagenomics-pipeline`'s
-`rvi_toolbox/subworkflows/kraken2bracken.json`/`abundance_estimation.json` and
-`eu1/rvi_toolbox.git`'s `subworkflows/scrub.json` for the per-parameter rationale.
+`rvi_toolbox/subworkflows/kraken2bracken.json`/`abundance_estimation.json` and the
+submodule's own `rvi_toolbox/subworkflows/scrub.json` for the per-parameter rationale.
 
 ### Parameter switchboard
 
