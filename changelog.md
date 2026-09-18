@@ -2,29 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
-
-- **[fix]**: `.gitmodules` pointed `rvi_toolbox` at the `eu1/rvi_toolbox.git` fork (`../../eu1/rvi_toolbox.git`) while every working clone's submodule origin was already the upstream `rvi/rvi_toolbox.git`. A fresh `git submodule update --init` would therefore have cloned the fork and could have resolved a different `master`. Now `../rvi_toolbox.git`, which resolves to `rvi/rvi_toolbox.git` against this repo's own origin
-- **[change]**: the submodule is merged up to the latest `rvi/master`, which has since merged `viral-lens-shared-modules` into itself — so `rvi/master` is now an ancestor of the tracked commit and the submodule's only remaining diff against master is this repo's comment trim in `call_themisto_species.py`. Upstream has deleted the `viral-lens-shared-modules` branch
-- **[fix]**: comments that named the fork as the *current* source, all of them now false — `nextflow.config`'s header claimed the submodule tracks `eu1/rvi_toolbox.git` branch `assembly_summary_reports`; the SCRuB block claimed its modules exist "only on that fork" (they are in `rvi/master`); the Metagraph block pointed at an `rvi_toolbox` `metagraph_align.config` that exists in neither the submodule nor `rvi/master`, and said its paths were "left null" when they are in fact set to a personal-scratch location; and `VIRAL_THEMISTO.nf` referred to "the unresolved fork question". Historical "ported from" notes are kept, now explicit that the fork's work has been merged upstream
-
-- **[removed]**: the two map-QC steps `workflows/THEMISTO_MAP_QC.nf` and `workflows/METAGRAPH_MAP_QC.nf`, kept unused since breadth moved downstream to the consensus alignment `subworkflows/mapping.nf` performs anyway. Nothing invoked either, and keeping them meant every comment describing the sequence-index lane had to explain a stage that never ran
-- **[removed]**: `modules/select_reference_record_by_name.nf` and `bin/select_reference_record_by_name.py`, unused since reference resolution moved into `subworkflows/mapping.nf`, which reuses the record id the calling method's own index-label map already names
-- **[removed]**: four parameters left defined by the above and referenced by nothing — `themisto_map_bowtie_threads`, `metagraph_map_bowtie_threads`, `msweep_map_reference_seed`, `themisto_map_publish_subdir` and, with them, their `nextflow_schema.json` entries. A command still passing one will now be rejected by schema validation
-- **[removed]**: five `withName` executor entries in `nextflow.config` for processes no longer reachable from `main.nf` — `SAMTOOLS_COVERAGE`, `AGGREGATE_THEMISTO_COVERAGE`, `GENERATE_THEMISTO_MAP_SUMMARY`, `AGGREGATE_METAGRAPH_COVERAGE` and `GENERATE_METAGRAPH_MAP_SUMMARY`
-- **[change]**: the `docs/nf-metro/route_map.mmd` station that matched `.*_MAP_QC` now matches `CALL_.*_SPECIES` and reads "Call species from read hits" — the stage the lane actually runs. `route_map.svg` re-rendered
-
-## [2.0.0]
+## [2.0.0-beta]
 
 A major release: viral-lens was one pipeline — Kraken2 classification into consensus
 building — and is now four independent lanes over the same preprocessed reads, selected by
 `--do_*` switches. The 1.x behaviour is the `--do_mapping` lane and stays **on by default**,
-so an existing command still runs and still produces the same consensuses; the version bump
-is for the two renamed run-level reports below, and for the restructuring around them.
+so an existing 1.5.2 command still runs and still produces the same consensuses; the version
+bump is for the two renamed run-level reports below, and for the restructuring around them.
 
 > ### ⚠️ Breaking: both run-level report files are renamed
 >
-> | before (1.x) | after (2.0.0) | content |
+> | before (1.5.2) | after (2.0.0-beta) | content |
 > | --- | --- | --- |
 > | `summary_report.csv` | `consensus_summary_report.csv` | per-consensus results (unchanged content) |
 > | `mapping_summary_report.csv` | `sequenceindex_summary_report.csv` | sequence-index lane per-sample results (unchanged content) |
@@ -53,22 +41,17 @@ is for the two renamed run-level reports below, and for the restructuring around
 - **[change]**: `summary_report.csv` now called `consensus_summary_report.csv` (see breaking note above)
 - **[change]**: `mapping_summary_report.csv` now called `sequenceindex_summary_report.csv` (see breaking note above)
 - **[change]**: mSWEEP moved out of the sequence-index lane into the abundance lane — it estimates abundance rather than calling species. `--run_msweep` now requires `--do_sequence_index true --run_themisto true` and errors up front if they are missing
-- **[change]**: shared modules and subworkflows are now included from the `rvi_toolbox` submodule instead of vendored as forked copies, removing ~4700 lines of duplicated Nextflow that had begun to drift from upstream
 - **[change]**: per-sample outputs are grouped by lane, and everything — including Nextflow's own execution report, timeline and DAG — is published under `--outdir` rather than `$launchDir/results`
-- **[change]**: the pipeline's Nextflow code is now documented per directory — [`subworkflows/README.md`](subworkflows/README.md) for the lanes and [`workflows/README.md`](workflows/README.md) for the steps they are built from — replacing the main README's `Sub-workflows` section, which had drifted (it still documented `COMPUTE_QC_METRICS`, gone; a viral-lens-owned `KRAKEN2BRACKEN` fork, now taken from `rvi_toolbox`; and `ASSEMBLE_META`/`GENOMAD_CLASSIFY`/`VRHYME_BIN`/`CHECKV_QC` as if local). The main README keeps the user-facing material and links out
-- **[change]**: the SCRuB decontamination step and the reference-subset module are now taken from `rvi_toolbox` too. `workflows/SCRUB_DECONTAM.nf`, `modules/reformat_bracken.nf`, `bin/reformat_bracken_for_scrub.py` and `modules/reference_subset.nf` are removed. Two viral-lens fixes went upstream first so nothing regresses: SCRuB rows are ordered by the plate map (sorting them independently makes SCRuB fail outright), and the plate map is read as `utf-8-sig` for Excel-exported BOMs. `EXTRACT_REFERENCE_RECORD` moved upstream as well
-- **[removed]**: `scrub_zero_species_in_controls`. Zeroing named species in control samples ahead of SCRuB is no longer supported; the parameter and its `--zero-species-in-controls` implementation are gone rather than carried into `rvi_toolbox`
-- **[change]**: the vContact3 step is now taken from `rvi_toolbox` rather than kept locally. `workflows/VCONTACT3_RUN.nf`, `modules/vcontact3.nf`, `bin/vcontact3_prep.py` and `bin/vcontact3_postprocess.py` are removed; both scripts were byte-identical to the toolbox's and the subworkflow's interface was the same, so this is a drop-in. The `publishDir saveAs` fix viral-lens was carrying its own copy of the module for went upstream first, so nothing regresses
-- **[removed]**: `bin/pool_viral_scaffolds.py`, dead since the binning helpers moved into `rvi_toolbox` — `binning_helper_processes.nf` uses the toolbox's copy
-- **[removed]**: `SELECT_REFERENCE_RECORDS` and `bin/select_reference_records.py`, the input step of mSWEEP low-abundance hit validation, from both viral-lens and `rvi_toolbox`. Nothing invoked either; `rvi/rvi_toolbox` master had already dropped both
-- **[removed]**: four parameters left defined after map-QC was dropped and referenced by nothing — `themisto_align_run_map_qc`, `metagraph_align_run_map_qc`, `themisto_map_reference_fasta` and `msweep_map_bowtie_threads`. They were kept so an existing `--flag` would still pass schema validation; a command still passing one will now be rejected
-- **[removed]**: mSWEEP map-QC (`MSWEEP_MAP_QC` and its per-species coverage roll-up) from `rvi_toolbox`. Nothing invoked it: breadth now comes from the consensus alignment the mapping lane performs anyway, so validating a call by mapping it first meant mapping every real call twice with two different aligners
-- **[change]**: mSWEEP no longer writes the per-read probability matrix (`--write-probs`), adopted from `rvi/rvi_toolbox` master. It was tens of GB per sample and nothing consumed it. `<sample>_mSWEEP_probs.tsv` is no longer produced
-- **[change]**: the SCRuB heatmap's read-change threshold is now the `scrub_heatmap_min_read_change` parameter (default `20`) instead of a constant inside the R script, adopted from `rvi/rvi_toolbox` master
+- **[change]**: the pipeline's Nextflow code is now documented per directory — [`subworkflows/README.md`](subworkflows/README.md) for the lanes and [`workflows/README.md`](workflows/README.md) for the steps they are built from — replacing the main README's `Sub-workflows` section, which had drifted badly enough to document steps that no longer exist. The main README keeps the user-facing material and links out. `docs/nf-metro/route_map.svg`, the pipeline route map, is redrawn to match the lanes as they now run
+- **[fix]**: two SCRuB faults that made the abundance lane's decontamination unusable — SCRuB rows are now ordered by the plate map (ordering them independently makes SCRuB fail outright), and the plate map is read as `utf-8-sig`, so a plate map exported from Excel with a byte-order mark is no longer rejected
+- **[removed]**: `scrub_zero_species_in_controls`. Zeroing named species in control samples ahead of SCRuB is no longer supported; the parameter and its `--zero-species-in-controls` implementation are gone
+- **[removed]**: **eight parameters** that were defined but referenced by nothing, left behind when the sequence-index lane stopped mapping reads to validate its own species calls (breadth is now measured once, from the consensus alignment, rather than by a separate validation mapping) — `themisto_align_run_map_qc`, `metagraph_align_run_map_qc`, `themisto_map_reference_fasta`, `msweep_map_bowtie_threads`, `themisto_map_bowtie_threads`, `metagraph_map_bowtie_threads`, `msweep_map_reference_seed` and `themisto_map_publish_subdir`. They had been kept so that an existing `--flag` would still pass schema validation; a command still passing any of them is now rejected at startup
+- **[change]**: mSWEEP no longer writes the per-read probability matrix (`--write-probs`). It was tens of GB per sample and nothing consumed it. `<sample>_mSWEEP_probs.tsv` is no longer produced
+- **[change]**: the SCRuB heatmap's read-change threshold is now the `scrub_heatmap_min_read_change` parameter (default `20`) instead of a constant inside the R script
 - **[removed]**: `mapping_pipeline_main.nf`, the copy of the 1.x pipeline kept as a second entry point while `main.nf` was being rebuilt into lanes. `--do_mapping` (on by default) now gives that behaviour from `main.nf` itself, so the copy had become a second definition of one lane, free to drift from the real one. Anyone invoking `nextflow run mapping_pipeline_main.nf` directly should run `main.nf` with the other `--do_*` lanes left off
 - **[removed]**: the assembly lane's per-sample `<sample_id>.properties.json`. `assembly_reports.py` never read it, so it was a second derivation of the same counts feeding nothing, and it came off a chain of inner joins that dropped any sample vRhyme never ran for (35 of 95 on a full run). The lane's three CSVs are its report
 - **[removed]**: `mapping_run_summary.json` and `abundance_run_summary.json` — each duplicated its CSV exactly (same keys, same records, no nested values), so neither carried anything the CSV did not. `consensus_sequence_properties.json` is **kept**: it holds nested `nextclade_results` and per-position depth that a CSV cannot represent
-- **[removed]**: `assembly_run_summary.json` — superseded by the assembly CSVs below. It was also under-reporting: built from a chain of inner joins that dropped any sample vRhyme never ran for, it listed 35 of 95 samples on a full run
+- **[removed]**: `assembly_run_summary.json` — superseded by the three assembly CSVs above. It was also under-reporting: built from a chain of inner joins that dropped any sample vRhyme never ran for, it listed 35 of 95 samples on a full run
 - **[fix]**: a sample that produced no vRhyme bins aborted the entire run while publishing (`No signature of method: ScriptBinding.file()`); a missing optional output no longer takes the run down
 - **[fix]**: vContact3 post-processing selected query genomes on the wrong separator and so matched none, leaving `final_assignments_postprocessed.csv` and `final_assignments_noveltaxa.csv` empty on every run
 - **[fix]**: vContact3 post-processing now fills in the `Proteins` count vContact3 leaves blank for query genomes, without which the novel-genus protein-range check silently never fired
