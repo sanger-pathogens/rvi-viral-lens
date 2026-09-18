@@ -37,8 +37,6 @@ the lane that composes it, in [`subworkflows/README.md`](../subworkflows/README.
 | [`VIRAL_METAGRAPH_QUERY`](#viral_metagraph_querynf) | [`classifying_index`](../subworkflows/README.md#classifying_indexnf) | `metagraph query` + species calling |
 | [`GENERATE_MAPPING_REPORT`](#generate_mapping_reportnf) | [`classifying_index`](../subworkflows/README.md#classifying_indexnf) | that lane's per-sample + run-level report |
 | [`GENERATE_ABUNDANCE_REPORT`](#generate_abundance_reportnf) | [`abundance`](../subworkflows/README.md#abundancenf) | that lane's per-sample + run-level report |
-| [`THEMISTO_MAP_QC`](#themisto_map_qcnf--metagraph_map_qcnf) | *nothing* | **unused** — kept deliberately, see below |
-| [`METAGRAPH_MAP_QC`](#themisto_map_qcnf--metagraph_map_qcnf) | *nothing* | **unused** — kept deliberately, see below |
 
 ---
 
@@ -201,23 +199,3 @@ Despite the name, `GENERATE_MAPPING_REPORT` belongs to the **sequence-index** la
 
 Neither writes a run-level JSON any more: it duplicated the CSV exactly, so nothing published
 it.
-
-## Kept but unused
-
-### `THEMISTO_MAP_QC.nf` / `METAGRAPH_MAP_QC.nf`
-
-**Nothing invokes either.** For every called species they mapped the sample's own reads
-against that species' most-hit reference record and recorded breadth of coverage, mean depth,
-mapping/base quality and reads mapped — one mapping per species, as a sanity check on the
-read-hit calls.
-
-They were removed from the lane because they meant every real call was mapped **twice**, by
-two different aligners: once here to measure breadth, then again for consensus. Breadth is now
-measured once, downstream, from the consensus alignment
-[`mapping.nf`](../subworkflows/README.md#mappingnf) performs anyway.
-
-They are **kept rather than deleted** because they are the only thing that can measure breadth
-for a species *before* deciding to spend a consensus on it. Restore them if that ordering ever
-matters — if index noise volume makes the discarded consensuses expensive, or if breadth is
-wanted for calls that never get a consensus at all, such as ones Kraken2 already found. Their
-params are still defined in `nextflow.config`, marked UNUSED.

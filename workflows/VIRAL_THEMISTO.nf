@@ -119,8 +119,8 @@ workflow VIRAL_THEMISTO {
     emit:
     species_hits     = CALL_THEMISTO_SPECIES.out.species_hits
     // SEQIDX_<n> -> species for the species that cleared min-hits: the "ideal reference"
-    // per call, which map-QC used to consume and MAPPING now uses to extract a consensus
-    // reference. Optional per sample (unwritten when nothing cleared min-hits).
+    // per call, which MAPPING uses to extract a consensus reference. Optional per sample
+    // (unwritten when nothing cleared min-hits).
     index_label_map  = CALL_THEMISTO_SPECIES.out.index_label_map
     // Passed through by CALL_THEMISTO_SPECIES, so consuming this cannot start before that
     // sample's species call is done. The abundance lane's optional MSWEEP reads these.

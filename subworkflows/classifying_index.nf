@@ -13,13 +13,9 @@
 // the read-hit count supporting it. subworkflows/mapping.nf takes it from there -- preferring Kraken2's calls where
 // the two classifiers agree, and building consensus for the genuinely new ones.
 //
-// It maps NO reads. The map-QC step that used to run here -- bowtie2 the reads against
-// each called species' reference, then samtools coverage for breadth -- was removed: it
-// meant a surviving species got mapped twice, once to measure breadth and again for
-// consensus. Breadth is now measured once, downstream, from the consensus alignment
-// MAPPING performs anyway, and MAPPING applies the breadth threshold there (see
-// params.new_species_min_breadth_pct). THEMISTO_MAP_QC.nf / METAGRAPH_MAP_QC.nf are kept
-// but unused.
+// It maps NO reads. Breadth is measured downstream, from the consensus alignment MAPPING
+// performs anyway, and MAPPING applies the breadth threshold there (see
+// params.new_species_min_breadth_pct).
 //
 // THREE GATES decide a call, all of them inside the species callers and all folded into
 // the one `provisional_call` column, so everything here and downstream respects them
@@ -242,9 +238,7 @@ workflow CLASSIFYING_INDEX {
             .join(new_species_counts_ch, remainder: true)
             .join(overlap_counts_ch, remainder: true)
             // Parameter count matches the tuple width: four joins onto the backbone, so
-            // five values after the key. The three *_mapqc_* slots that used to sit in here
-            // went with map-QC (breadth is no longer measured at this stage), and the
-            // msweep_* slot went with mSWEEP to the abundance lane.
+            // five values after the key.
             .map { id, meta, t_counts, mga_counts, mgq_counts, ns_counts, ov_counts ->
                 def new_meta = meta + (t_counts ?: empty_species_hits_counts('themisto')) +
                     (mga_counts ?: empty_species_hits_counts('metagraph_align')) +
@@ -459,9 +453,9 @@ def parse_species_calls(hits_tsv, label_map_tsv, method) {
     // provisional_call is the callers' verdict across all three gates (read hits, taxonomy
     // whitelist/blacklist, reference length), so filtering on it here is all that is needed
     // -- the taxon_filter/reference_filter columns are for reading the table, not for
-    // re-deciding. There is still no breadth_pct at this stage: the map-QC step that used
-    // to measure it is gone, and MAPPING applies params.new_species_min_breadth_pct after
-    // its consensus alignment instead -- see this file's header and subworkflows/mapping.nf.
+    // re-deciding. There is no breadth_pct at this stage: MAPPING applies
+    // params.new_species_min_breadth_pct after its consensus alignment instead -- see this
+    // file's header and subworkflows/mapping.nf.
     //
     // Species are matched between the two files on the name as written, which is the same
     // string in both (both come from one display_name()/species key in the same Python

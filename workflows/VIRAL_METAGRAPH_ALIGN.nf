@@ -91,20 +91,11 @@ workflow VIRAL_METAGRAPH_ALIGN {
         METAGRAPH_ALIGN.out.alignments, names_dmp_ch, taxon_table_ch, reference_lengths_ch, 'metagraph_hits'
     )
 
-    // NO map-QC here. Species are called without mapping any reads: read hits
-    // (metagraph_align_min_hits) plus the taxonomy and reference-length gates
-    // CALL_METAGRAPH_SPECIES applies. The validation mapping that used to follow -- bowtie2
-    // the reads against each called species' reference, then samtools coverage for breadth
-    // -- was removed deliberately. Its breadth figure is now obtained downstream instead,
-    // from the consensus alignment subworkflows/mapping.nf performs anyway, so a
-    // sequence-index species is mapped once rather than twice. METAGRAPH_MAP_QC.nf is kept
-    // but unused; see its header.
-
     emit:
     species_hits    = CALL_METAGRAPH_SPECIES.out.species_hits
     // SEQIDX_<n> -> species for the species that cleared min-hits: the "ideal reference"
-    // per call, which map-QC used to consume and MAPPING now uses to extract a consensus
-    // reference. Optional per sample (unwritten when nothing cleared min-hits).
+    // per call, which MAPPING uses to extract a consensus reference. Optional per sample
+    // (unwritten when nothing cleared min-hits).
     index_label_map = CALL_METAGRAPH_SPECIES.out.index_label_map
 }
 

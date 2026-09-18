@@ -210,10 +210,6 @@
             "type": "string",
             "default": "/data/pam/software/themisto2/viromeindex/1.0/data/C-RVDBv32.0.fasta"
         },
-        "msweep_map_reference_seed": {
-            "type": "integer",
-            "default": 12345
-        },
         "run_metagraph_align": {
             "type": "boolean",
             "default": false
@@ -257,10 +253,6 @@
         "metagraph_map_reference_fasta": {
             "type": "string",
             "default": "/lustre/scratch126/pam/projects/rvidata/personal/eu1/rvdb-clustered/C-RVDBv32.0.renamed.fasta"
-        },
-        "metagraph_map_bowtie_threads": {
-            "type": "integer",
-            "default": 4
         },
         "run_taxon_filter": {
             "type": "boolean",
@@ -510,11 +502,6 @@
             "default": "sequenceindex/themisto_hits",
             "description": "Per-sample subdirectory for Themisto2 species-hit tables. rvi_toolbox defaults to 'themisto_hits'."
         },
-        "themisto_map_publish_subdir": {
-            "type": "string",
-            "default": "sequenceindex/themisto_map",
-            "description": "Per-sample subdirectory for Themisto2 map-QC output. rvi_toolbox defaults to 'themisto_map'."
-        },
         "do_mixed_input": {
             "type": "boolean",
             "default": false
@@ -621,11 +608,6 @@
             "type": "integer",
             "default": 100,
             "description": "Read-hit count for a species to be provisionally called present by CALL_THEMISTO_SPECIES."
-        },
-        "themisto_map_bowtie_threads": {
-            "type": "integer",
-            "default": 4,
-            "description": "Threads for the per-sample bowtie2 mapping step in THEMISTO_MAP_QC."
         }
     }
 }

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- **[removed]**: the two map-QC steps `workflows/THEMISTO_MAP_QC.nf` and `workflows/METAGRAPH_MAP_QC.nf`, kept unused since breadth moved downstream to the consensus alignment `subworkflows/mapping.nf` performs anyway. Nothing invoked either, and keeping them meant every comment describing the sequence-index lane had to explain a stage that never ran
+- **[removed]**: `modules/select_reference_record_by_name.nf` and `bin/select_reference_record_by_name.py`, unused since reference resolution moved into `subworkflows/mapping.nf`, which reuses the record id the calling method's own index-label map already names
+- **[removed]**: four parameters left defined by the above and referenced by nothing — `themisto_map_bowtie_threads`, `metagraph_map_bowtie_threads`, `msweep_map_reference_seed`, `themisto_map_publish_subdir` and, with them, their `nextflow_schema.json` entries. A command still passing one will now be rejected by schema validation
+- **[removed]**: five `withName` executor entries in `nextflow.config` for processes no longer reachable from `main.nf` — `SAMTOOLS_COVERAGE`, `AGGREGATE_THEMISTO_COVERAGE`, `GENERATE_THEMISTO_MAP_SUMMARY`, `AGGREGATE_METAGRAPH_COVERAGE` and `GENERATE_METAGRAPH_MAP_SUMMARY`
+- **[change]**: the `docs/nf-metro/route_map.mmd` station that matched `.*_MAP_QC` now matches `CALL_.*_SPECIES` and reads "Call species from read hits" — the stage the lane actually runs. `route_map.svg` re-rendered
+
 ## [2.0.0]
 
 A major release: viral-lens was one pipeline — Kraken2 classification into consensus

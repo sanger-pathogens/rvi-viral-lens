@@ -66,17 +66,17 @@ graph LR
         %%metro process: pseudoalign_themisto | THEMISTO_PSEUDOALIGN
         %%metro process: pseudoalign_metagraph | METAGRAPH_QUERY
         %%metro process: seqgraph_align | METAGRAPH$
-        %%metro process: qc_mapping | .*_MAP_QC
+        %%metro process: species_call | CALL_.*_SPECIES
         pseudoalign_themisto[Pseudoalign - Themisto2]
         pseudoalign_metagraph[Pseudoalign - Metagraph]
         seqgraph_align[Seq-to-graph align - Metagraph]
-        qc_mapping[QC Mapping to finalise Species calls]
+        species_call[Call species from read hits]
         human_scrub -->|mapping| pseudoalign_themisto
         human_scrub -->|mapping| pseudoalign_metagraph
         human_scrub -->|mapping| seqgraph_align
-        pseudoalign_themisto -->|mapping| qc_mapping
-        pseudoalign_metagraph -->|mapping| qc_mapping
-        seqgraph_align -->|mapping| qc_mapping
+        pseudoalign_themisto -->|mapping| species_call
+        pseudoalign_metagraph -->|mapping| species_call
+        seqgraph_align -->|mapping| species_call
     end
 
     subgraph assembly [De novo assembly]
@@ -143,7 +143,7 @@ graph LR
         nextclade[Nextclade]
         scov2[SCOV2_SUBTYPING]
         k2r -->|taxid| generate_consensus
-        qc_mapping -->|mapping| generate_consensus
+        species_call -->|mapping| generate_consensus
         generate_consensus -->|taxid,mapping| nextclade
         generate_consensus -->|taxid,mapping| scov2
     end
@@ -165,7 +165,7 @@ graph LR
         nextclade -->|taxid,mapping| classification_report
         scov2 -->|taxid,mapping| classification_report
         classification_report -->|taxid| taxid_report_out
-        qc_mapping -->|core| mapping_report
+        species_call -->|core| mapping_report
         mapping_report -->|core| mapping_out
         vcontact3 -->|assembly| assembly_report
         assembly_report -->|assembly| assembly_out
