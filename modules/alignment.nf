@@ -36,6 +36,8 @@ process run_aligner {
     label "cpu_1"
     label "time_queue_from_small"
 
+    publishDir path: "${params.results_dir}/${meta.id}/alignment/", mode: 'copy', overwrite: true, pattern: "*.sorted.ba[im]", enabled: params.publish_bams
+
     input:
         tuple val(meta), path(fastq), path(ref_fa)
 
