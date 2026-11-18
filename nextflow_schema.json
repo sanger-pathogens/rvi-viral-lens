@@ -81,6 +81,11 @@
             "type": "number",
             "default": 0.75
         },
+        "publish_bams": {
+            "type": "boolean",
+            "default": true,
+            "description": "Publish sorted BAMs and their indexes to <results_dir>/<sample>/alignment/"
+        },
         "max_attempts": {
             "type": "integer",
             "default": 3
