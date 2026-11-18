@@ -165,7 +165,7 @@
             "default": true
         },
         "adapter_fasta": {
-            "type": "boolean",
+            "type": "string",
             "default": true
         },
         "run_trf": {
