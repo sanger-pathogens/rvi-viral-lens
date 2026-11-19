@@ -7,7 +7,7 @@ nextflow.enable.dsl = 2
 include {check_sort_reads_params} from './workflows/SORT_READS_BY_REF.nf'
 include {validateParameters; paramsSummaryLog} from 'plugin/nf-schema'
 include {PREPROCESSING} from "./rvi_toolbox/subworkflows/preprocessing.nf"
-include {MIXED_INPUT} from "./rvi_toolbox/subworkflows/mixed_input.nf"
+include {MIXED_INPUT} from './assorted-sub-workflows/mixed_input/mixed_input.nf'
 include {CLASSIFYING_KRAKEN2} from './subworkflows/classifying_kraken2.nf'
 include {CLASSIFYING_INDEX} from './subworkflows/classifying_index.nf'
 include {MAPPING} from './subworkflows/mapping.nf'
@@ -63,6 +63,18 @@ workflow {
     --ivar_polish_freq_threshold  : ${params.ivar_polish_freq_threshold}
     --scv2_keyword                : ${params.scv2_keyword}
     --nextclade_index_json        : ${params.nextclade_index_json}
+
+  --> MIXED_INPUT parameters (assorted-sub-workflows/mixed_input; only used if --do_mixed_input true):
+    --manifest_of_reads           : ${params.manifest_of_reads}
+    --manifest_from_dir           : ${params.manifest_from_dir}
+    --manifest_of_lanes           : ${params.manifest_of_lanes}
+    --manifest_ena                : ${params.manifest_ena}
+    --studyid                     : ${params.studyid}
+    --runid                       : ${params.runid}
+    --laneid                      : ${params.laneid}
+    --plexid                      : ${params.plexid}
+    --only_new_input              : ${params.only_new_input}
+    --save_fastqs                 : ${params.save_fastqs}
 
   --> ASSEMBLY workflow parameters (subworkflows/assembly.nf; only used if --do_assembly true):
     --genomad_db                  : ${params.genomad_db}
@@ -126,12 +138,9 @@ workflow {
     if (params.do_mixed_input) {
         MIXED_INPUT()
 
+        // assorted-sub-workflows keys samples on meta.ID; viral-lens uses meta.id/meta.sample_id
         reads_ch = MIXED_INPUT.out.all_reads_ready_ch
-            .map { meta, r1, r2 ->
-                // meta.sample_id > meta.id 
-                def new_meta = meta + [sample_id: meta.id]
-                [new_meta, [r1, r2]]
-            }
+            .map { meta, r1, r2 -> [meta + [id: meta.ID, sample_id: meta.ID], [r1, r2]] }
     } else {
         reads_ch = parse_mnf(params.manifest) // tuple(meta, [fastq_1, fastq_2])
     }

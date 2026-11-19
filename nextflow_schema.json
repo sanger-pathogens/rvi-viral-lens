@@ -517,27 +517,22 @@
         },
         "studyid": {
             "type": "integer",
-            "default": -1
+            "description": "iRODS study ID"
         },
         "runid": {
             "type": "integer",
-            "default": -1
+            "description": "iRODS run ID"
         },
         "laneid": {
             "type": "integer",
-            "default": -1
+            "description": "iRODS lane ID"
         },
         "plexid": {
             "type": "integer",
-            "default": -1
-        },
-        "target": {
-            "type": "string",
-            "default": "1"
+            "description": "iRODS plex ID"
         },
         "type": {
-            "type": "string",
-            "default": "cram"
+            "type": "string"
         },
         "manifest_ena": {
             "type": "string"
@@ -546,7 +541,12 @@
             "type": "string"
         },
         "manifest_of_reads": {
-            "type": "string"
+            "type": "string",
+            "description": "CSV of local reads with columns ID,R1,R2 (--do_mixed_input)"
+        },
+        "manifest_from_dir": {
+            "type": "string",
+            "description": "Directory of paired fastqs to build a reads manifest from (--do_mixed_input)"
         },
         "save_metadata": {
             "type": "boolean",
@@ -558,7 +558,7 @@
         },
         "cleanup_intermediate_files_irods_extractor": {
             "type": "boolean",
-            "default": false
+            "default": true
         },
         "save_fastqs": {
             "type": "boolean",
@@ -568,25 +568,9 @@
             "type": "string",
             "default": "nested"
         },
-        "raw_reads_prefix": {
-            "type": "string",
-            "default": ""
-        },
-        "preexisting_fastq_tag": {
-            "type": "string",
-            "default": "raw_fastq"
-        },
-        "split_sep_for_ID_from_fastq": {
-            "type": "string",
-            "default": "_1.fastq"
-        },
         "lane_plex_sep": {
             "type": "string",
             "default": "#"
-        },
-        "start_queue": {
-            "type": "string",
-            "default": "normal"
         },
         "irods_subset_to_skip": {
             "type": "string",
@@ -603,6 +587,95 @@
         "accession_type": {
             "type": "string",
             "default": "run"
+        },
+        "fastq_validation": {
+            "type": "string",
+            "default": "strict"
+        },
+        "max_depth": {
+            "type": "integer",
+            "default": 0
+        },
+        "only_new_input": {
+            "type": "boolean",
+            "default": false,
+            "description": "Skip samples whose raw reads already exist in the output directory"
+        },
+        "prevent_redownloads": {
+            "type": "boolean",
+            "default": false
+        },
+        "preexisting_output_dir": {
+            "type": "string",
+            "default": "raw_fastqs"
+        },
+        "existing_output_extension": {
+            "type": "string",
+            "default": ".gz"
+        },
+        "existing_output_id_suffix": {
+            "type": "string",
+            "default": "_1.fastq"
+        },
+        "raw_reads_suffix": {
+            "type": "string",
+            "default": "_raw"
+        },
+        "raw_reads_output_dir": {
+            "type": "string",
+            "default": "raw_fastqs"
+        },
+        "read_type": {
+            "type": "string",
+            "default": "Illumina"
+        },
+        "large_data": {
+            "type": "boolean",
+            "default": false
+        },
+        "ont_get_read_type": {
+            "type": "string",
+            "default": "reads"
+        },
+        "search": {
+            "type": "boolean",
+            "default": false
+        },
+        "service_user": {
+            "type": "boolean",
+            "default": false
+        },
+        "irods_pool_size": {
+            "type": "integer",
+            "default": 4
+        },
+        "irods_search_pool_size": {
+            "type": "integer",
+            "default": 4
+        },
+        "irods_max_concurrent_gets": {
+            "type": "integer",
+            "default": 3
+        },
+        "irods_batch_count": {
+            "type": "integer",
+            "default": 1000
+        },
+        "irods_min_batch_size": {
+            "type": "integer",
+            "default": 20
+        },
+        "irods_ont_batch_size": {
+            "type": "integer",
+            "default": 1
+        },
+        "irods_search_tokens": {
+            "type": "integer",
+            "default": 20
+        },
+        "irods_get_tokens": {
+            "type": "integer",
+            "default": 20
         },
         "do_consensus_polishing": {
             "type": "boolean",

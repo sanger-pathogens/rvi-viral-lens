@@ -16,6 +16,7 @@
   - [Manifest](#manifest)
   - [Kraken2 Database](#kraken2-database)
   - [NextClade config](#nextclade-index-json)
+  - [Mixed input](#mixed-input)
 - [Outputs](#outputs)
   - [Primary outputs](#primary-outputs)
   - [Secondary outputs](#secondary-outputs)
@@ -245,6 +246,24 @@ path/to/local/custom/nextclade/datasets
             ├── pathogen.json
             └── reference.fasta
 ```
+
+### Mixed input
+
+With `--do_mixed_input true`, reads are gathered by the `MIXED_INPUT` subworkflow from
+[assorted-sub-workflows](https://github.com/sanger-pathogens/assorted-sub-workflows/tree/main/mixed_input)
+instead of `--manifest`. Any combination of these sources can be given:
+
+| source | parameter(s) |
+| --- | --- |
+| local reads | `--manifest_of_reads` (or `--manifest`): CSV with columns `ID,R1,R2` |
+| fastq directory | `--manifest_from_dir` |
+| iRODS | `--studyid`, `--runid`, `--laneid`, `--plexid`, or `--manifest_of_lanes` (CSV of those columns) |
+| ENA | `--manifest_ena`: file of run accessions |
+
+The `ID` becomes the viral-lens `sample_id`. Note the local manifest uses `ID,R1,R2`, not the
+`sample_id,reads_1,reads_2` columns of a standard viral-lens manifest. `--only_new_input` skips
+samples whose raw reads are already in the output directory. All options are documented in
+`assorted-sub-workflows/mixed_input/README.md`.
 
 [**(&uarr;)**](#contents)
 
