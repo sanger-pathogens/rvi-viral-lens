@@ -21,6 +21,9 @@ process run_aligner {
             reads to be aligned.
         - `ref_fasta`: Path to the reference files required for
             alignment
+    * Input value:
+        - `stage`: alignment round (e.g. "initial"); published BAMs
+            are named `<meta.id>.<stage>.sorted.bam`
 
     * Output Tuple:
         - Input tuple, plus:
@@ -36,10 +39,17 @@ process run_aligner {
     label "cpu_1"
     label "time_queue_from_small"
 
-    publishDir path: "${params.results_dir}/${meta.id}/alignment/", mode: 'copy', overwrite: true, pattern: "*.sorted.ba[im]", enabled: params.publish_bams
+    // final BAMs: --publish_bams; initial/realigned BAMs: --save_intermediate_bams
+    publishDir path: "${params.results_dir}/${meta.id}/alignment/", mode: 'copy', overwrite: true, pattern: "*.sorted.ba[im]",
+        enabled: (stage == 'final' && params.publish_bams )
+
+    publishDir path: "${params.results_dir}/${meta.id}/alignment/", mode: 'copy', overwrite: true, pattern: "*.sorted.ba[im]",
+        enabled: (stage in ['initial', "realigned"] && params.save_intermediate_bams),
+        saveAs: { filename -> filename.replace('.sorted.', ".${stage}.sorted.") }
 
     input:
         tuple val(meta), path(fastq), path(ref_fa)
+        val(stage) // alignment round, added to the published BAM name
 
     output:
         tuple val(meta), path(fastq), path(ref_fa), path("${meta.id}.sorted.bam"), path("${meta.id}.sorted.bam.bai")
