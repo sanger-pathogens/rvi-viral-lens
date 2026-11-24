@@ -41,10 +41,10 @@ process run_aligner {
 
     // final BAMs: --publish_bams; initial/realigned BAMs: --save_intermediate_bams
     publishDir path: "${params.results_dir}/${meta.id}/alignment/", mode: 'copy', overwrite: true, pattern: "*.sorted.ba[im]",
-        enabled: (stage == 'final' && params.publish_bams )
+        enabled: ("${stage}" == 'final' && params.publish_bams )
 
     publishDir path: "${params.results_dir}/${meta.id}/alignment/", mode: 'copy', overwrite: true, pattern: "*.sorted.ba[im]",
-        enabled: (stage in ['initial', "realigned"] && params.save_intermediate_bams),
+        enabled: ("${stage}" in ['initial', "realigned"] && params.save_intermediate_bams),
         saveAs: { filename -> filename.replace('.sorted.', ".${stage}.sorted.") }
 
     input:
