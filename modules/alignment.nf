@@ -40,22 +40,30 @@ process run_aligner {
     label "time_queue_from_small"
 
     // final BAMs: --publish_bams; initial/realigned BAMs: --save_intermediate_bams
-    publishDir path: "${params.results_dir}/${meta.id}/alignment/", mode: 'copy', overwrite: true, pattern: "*.sorted.ba[im]",
-        saveAs: { filename -> (stage == 'final' && params.publish_bams) ? filename : null }
+    publishDir path: "${params.results_dir}/${meta.id}/alignment/", mode: 'copy', overwrite: true, pattern: "${meta.id}.sorted{.bam,.bam.bai}",
+        enabled: params.publish_bams
+        // saveAs: { filename -> (stage == 'final' && params.publish_bams) ? filename : null }
 
-    publishDir path: "${params.results_dir}/${meta.id}/alignment/", mode: 'copy', overwrite: true, pattern: "*.sorted.ba[im]",
-        saveAs: { filename -> (stage in ['initial', 'realigned'] && params.save_intermediate_bams) ? filename.replace('.sorted.', ".${stage}.sorted.") : null }
+    publishDir path: "${params.results_dir}/${meta.id}/alignment/", mode: 'copy', overwrite: true, pattern: "${meta.id}.{realigned,initial}.sorted{.bam,.bam.bai}",
+        enabled: params.save_intermediate_bams
+        // saveAs: { filename -> (stage in ['initial', 'realigned'] && params.save_intermediate_bams) ? filename.replace('.sorted.', ".${stage}.sorted.") : null }
 
     input:
         tuple val(meta), path(fastq), path(ref_fa)
         val(stage) // alignment round, added to the published BAM name
 
     output:
-        tuple val(meta), path(fastq), path(ref_fa), path("${meta.id}.sorted.bam"), path("${meta.id}.sorted.bam.bai")
+        tuple val(meta), path(fastq), path(ref_fa), path("*.sorted.bam"), path("*.sorted.bam.bai")
 
     script:
         aligner = "${params.read_aligner}"
         aligner_params = "${params.read_aligner_params}"
+        if (stage == "final") {
+            out_bam_name = "${meta.id}.sorted.bam"
+        } else if (stage in ["initial", "realigned"]) {
+            out_bam_name = "${meta.id}.${stage}.sorted.bam"
+        }
+
         """
         set -e
         set -o pipefail
@@ -68,7 +76,7 @@ process run_aligner {
             # Align and convert to BAM
             bwa mem ${aligner_params} ${ref_fa} ${fastq} \
                 | samtools view -S -b - \
-                | samtools sort -o ${meta.id}.sorted.bam
+                | samtools sort -o ${out_bam_name}
 
         elif [ "$aligner" = "minimap2" ]; then
             echo "[INFO] Running minimap2 on sample ${meta.id}"
@@ -76,7 +84,7 @@ process run_aligner {
             # Minimap2 does not need indexing
             minimap2 ${aligner_params} ${ref_fa} ${fastq} \
                 | samtools view -S -b - \
-                | samtools sort -o ${meta.id}.sorted.bam
+                | samtools sort -o ${out_bam_name}
 
         else
             echo "[ERROR] Unknown aligner: $aligner"
@@ -84,7 +92,7 @@ process run_aligner {
         fi
 
         # Index the sorted BAM
-        samtools index ${meta.id}.sorted.bam
+        samtools index ${out_bam_name}
         """
 }
 /*
