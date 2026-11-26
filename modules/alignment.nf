@@ -62,6 +62,8 @@ process run_aligner {
             out_bam_name = "${meta.id}.sorted.bam"
         } else if (stage in ["initial", "realigned"]) {
             out_bam_name = "${meta.id}.${stage}.sorted.bam"
+        } else {
+             error "ERROR: 'stage' input declarations must be either ['initial', 'realigned', 'final'] as the 2nd positional argument. Input declaration was: ${stage}"
         }
 
         """
