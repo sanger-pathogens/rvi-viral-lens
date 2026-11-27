@@ -45,7 +45,7 @@ workflow GENERATE_CONSENSUS {
     main:
 
         // First round of alignment
-        alignment_ch = initial_alignment( sample_taxid_ch )
+        alignment_ch = initial_alignment( sample_taxid_ch , "initial" )
 
         // set ivar input channel
         consensus_initial_in_ch = alignment_ch.map {
@@ -67,7 +67,7 @@ workflow GENERATE_CONSENSUS {
                     [meta, fastq, cons_fa] 
             }
 
-            realignment_ch = re_alignment( realignment_in_ch ) 
+            realignment_ch = re_alignment( realignment_in_ch, "realigned" )
 
             consensus_final_in_ch = realignment_ch.map {
                 meta, fastq, _ref_fa, bam, bam_idx ->
@@ -89,7 +89,7 @@ workflow GENERATE_CONSENSUS {
                 [meta, fastq, cons_fa]    
         }
 
-        final_alignment_ch = final_alignment( final_align_in_ch )
+        final_alignment_ch = final_alignment( final_align_in_ch, "final" )
 
         qc_script_in_ch = final_alignment_ch.map {
             meta, _fastq, cons_fa, bam, bam_idx ->

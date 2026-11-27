@@ -81,6 +81,16 @@
             "type": "number",
             "default": 0.75
         },
+        "publish_bams": {
+            "type": "boolean",
+            "default": false,
+            "description": "Publish the final-round sorted BAMs and their indexes to <results_dir>/<sample>/alignment/"
+        },
+        "save_intermediate_bams": {
+            "type": "boolean",
+            "default": false,
+            "description": "Publish the initial and realigned BAMs (<id>.initial.sorted.bam, <id>.realigned.sorted.bam)"
+        },
         "max_attempts": {
             "type": "integer",
             "default": 3
@@ -157,6 +167,10 @@
         },
         "run_trimmomatic": {
             "type": "boolean",
+            "default": true
+        },
+        "adapter_fasta": {
+            "type": "string",
             "default": true
         },
         "run_trf": {
